@@ -96,6 +96,7 @@ export function useVideoSelection() {
         }, 6000);
         
         result = await checkCompatibility(video);
+        result = await checkCompatibility(video.id);
         
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -228,6 +229,7 @@ export function useVideoSelection() {
         }, 6000);
         
         result = await checkCompatibility(video);
+        result = await checkCompatibility(video.id);
         
         if (timeoutId) {
           clearTimeout(timeoutId);
