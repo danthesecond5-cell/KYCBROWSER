@@ -8,6 +8,7 @@ import {
   RefreshControl,
   Platform,
   KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack, router } from 'expo-router';
@@ -111,7 +112,15 @@ export default function MyVideosScreen() {
           headerStyle: { backgroundColor: '#0a0a0a' },
           headerTintColor: '#ffffff',
           headerLeft: () => (
-            <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
+            <TouchableOpacity 
+              onPress={() => {
+                Keyboard.dismiss();
+                requestAnimationFrame(() => {
+                  router.back();
+                });
+              }}
+              style={styles.headerButton}
+            >
               <ChevronLeft size={24} color="#00ff88" />
             </TouchableOpacity>
           ),
@@ -162,6 +171,10 @@ export default function MyVideosScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              initialNumToRender={8}
+              maxToRenderPerBatch={8}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
               refreshControl={
                 <RefreshControl
                   refreshing={isRefreshing}
@@ -183,6 +196,10 @@ export default function MyVideosScreen() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              initialNumToRender={10}
+              maxToRenderPerBatch={10}
+              windowSize={5}
+              removeClippedSubviews={Platform.OS === 'android'}
               refreshControl={
                 <RefreshControl
                   refreshing={isRefreshing}
