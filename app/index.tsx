@@ -19,6 +19,7 @@ import { router } from 'expo-router';
 import { useAccelerometer, useGyroscope, useOrientation, AccelerometerData, GyroscopeData, OrientationData } from '@/hooks/useMotionSensors';
 import { useDeviceTemplate } from '@/contexts/DeviceTemplateContext';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
+import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import type { SavedVideo } from '@/utils/videoManager';
 import { PATTERN_PRESETS } from '@/constants/motionPatterns';
@@ -83,6 +84,11 @@ export default function MotionBrowserScreen() {
 
   const { pendingVideoForApply, setPendingVideoForApply } = useVideoLibrary();
 
+  const { developerMode, isAllowlistEditable } = useDeveloperMode();
+
+  
+
+  
   // Protocol Context for allowlist and presentation mode
   const {
     developerModeEnabled,
@@ -573,6 +579,15 @@ export default function MotionBrowserScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+      
+      {/* Testing Watermark */}
+      <TestingWatermark 
+        visible={developerMode.showWatermark}
+        position="top-right"
+        variant="minimal"
+        showPulse={true}
+      />
+      
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView 
           style={styles.keyboardView}
