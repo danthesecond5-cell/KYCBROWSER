@@ -318,10 +318,12 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, pin);
   }, []);
 
-  const togglePresentationMode = useCallback(async () => {
+  const togglePresentationMode = useCallback(() => {
     const newValue = !presentationMode;
     setPresentationMode(newValue);
-    await AsyncStorage.setItem(STORAGE_KEYS.PRESENTATION_MODE, String(newValue));
+    AsyncStorage.setItem(STORAGE_KEYS.PRESENTATION_MODE, String(newValue)).catch(
+      (err) => console.error('[Protocol] Failed to save presentation mode:', err)
+    );
     console.log('[Protocol] Presentation mode toggled:', newValue);
   }, [presentationMode]);
 

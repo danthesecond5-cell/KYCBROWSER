@@ -83,7 +83,7 @@ export default function RootLayout() {
       <ProtocolProvider>
         <DeviceTemplateProvider>
           <VideoLibraryProvider>
-            <GestureHandlerRootView>
+            <GestureHandlerRootView style={{ flex: 1 }}>
               <RootLayoutNav />
             </GestureHandlerRootView>
           </VideoLibraryProvider>
