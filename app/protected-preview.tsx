@@ -11,8 +11,10 @@ import {
 import { Stack, router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
-import { ChevronLeft, Shield, Film } from 'lucide-react-native';
+import { ChevronLeft, Shield, Film, Settings, Lock } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
+import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
+import TestingWatermark from '@/components/TestingWatermark';
 
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -20,6 +22,14 @@ export default function ProtectedPreviewScreen() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
+  const { 
+    developerMode, 
+    protocolSettings, 
+    isProtocolEditable,
+    updateProtectedSettings 
+  } = useDeveloperMode();
+
+  const protectedSettings = protocolSettings.protected;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -40,6 +50,12 @@ export default function ProtectedPreviewScreen() {
 
   return (
     <View style={styles.container}>
+      <TestingWatermark 
+        visible={developerMode.showWatermark}
+        position="top-right"
+        variant="minimal"
+      />
+      
       <Stack.Screen
         options={{
           title: 'Protected Preview',
@@ -54,6 +70,26 @@ export default function ProtectedPreviewScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Protocol Status Banner */}
+        <View style={styles.protocolBanner}>
+          <View style={styles.protocolBannerLeft}>
+            <View style={[styles.protocolIcon, protectedSettings.enabled && styles.protocolIconActive]}>
+              <Shield size={16} color={protectedSettings.enabled ? '#0a0a0a' : '#ff6b35'} />
+            </View>
+            <View>
+              <Text style={styles.protocolBannerTitle}>Protocol 3: Protected Preview</Text>
+              <Text style={styles.protocolBannerStatus}>
+                {protectedSettings.enabled ? 'LIVE - Ready for Testing' : 'Disabled'}
+              </Text>
+            </View>
+          </View>
+          {!isProtocolEditable && (
+            <View style={styles.lockedIndicator}>
+              <Lock size={12} color="#ff6b35" />
+            </View>
+          )}
+        </View>
+
         <View style={styles.previewCard}>
           <View style={styles.previewHeader}>
             <Shield size={18} color="#00ff88" />
@@ -61,6 +97,7 @@ export default function ProtectedPreviewScreen() {
           </View>
           <Text style={styles.previewSubtitle}>
             Simulates body detection and swaps to a safe looping video.
+            {'\n'}Sensitivity: {protectedSettings.bodyDetectionSensitivity.toUpperCase()}
           </Text>
 
           <View style={styles.previewWindow}>
@@ -99,9 +136,11 @@ export default function ProtectedPreviewScreen() {
                     </Text>
                   </View>
                 )}
-                <View style={styles.overlayLabel}>
-                  <Text style={styles.overlayLabelText}>Protected Replacement Active</Text>
-                </View>
+                {protectedSettings.showOverlayLabel && (
+                  <View style={styles.overlayLabel}>
+                    <Text style={styles.overlayLabelText}>Protected Replacement Active</Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -118,6 +157,74 @@ export default function ProtectedPreviewScreen() {
           <Text style={styles.toggleHint}>
             Placeholder logic only. Toggle this to simulate body detection until your model is ready.
           </Text>
+        </View>
+
+        {/* Settings Card */}
+        <View style={styles.settingsCard}>
+          <View style={styles.settingsHeader}>
+            <Settings size={16} color="#00aaff" />
+            <Text style={styles.settingsTitle}>Protocol Settings</Text>
+            {!isProtocolEditable && (
+              <View style={styles.settingsLocked}>
+                <Lock size={10} color="#ff6b35" />
+                <Text style={styles.settingsLockedText}>Developer Mode Required</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Show Overlay Label</Text>
+              <Text style={styles.settingHint}>Display "Protected" indicator</Text>
+            </View>
+            <Switch
+              value={protectedSettings.showOverlayLabel}
+              onValueChange={(val) => isProtocolEditable && updateProtectedSettings({ showOverlayLabel: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={protectedSettings.showOverlayLabel ? '#ffffff' : '#888888'}
+            />
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Detection Sensitivity</Text>
+            </View>
+            <View style={styles.segmentedControl}>
+              {(['low', 'medium', 'high'] as const).map(level => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.segmentButton,
+                    protectedSettings.bodyDetectionSensitivity === level && styles.segmentButtonActive,
+                  ]}
+                  onPress={() => isProtocolEditable && updateProtectedSettings({ bodyDetectionSensitivity: level })}
+                  disabled={!isProtocolEditable}
+                >
+                  <Text style={[
+                    styles.segmentButtonText,
+                    protectedSettings.bodyDetectionSensitivity === level && styles.segmentButtonTextActive,
+                  ]}>
+                    {level.charAt(0).toUpperCase() + level.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Fallback to Placeholder</Text>
+              <Text style={styles.settingHint}>Use placeholder if no video selected</Text>
+            </View>
+            <Switch
+              value={protectedSettings.fallbackToPlaceholder}
+              onValueChange={(val) => isProtocolEditable && updateProtectedSettings({ fallbackToPlaceholder: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={protectedSettings.fallbackToPlaceholder ? '#ffffff' : '#888888'}
+            />
+          </View>
         </View>
 
         <View style={styles.selectorCard}>
@@ -169,6 +276,52 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+  },
+  protocolBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(255, 107, 53, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 53, 0.2)',
+  },
+  protocolBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  protocolIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  protocolIconActive: {
+    backgroundColor: '#00ff88',
+  },
+  protocolBannerTitle: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  },
+  protocolBannerStatus: {
+    fontSize: 10,
+    color: '#00ff88',
+    marginTop: 2,
+    fontWeight: '500' as const,
+  },
+  lockedIndicator: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255, 107, 53, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   previewCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -338,5 +491,87 @@ const styles = StyleSheet.create({
     color: '#00ff88',
     fontWeight: '600' as const,
     marginLeft: 8,
+  },
+  settingsCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginTop: 16,
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  settingsTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+    flex: 1,
+  },
+  settingsLocked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  settingsLockedText: {
+    fontSize: 10,
+    color: '#ff6b35',
+    fontWeight: '500' as const,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingLabel: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#ffffff',
+  },
+  settingHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 2,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 6,
+    padding: 2,
+  },
+  segmentButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 4,
+  },
+  segmentButtonActive: {
+    backgroundColor: '#00ff88',
+  },
+  segmentButtonText: {
+    fontSize: 11,
+    fontWeight: '500' as const,
+    color: 'rgba(255,255,255,0.6)',
+  },
+  segmentButtonTextActive: {
+    color: '#0a0a0a',
+    fontWeight: '600' as const,
   },
 });

@@ -7,6 +7,7 @@ import { Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
+import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import {
   installConsoleCapture,
   startFreezeDetection,
@@ -75,13 +76,15 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <DeviceTemplateProvider>
-        <VideoLibraryProvider>
-          <GestureHandlerRootView>
-            <RootLayoutNav />
-          </GestureHandlerRootView>
-        </VideoLibraryProvider>
-      </DeviceTemplateProvider>
+      <DeveloperModeProvider>
+        <DeviceTemplateProvider>
+          <VideoLibraryProvider>
+            <GestureHandlerRootView>
+              <RootLayoutNav />
+            </GestureHandlerRootView>
+          </VideoLibraryProvider>
+        </DeviceTemplateProvider>
+      </DeveloperModeProvider>
     </QueryClientProvider>
   );
 }

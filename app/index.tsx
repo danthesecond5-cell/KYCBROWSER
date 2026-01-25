@@ -20,6 +20,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAccelerometer, useGyroscope, useOrientation, AccelerometerData, GyroscopeData, OrientationData } from '@/hooks/useMotionSensors';
 import { useDeviceTemplate } from '@/contexts/DeviceTemplateContext';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
+import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import type { SavedVideo } from '@/utils/videoManager';
 import { PATTERN_PRESETS } from '@/constants/motionPatterns';
 import { 
@@ -38,6 +39,7 @@ import type { SimulationConfig } from '@/types/browser';
 import BrowserHeader from '@/components/browser/BrowserHeader';
 import DevicesList from '@/components/browser/DevicesList';
 import TemplateModal from '@/components/browser/TemplateModal';
+import TestingWatermark from '@/components/TestingWatermark';
 
 import ControlToolbar, { SiteSettingsModal, ProtocolSettingsModal } from '@/components/browser/ControlToolbar';
 import SetupRequired from '@/components/SetupRequired';
@@ -84,6 +86,8 @@ export default function MotionBrowserScreen() {
   } = useDeviceTemplate();
 
   const { pendingVideoForApply, setPendingVideoForApply } = useVideoLibrary();
+
+  const { developerMode, isAllowlistEditable } = useDeveloperMode();
 
   
 
@@ -618,6 +622,15 @@ export default function MotionBrowserScreen() {
   return (
     <View style={styles.container}>
       <StatusBar style="light" />
+      
+      {/* Testing Watermark */}
+      <TestingWatermark 
+        visible={developerMode.showWatermark}
+        position="top-right"
+        variant="minimal"
+        showPulse={true}
+      />
+      
       <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
         <KeyboardAvoidingView 
           style={styles.keyboardView}

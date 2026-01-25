@@ -10,9 +10,11 @@ import {
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Monitor, Film } from 'lucide-react-native';
+import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
+import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { formatVideoUriForWebView } from '@/utils/videoServing';
+import TestingWatermark from '@/components/TestingWatermark';
 
 const TEST_HARNESS_HTML = `
 <!DOCTYPE html>
@@ -118,6 +120,14 @@ export default function TestHarnessScreen() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
+  const { 
+    developerMode, 
+    protocolSettings, 
+    isProtocolEditable,
+    updateHarnessSettings 
+  } = useDeveloperMode();
+
+  const harnessSettings = protocolSettings.harness;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -160,6 +170,12 @@ export default function TestHarnessScreen() {
 
   return (
     <View style={styles.container}>
+      <TestingWatermark 
+        visible={developerMode.showWatermark}
+        position="top-right"
+        variant="minimal"
+      />
+      
       <Stack.Screen
         options={{
           title: 'Local Test Harness',
@@ -174,6 +190,27 @@ export default function TestHarnessScreen() {
       />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Protocol Status Banner */}
+        <View style={styles.protocolBanner}>
+          <View style={styles.protocolBannerLeft}>
+            <View style={[styles.protocolIcon, harnessSettings.enabled && styles.protocolIconActive]}>
+              <FlaskConical size={16} color={harnessSettings.enabled ? '#0a0a0a' : '#8a2be2'} />
+            </View>
+            <View>
+              <Text style={styles.protocolBannerTitle}>Protocol 4: Test Harness</Text>
+              <Text style={styles.protocolBannerStatus}>
+                {harnessSettings.enabled ? 'LIVE - Benchmark Ready' : 'Disabled'}
+              </Text>
+            </View>
+          </View>
+          {harnessSettings.recordTestResults && (
+            <View style={styles.benchmarkIndicator}>
+              <Activity size={12} color="#00ff88" />
+              <Text style={styles.benchmarkText}>Recording</Text>
+            </View>
+          )}
+        </View>
+
         <View style={styles.infoCard}>
           <View style={styles.infoHeader}>
             <Monitor size={18} color="#00ff88" />
@@ -247,6 +284,76 @@ export default function TestHarnessScreen() {
             />
           )}
         </View>
+
+        {/* Settings Card */}
+        <View style={styles.settingsCard}>
+          <View style={styles.settingsHeader}>
+            <Settings size={16} color="#00aaff" />
+            <Text style={styles.settingsTitle}>Protocol Settings</Text>
+            {!isProtocolEditable && (
+              <View style={styles.settingsLocked}>
+                <Lock size={10} color="#ff6b35" />
+                <Text style={styles.settingsLockedText}>Developer Mode Required</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Show Debug Overlay</Text>
+              <Text style={styles.settingHint}>Display FPS and timing info</Text>
+            </View>
+            <Switch
+              value={harnessSettings.showDebugOverlay}
+              onValueChange={(val) => isProtocolEditable && updateHarnessSettings({ showDebugOverlay: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={harnessSettings.showDebugOverlay ? '#ffffff' : '#888888'}
+            />
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Console Logging</Text>
+              <Text style={styles.settingHint}>Log events to console</Text>
+            </View>
+            <Switch
+              value={harnessSettings.enableConsoleLogging}
+              onValueChange={(val) => isProtocolEditable && updateHarnessSettings({ enableConsoleLogging: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={harnessSettings.enableConsoleLogging ? '#ffffff' : '#888888'}
+            />
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Benchmark Mode</Text>
+              <Text style={styles.settingHint}>Record performance metrics</Text>
+            </View>
+            <Switch
+              value={harnessSettings.recordTestResults}
+              onValueChange={(val) => isProtocolEditable && updateHarnessSettings({ recordTestResults: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={harnessSettings.recordTestResults ? '#ffffff' : '#888888'}
+            />
+          </View>
+
+          <View style={styles.settingRow}>
+            <View style={styles.settingInfo}>
+              <Text style={styles.settingLabel}>Simulate Low Bandwidth</Text>
+              <Text style={styles.settingHint}>Test under constrained conditions</Text>
+            </View>
+            <Switch
+              value={harnessSettings.simulateLowBandwidth}
+              onValueChange={(val) => isProtocolEditable && updateHarnessSettings({ simulateLowBandwidth: val })}
+              disabled={!isProtocolEditable}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+              thumbColor={harnessSettings.simulateLowBandwidth ? '#ffffff' : '#888888'}
+            />
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -262,6 +369,59 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 40,
+  },
+  protocolBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: 'rgba(138, 43, 226, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(138, 43, 226, 0.2)',
+  },
+  protocolBannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  protocolIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: 'rgba(138, 43, 226, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  protocolIconActive: {
+    backgroundColor: '#00ff88',
+  },
+  protocolBannerTitle: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  },
+  protocolBannerStatus: {
+    fontSize: 10,
+    color: '#00ff88',
+    marginTop: 2,
+    fontWeight: '500' as const,
+  },
+  benchmarkIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  benchmarkText: {
+    fontSize: 10,
+    color: '#00ff88',
+    fontWeight: '600' as const,
   },
   infoCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -353,5 +513,64 @@ const styles = StyleSheet.create({
   webView: {
     flex: 1,
     backgroundColor: 'transparent',
+  },
+  settingsCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginTop: 12,
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  settingsTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+    flex: 1,
+  },
+  settingsLocked: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  settingsLockedText: {
+    fontSize: 10,
+    color: '#ff6b35',
+    fontWeight: '500' as const,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
+  },
+  settingInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  settingLabel: {
+    fontSize: 13,
+    fontWeight: '500' as const,
+    color: '#ffffff',
+  },
+  settingHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 2,
   },
 });
