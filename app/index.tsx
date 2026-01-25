@@ -455,31 +455,6 @@ export default function MotionBrowserScreen() {
       const templateId = activeTemplate.id;
       setPendingVideoForApply(null);
       
-      const interactionHandle = InteractionManager.runAfterInteractions(() => {
-        if (!isMountedRef.current) return;
-        
-        (async () => {
-          try {
-            console.log('[VideoSim] Starting async video processing...');
-            console.log('[VideoSim] Timestamp:', new Date().toISOString());
-            await runCompatibilityCheckAndApply(videoToProcess, 'all');
-            console.log('[VideoSim] Pending video processed successfully');
-            console.log('[VideoSim] Timestamp:', new Date().toISOString());
-          } catch (error) {
-            console.error('[VideoSim] ERROR processing pending video:', error);
-            console.error('[VideoSim] Error stack:', error instanceof Error ? error.stack : 'No stack');
-            // Ensure we clean up ALL state on any error
-            setIsCheckingCompatibility(false);
-            setCompatibilityModalVisible(false);
-            setPendingSavedVideo(null);
-            setPendingApplyTarget(null);
-            isApplyingVideoRef.current = false;
-            console.log('[VideoSim] Cleaned up all state after error');
-          }
-        })();
-      });
-      
-      return () => interactionHandle.cancel();
       // Video from my-videos is ALREADY compatibility checked - apply it directly
       // without opening another modal (which causes freeze due to modal conflicts)
       console.log('[VideoSim] Video already checked in my-videos, applying directly...');
