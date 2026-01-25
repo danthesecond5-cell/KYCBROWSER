@@ -80,16 +80,16 @@ export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <DeveloperModeProvider>
-      <ProtocolProvider>
-        <DeviceTemplateProvider>
-          <VideoLibraryProvider>
-            <GestureHandlerRootView>
-              <RootLayoutNav />
-            </GestureHandlerRootView>
-          </VideoLibraryProvider>
-        </DeviceTemplateProvider>
+        <ProtocolProvider>
+          <DeviceTemplateProvider>
+            <VideoLibraryProvider>
+              <GestureHandlerRootView>
+                <RootLayoutNav />
+              </GestureHandlerRootView>
+            </VideoLibraryProvider>
+          </DeviceTemplateProvider>
+        </ProtocolProvider>
       </DeveloperModeProvider>
-      </ProtocolProvider>
     </QueryClientProvider>
   );
 }

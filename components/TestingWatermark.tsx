@@ -6,13 +6,16 @@ import {
   Animated,
   Easing,
 } from 'react-native';
-import { Shield, AlertTriangle } from 'lucide-react-native';
+import { Shield, AlertTriangle, FlaskConical, Lock } from 'lucide-react-native';
 
 interface TestingWatermarkProps {
   visible?: boolean;
-  position?: 'top' | 'bottom' | 'top-right' | 'bottom-right';
+  position?: 'top' | 'bottom' | 'top-right' | 'bottom-right' | 'fullscreen';
   showPulse?: boolean;
   variant?: 'minimal' | 'full';
+  mlSafetyEnabled?: boolean;
+  httpsEnforced?: boolean;
+  protocolName?: string;
 }
 
 const TestingWatermark = memo(function TestingWatermark({
@@ -20,6 +23,9 @@ const TestingWatermark = memo(function TestingWatermark({
   position = 'top-right',
   showPulse = true,
   variant = 'minimal',
+  mlSafetyEnabled = false,
+  httpsEnforced = false,
+  protocolName,
 }: TestingWatermarkProps) {
   const pulseAnim = useRef(new Animated.Value(0.7)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -63,7 +69,71 @@ const TestingWatermark = memo(function TestingWatermark({
 
   if (!visible) return null;
 
-  const positionStyles = {
+  // Fullscreen variant for presentation mode
+  if (position === 'fullscreen') {
+    return (
+      <View style={styles.fullscreenContainer} pointerEvents="none">
+        {/* Top Banner */}
+        <View style={styles.topBanner}>
+          <Animated.View style={[styles.bannerContent, { opacity: pulseAnim }]}>
+            <FlaskConical size={14} color="#ffcc00" />
+            <Text style={styles.bannerText}>TESTING PROTOTYPE</Text>
+            <FlaskConical size={14} color="#ffcc00" />
+          </Animated.View>
+        </View>
+
+        {/* Safety Badges */}
+        <View style={styles.safetyBadges}>
+          {httpsEnforced && (
+            <View style={styles.httpsBadge}>
+              <Lock size={10} color="#00ff88" />
+              <Text style={styles.httpsBadgeText}>HTTPS</Text>
+            </View>
+          )}
+          {mlSafetyEnabled && (
+            <View style={styles.mlSafetyBadge}>
+              <Shield size={10} color="#00aaff" />
+              <Text style={styles.mlSafetyBadgeText}>ML SAFETY</Text>
+            </View>
+          )}
+        </View>
+
+        {/* Protocol Indicator */}
+        {protocolName && (
+          <View style={styles.protocolIndicator}>
+            <Text style={styles.protocolText}>{protocolName}</Text>
+          </View>
+        )}
+
+        {/* Corner Watermarks */}
+        <View style={styles.cornerTopLeft}>
+          <Text style={styles.cornerText}>BETA</Text>
+        </View>
+        <View style={styles.cornerTopRight}>
+          <Text style={styles.cornerText}>BETA</Text>
+        </View>
+        <View style={styles.cornerBottomLeft}>
+          <Text style={styles.cornerText}>DEV</Text>
+        </View>
+        <View style={styles.cornerBottomRight}>
+          <Text style={styles.cornerText}>DEV</Text>
+        </View>
+
+        {/* Disclaimer Footer */}
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            For demonstration purposes only. Not for production use.
+          </Text>
+          <Text style={styles.footerSubtext}>
+            ML safety protocols prevent malicious use in production builds.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Regular badge variants
+  const positionStyles: Record<string, object> = {
     'top': styles.positionTop,
     'bottom': styles.positionBottom,
     'top-right': styles.positionTopRight,
@@ -109,111 +179,13 @@ const TestingWatermark = memo(function TestingWatermark({
         </View>
       )}
     </Animated.View>
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import { Shield, FlaskConical, Lock } from 'lucide-react-native';
-
-interface TestingWatermarkProps {
-  visible: boolean;
-  mlSafetyEnabled?: boolean;
-  httpsEnforced?: boolean;
-  protocolName?: string;
-}
-
-const TestingWatermark = memo(function TestingWatermark({
-  visible,
-  mlSafetyEnabled = true,
-  httpsEnforced = true,
-  protocolName,
-}: TestingWatermarkProps) {
-  const pulseAnim = useRef(new Animated.Value(0.8)).current;
-
-  useEffect(() => {
-    if (visible) {
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 0.8,
-            duration: 1500,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    }
-  }, [visible, pulseAnim]);
-
-  if (!visible) return null;
-
-  return (
-    <View style={styles.container} pointerEvents="none">
-      {/* Top Banner */}
-      <View style={styles.topBanner}>
-        <Animated.View style={[styles.bannerContent, { opacity: pulseAnim }]}>
-          <FlaskConical size={14} color="#ffcc00" />
-          <Text style={styles.bannerText}>TESTING PROTOTYPE</Text>
-          <FlaskConical size={14} color="#ffcc00" />
-        </Animated.View>
-      </View>
-
-      {/* Safety Badges */}
-      <View style={styles.safetyBadges}>
-        {httpsEnforced && (
-          <View style={styles.badge}>
-            <Lock size={10} color="#00ff88" />
-            <Text style={styles.badgeText}>HTTPS</Text>
-          </View>
-        )}
-        {mlSafetyEnabled && (
-          <View style={[styles.badge, styles.mlBadge]}>
-            <Shield size={10} color="#00aaff" />
-            <Text style={[styles.badgeText, styles.mlBadgeText]}>ML SAFETY</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Protocol Indicator */}
-      {protocolName && (
-        <View style={styles.protocolIndicator}>
-          <Text style={styles.protocolText}>{protocolName}</Text>
-        </View>
-      )}
-
-      {/* Corner Watermarks */}
-      <View style={styles.cornerTopLeft}>
-        <Text style={styles.cornerText}>BETA</Text>
-      </View>
-      <View style={styles.cornerTopRight}>
-        <Text style={styles.cornerText}>BETA</Text>
-      </View>
-      <View style={styles.cornerBottomLeft}>
-        <Text style={styles.cornerText}>DEV</Text>
-      </View>
-      <View style={styles.cornerBottomRight}>
-        <Text style={styles.cornerText}>DEV</Text>
-      </View>
-
-      {/* Disclaimer Footer */}
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          For demonstration purposes only. Not for production use.
-        </Text>
-        <Text style={styles.footerSubtext}>
-          ML safety protocols prevent malicious use in production builds.
-        </Text>
-      </View>
-    </View>
   );
 });
 
 export default TestingWatermark;
 
 const styles = StyleSheet.create({
+  // Regular badge container styles
   container: {
     position: 'absolute',
     zIndex: 9999,
@@ -238,35 +210,9 @@ const styles = StyleSheet.create({
   positionBottomRight: {
     bottom: 100,
     right: 12,
-    ...StyleSheet.absoluteFillObject,
-    zIndex: 9999,
-    justifyContent: 'space-between',
   },
-  topBanner: {
-    backgroundColor: 'rgba(255, 204, 0, 0.15)',
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 204, 0, 0.3)',
-  },
-  bannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  bannerText: {
-    color: '#ffcc00',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 2,
-  },
-  safetyBadges: {
-    position: 'absolute',
-    top: 40,
-    right: 8,
-    flexDirection: 'column',
-    gap: 4,
-  },
+  
+  // Badge styles
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -329,6 +275,43 @@ const styles = StyleSheet.create({
   securityNoteText: {
     fontSize: 8,
     color: 'rgba(255, 184, 0, 0.7)',
+  },
+
+  // Fullscreen container styles
+  fullscreenContainer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 9999,
+    justifyContent: 'space-between',
+    pointerEvents: 'none',
+  },
+  topBanner: {
+    backgroundColor: 'rgba(255, 204, 0, 0.15)',
+    paddingVertical: 6,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 204, 0, 0.3)',
+  },
+  bannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bannerText: {
+    color: '#ffcc00',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 2,
+  },
+  safetyBadges: {
+    position: 'absolute',
+    top: 40,
+    right: 8,
+    flexDirection: 'column',
+    gap: 4,
+  },
+  httpsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 4,
     backgroundColor: 'rgba(0, 255, 136, 0.15)',
     paddingHorizontal: 8,
@@ -337,18 +320,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(0, 255, 136, 0.3)',
   },
-  mlBadge: {
-    backgroundColor: 'rgba(0, 170, 255, 0.15)',
-    borderColor: 'rgba(0, 170, 255, 0.3)',
-  },
-  badgeText: {
+  httpsBadgeText: {
     color: '#00ff88',
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  mlBadgeText: {
+  mlSafetyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 170, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 170, 255, 0.3)',
+  },
+  mlSafetyBadgeText: {
     color: '#00aaff',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   protocolIndicator: {
     position: 'absolute',
