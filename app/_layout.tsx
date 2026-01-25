@@ -7,6 +7,7 @@ import { Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
+import { ProtocolProvider } from "@/contexts/ProtocolContext";
 import {
   installConsoleCapture,
   startFreezeDetection,
@@ -27,6 +28,8 @@ function RootLayoutNav() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="device-check" options={{ headerShown: false, presentation: "modal" }} />
       <Stack.Screen name="my-videos" options={{ presentation: "modal" }} />
+      <Stack.Screen name="protected-preview" options={{ presentation: "modal" }} />
+      <Stack.Screen name="test-harness" options={{ presentation: "modal" }} />
     </Stack>
   );
 }
@@ -75,13 +78,15 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <DeviceTemplateProvider>
-        <VideoLibraryProvider>
-          <GestureHandlerRootView>
-            <RootLayoutNav />
-          </GestureHandlerRootView>
-        </VideoLibraryProvider>
-      </DeviceTemplateProvider>
+      <ProtocolProvider>
+        <DeviceTemplateProvider>
+          <VideoLibraryProvider>
+            <GestureHandlerRootView>
+              <RootLayoutNav />
+            </GestureHandlerRootView>
+          </VideoLibraryProvider>
+        </DeviceTemplateProvider>
+      </ProtocolProvider>
     </QueryClientProvider>
   );
 }
