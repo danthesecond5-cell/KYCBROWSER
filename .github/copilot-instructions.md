@@ -16,10 +16,10 @@ This is a native cross-platform mobile application created with [Rork](https://r
 
 ### Core Framework
 - **React Native 0.81.5** - Cross-platform mobile development
-- **Expo ~54.0** - React Native framework extension
-- **Expo Router ~6.0** - File-based routing system
+- **Expo ~54.0.27** - React Native framework extension
+- **Expo Router ~6.0.17** - File-based routing system
 - **React 19.2.3** - UI library
-- **TypeScript 5.9.2** - Type-safe JavaScript
+- **TypeScript ~5.9.2** - Type-safe JavaScript
 
 ### State Management
 - **React Query (@tanstack/react-query)** - Server state management
@@ -35,8 +35,9 @@ This is a native cross-platform mobile application created with [Rork](https://r
 ### Development Tools
 - **Bun** - Package manager and runtime
 - **ESLint** - Code linting with expo config
-- **Jest** - Testing framework
+- **Jest** - Testing framework (via react-native preset)
 - **@testing-library/react-native** - Component testing utilities
+- **react-test-renderer** - React component testing
 
 ## Coding Guidelines
 
@@ -86,11 +87,12 @@ import type { FreezeInfo } from "@/utils/logger";
 ```
 
 ### Testing
-- Use **Jest** for unit and integration tests
+- Use **Jest** (via react-native preset) for unit and integration tests
 - Use **@testing-library/react-native** for component testing
 - Place tests in `__tests__` directory
 - Name test files with `.test.tsx` suffix
 - Write tests that are independent and can run in any order
+- Run tests with `bunx jest` (no npm test script is configured)
 
 ## Repository Structure
 
@@ -155,8 +157,10 @@ bun run lint          # Run ESLint (uses expo lint)
 
 ### Testing
 ```bash
-bun test              # Run Jest tests
+bunx jest             # Run Jest tests (no test script defined in package.json)
 ```
+
+Note: The project has Jest configured via `jest.config.js` but no `test` script in `package.json`. Use `bunx jest` directly or add a test script to package.json if needed.
 
 ### Project Commands
 - Press `i` in terminal after `bun start` to open iOS Simulator
