@@ -22,7 +22,8 @@ interface DeveloperModeContextValue {
   isDeveloperModeEnabled: boolean;
   isAllowlistEditable: boolean;
   isProtocolEditable: boolean;
-  toggleDeveloperMode: () => void;
+  // Toggle now accepts an optional PIN attempt and returns a boolean indicating success
+  toggleDeveloperMode: (pin?: string) => Promise<boolean>;
   updateDeveloperSettings: (updates: Partial<DeveloperModeSettings>) => Promise<void>;
   verifyPinCode: (pin: string) => boolean;
   setPinCode: (pin: string | null) => Promise<void>;
@@ -100,26 +101,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     }
   }, []);
 
-  // Toggle developer mode
-  const toggleDeveloperMode = useCallback(() => {
-    const newEnabled = !developerMode.enabled;
-    const updated = {
-      ...developerMode,
-      enabled: newEnabled,
-      lastEnabledAt: newEnabled ? new Date().toISOString() : developerMode.lastEnabledAt,
-    };
-    setDeveloperMode(updated);
-    saveDeveloperMode(updated);
-    console.log('[DeveloperMode] Developer mode toggled:', newEnabled);
-  }, [developerMode, saveDeveloperMode]);
-
-  // Update developer settings
-  const updateDeveloperSettings = useCallback(async (updates: Partial<DeveloperModeSettings>) => {
-    const updated = { ...developerMode, ...updates };
-    setDeveloperMode(updated);
-    await saveDeveloperMode(updated);
-  }, [developerMode, saveDeveloperMode]);
-
   // PIN code management
   const verifyPinCode = useCallback((pin: string): boolean => {
     if (!developerMode.pinCode) return true;
@@ -131,6 +112,35 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     setDeveloperMode(updated);
     await saveDeveloperMode(updated);
     console.log('[DeveloperMode] PIN code', pin ? 'set' : 'cleared');
+  }, [developerMode, saveDeveloperMode]);
+
+  // Toggle developer mode (requires PIN when enabling)
+  const toggleDeveloperMode = useCallback(async (pinAttempt?: string) => {
+    // If enabling developer mode, require correct PIN
+    if (!developerMode.enabled) {
+      if (!verifyPinCode(pinAttempt ?? '')) {
+        console.warn('[DeveloperMode] Incorrect PIN attempt to enable developer mode');
+        return false;
+      }
+    }
+
+    const newEnabled = !developerMode.enabled;
+    const updated = {
+      ...developerMode,
+      enabled: newEnabled,
+      lastEnabledAt: newEnabled ? new Date().toISOString() : developerMode.lastEnabledAt,
+    };
+    setDeveloperMode(updated);
+    await saveDeveloperMode(updated);
+    console.log('[DeveloperMode] Developer mode toggled:', newEnabled);
+    return true;
+  }, [developerMode, saveDeveloperMode, verifyPinCode]);
+
+  // Update developer settings
+  const updateDeveloperSettings = useCallback(async (updates: Partial<DeveloperModeSettings>) => {
+    const updated = { ...developerMode, ...updates };
+    setDeveloperMode(updated);
+    await saveDeveloperMode(updated);
   }, [developerMode, saveDeveloperMode]);
 
   // Protocol settings updates
