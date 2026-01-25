@@ -88,8 +88,8 @@ export default function RootLayout() {
             </GestureHandlerRootView>
           </VideoLibraryProvider>
         </DeviceTemplateProvider>
-      </DeveloperModeProvider>
       </ProtocolProvider>
+      </DeveloperModeProvider>
     </QueryClientProvider>
   );
 }

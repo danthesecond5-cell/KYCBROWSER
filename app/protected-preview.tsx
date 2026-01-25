@@ -11,13 +11,11 @@ import {
 import { Stack, router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
-import { ChevronLeft, Shield, Film, Settings, Lock } from 'lucide-react-native';
+import { ChevronLeft, Shield, Film, Settings, Lock, FlaskConical, AlertTriangle } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
-import TestingWatermark from '@/components/TestingWatermark';
-import { ChevronLeft, Shield, Film, FlaskConical, AlertTriangle } from 'lucide-react-native';
-import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
+import TestingWatermark from '@/components/TestingWatermark';
 
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -26,12 +24,10 @@ export default function ProtectedPreviewScreen() {
   const { savedVideos, isVideoReady } = useVideoLibrary();
   const { 
     developerMode, 
-    protocolSettings, 
     isProtocolEditable,
-    updateProtectedSettings 
   } = useDeveloperMode();
 
-  const protectedSettings = protocolSettings.protected;
+  const {
     protectedSettings, 
     updateProtectedSettings,
     developerModeEnabled,

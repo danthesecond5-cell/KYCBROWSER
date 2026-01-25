@@ -10,11 +10,9 @@ import {
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity } from 'lucide-react-native';
+import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity, Shield } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
-import { ChevronLeft, Monitor, Film, FlaskConical, Shield, Settings } from 'lucide-react-native';
-import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import { formatVideoUriForWebView } from '@/utils/videoServing';
 import TestingWatermark from '@/components/TestingWatermark';
@@ -124,12 +122,9 @@ export default function TestHarnessScreen() {
   const { savedVideos, isVideoReady } = useVideoLibrary();
   const { 
     developerMode, 
-    protocolSettings, 
     isProtocolEditable,
-    updateHarnessSettings 
   } = useDeveloperMode();
 
-  const harnessSettings = protocolSettings.harness;
   const {
     harnessSettings,
     updateHarnessSettings,
