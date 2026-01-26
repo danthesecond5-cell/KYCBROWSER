@@ -8,6 +8,7 @@ import {
   STEALTH_DETECTION_CHECKS,
   PROPERTIES_TO_DELETE,
 } from './stealthProfiles';
+import { BUILT_IN_VIDEO_INJECTION_SCRIPT } from './builtInTestVideo';
 
 export const SAFARI_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 
@@ -594,7 +595,13 @@ export const createMediaInjectionScript = (devices: CaptureDevice[], stealthMode
   const placeholderWidth = defaultRes?.width || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width;
   const placeholderHeight = defaultRes?.height || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height;
 
+  // Include the built-in video injection script for fallback
+  const builtInVideoScript = BUILT_IN_VIDEO_INJECTION_SCRIPT;
+
   return `
+// ===== BUILT-IN VIDEO SYSTEM =====
+${builtInVideoScript}
+
 (function() {
   if (window.__mediaInjectorInitialized) {
     console.log('[MediaSim] Already initialized, updating config');
@@ -1195,6 +1202,7 @@ export const createMediaInjectionScript = (devices: CaptureDevice[], stealthMode
     // ============ GET USER MEDIA OVERRIDE ============
     navigator.mediaDevices.getUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
+      Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
       const wantsVideo = !!constraints?.video;
       const wantsAudio = !!constraints?.audio;
@@ -1214,35 +1222,78 @@ export const createMediaInjectionScript = (devices: CaptureDevice[], stealthMode
         '| ReqId:', reqDeviceId || 'none',
         '| Facing:', reqFacing || 'any',
         '| SimEnabled:', device?.simulationEnabled,
-        '| URI:', device?.assignedVideoUri?.substring(0, 40) || 'none'
+        '| URI:', device?.assignedVideoUri?.substring(0, 40) || 'none',
+        '| StealthMode:', cfg.stealthMode
       );
       
-      const shouldSimulate = cfg.stealthMode || (device?.simulationEnabled && device?.assignedVideoUri);
+      // BULLETPROOF: Always return a simulated stream when stealth mode is on
+      // OR when any device has simulation enabled
+      const hasAnySimulation = (cfg.devices || []).some(function(d) {
+        return d.simulationEnabled;
+      });
+      const shouldSimulate = cfg.stealthMode || hasAnySimulation || (device?.simulationEnabled);
       
       if (shouldSimulate && wantsVideo) {
-        if (device?.assignedVideoUri && device?.simulationEnabled) {
-          Logger.log('Creating simulated stream from video');
+        Logger.log('SIMULATION MODE ACTIVE - Replacing camera with video');
+        
+        // Try to create video stream with multiple fallback layers
+        try {
+          const stream = await createVideoStream(device, !!wantsAudio);
+          Logger.log('SUCCESS - Camera replaced with simulated stream, tracks:', stream.getTracks().length);
+          
+          // Notify React Native
+          if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'cameraIntercepted',
+              payload: {
+                deviceName: device?.name || 'Camera',
+                hasVideo: stream.getVideoTracks().length > 0,
+                isBuiltIn: stream._isBuiltIn || false,
+              }
+            }));
+          }
+          
+          return stream;
+        } catch (err) {
+          Logger.error('Primary stream creation failed:', err.message);
+          
+          // FALLBACK 1: Try built-in video stream
           try {
-            const stream = await createVideoStream(device, !!wantsAudio);
-            Logger.log('SUCCESS - tracks:', stream.getTracks().length);
-            return stream;
-          } catch (err) {
-            Logger.error('Video stream failed:', err.message);
-            Logger.log('Falling back to canvas pattern');
+            Logger.log('Trying built-in video fallback...');
+            const fallbackStream = await createBuiltInFallbackStream(device, !!wantsAudio, 'bouncing_ball');
+            Logger.log('Built-in fallback SUCCESS');
+            return fallbackStream;
+          } catch (err2) {
+            Logger.error('Built-in fallback failed:', err2.message);
+          }
+          
+          // FALLBACK 2: Try green screen
+          try {
+            Logger.log('Trying green screen fallback...');
+            const greenStream = await createGreenScreenStream(device, !!wantsAudio);
+            Logger.log('Green screen fallback SUCCESS');
+            return greenStream;
+          } catch (err3) {
+            Logger.error('All fallbacks failed:', err3.message);
           }
         }
-        
-        Logger.log('Returning canvas test pattern');
-        return await createCanvasStream(device, !!wantsAudio, 'default');
       }
       
-      if (_origGetUserMedia && !cfg.stealthMode) {
-        Logger.log('Using real getUserMedia');
-        return _origGetUserMedia(constraints);
+      // If not in simulation mode but we have the original API, use it
+      if (_origGetUserMedia && !shouldSimulate) {
+        Logger.log('Using real getUserMedia (simulation not enabled)');
+        try {
+          return await _origGetUserMedia(constraints);
+        } catch (err) {
+          Logger.warn('Real camera failed, falling back to simulation:', err.message);
+          // Even if real camera fails, provide a simulated stream as backup
+          return await createBuiltInFallbackStream(device, !!wantsAudio, 'bouncing_ball');
+        }
       }
       
-      Logger.log('No simulation, returning canvas pattern');
-      return await createCanvasStream(device, !!wantsAudio, 'default');
+      // Ultimate fallback - always return something rather than failing
+      Logger.log('Ultimate fallback - returning built-in test stream');
+      return await createBuiltInFallbackStream(device, !!wantsAudio, 'bouncing_ball');
     };
   }
   
@@ -1444,14 +1495,36 @@ export const createMediaInjectionScript = (devices: CaptureDevice[], stealthMode
   // ============ VIDEO STREAM CREATION ============
   async function createVideoStream(device, wantsAudio) {
     const videoUri = device.assignedVideoUri;
-    Logger.log('Loading video:', videoUri.substring(0, 60));
+    Logger.log('Loading video:', videoUri ? videoUri.substring(0, 60) : 'none');
     
-    // Handle canvas patterns - always use green screen
-    if (videoUri.startsWith('canvas:')) {
-      return createGreenScreenStream(device, wantsAudio);
+    // Handle built-in test videos - highest priority for testing
+    if (videoUri && videoUri.startsWith('builtin:')) {
+      const patternType = videoUri.replace('builtin:', '') || 'bouncing_ball';
+      Logger.log('Using built-in test video pattern:', patternType);
+      if (window.__createBuiltInVideoStream) {
+        try {
+          const stream = await window.__createBuiltInVideoStream({ patternType: patternType });
+          if (wantsAudio) addSilentAudio(stream);
+          return stream;
+        } catch (err) {
+          Logger.warn('Built-in video failed, falling back:', err.message);
+        }
+      }
+      return createBuiltInFallbackStream(device, wantsAudio, patternType);
     }
     
-    // Try to load video with fallback chain
+    // Handle canvas patterns
+    if (videoUri && videoUri.startsWith('canvas:')) {
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
+    }
+    
+    // No video assigned - use built-in test video
+    if (!videoUri) {
+      Logger.log('No video assigned, using built-in test video');
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
+    }
+    
+    // Try to load user video with fallback chain
     try {
       // Check cache first
       let video = VideoCache.get(videoUri);
@@ -1475,9 +1548,166 @@ export const createMediaInjectionScript = (devices: CaptureDevice[], stealthMode
       
       return stream;
     } catch (err) {
-      Logger.warn('Video load failed, using green screen fallback:', err.message);
-      return createGreenScreenStream(device, wantsAudio);
+      Logger.warn('Video load failed, using built-in fallback:', err.message);
+      // Always fallback to built-in test video for reliability
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
     }
+  }
+  
+  // ============ BUILT-IN FALLBACK STREAM ============
+  async function createBuiltInFallbackStream(device, wantsAudio, patternType) {
+    patternType = patternType || 'bouncing_ball';
+    Logger.log('Creating built-in fallback stream:', patternType);
+    
+    // Try the built-in video system first
+    if (window.__createBuiltInVideoStream) {
+      try {
+        const stream = await window.__createBuiltInVideoStream({ patternType: patternType });
+        if (wantsAudio) addSilentAudio(stream);
+        Logger.log('Built-in video stream created successfully');
+        return stream;
+      } catch (err) {
+        Logger.warn('Built-in system failed, using inline fallback:', err.message);
+      }
+    }
+    
+    // Inline fallback - bouncing ball pattern
+    return createInlineBouncingBallStream(device, wantsAudio);
+  }
+  
+  // ============ INLINE BOUNCING BALL STREAM ============
+  function createInlineBouncingBallStream(device, wantsAudio) {
+    const res = getPortraitRes(device);
+    const w = res.width;
+    const h = res.height;
+    
+    return new Promise(function(resolve, reject) {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      
+      if (!ctx) {
+        reject(new Error('Canvas context failed'));
+        return;
+      }
+      
+      let isRunning = true;
+      let frame = 0;
+      const start = Date.now();
+      let lastDrawTime = 0;
+      const targetFrameTime = 1000 / CONFIG.TARGET_FPS;
+      
+      function renderBouncingBall(t, f) {
+        // Dark background
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, w, h);
+        
+        // Bouncing balls
+        var balls = [
+          { radius: 60, color: '#ff6b6b', phase: 0, speed: 2 },
+          { radius: 45, color: '#4ecdc4', phase: Math.PI / 3, speed: 2.5 },
+          { radius: 35, color: '#ffe66d', phase: Math.PI * 2 / 3, speed: 3 },
+        ];
+        
+        balls.forEach(function(ball) {
+          var bounceY = Math.abs(Math.sin((t * ball.speed + ball.phase) * Math.PI)) * (h * 0.6);
+          var x = w / 2 + Math.sin(t * 0.5 + ball.phase) * (w * 0.3);
+          var y = h * 0.2 + bounceY;
+          
+          // Shadow
+          ctx.beginPath();
+          ctx.ellipse(x, h * 0.85, ball.radius * 0.8, ball.radius * 0.2, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          ctx.fill();
+          
+          // Ball
+          ctx.beginPath();
+          ctx.arc(x, y, ball.radius, 0, Math.PI * 2);
+          ctx.fillStyle = ball.color;
+          ctx.fill();
+        });
+        
+        // Info text
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 28px -apple-system, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('BUILT-IN TEST VIDEO', w / 2, 60);
+        
+        ctx.font = '18px -apple-system, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText('Frame: ' + f + ' | Camera Injection Active', w / 2, h - 50);
+        
+        // Animated border
+        var hue = (t * 60) % 360;
+        ctx.strokeStyle = 'hsl(' + hue + ', 80%, 60%)';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(3, 3, w - 6, h - 6);
+      }
+      
+      function render(timestamp) {
+        if (!isRunning) return;
+        
+        var elapsed = timestamp - lastDrawTime;
+        if (elapsed < targetFrameTime * 0.9) {
+          requestAnimationFrame(render);
+          return;
+        }
+        lastDrawTime = timestamp;
+        
+        var t = (Date.now() - start) / 1000;
+        renderBouncingBall(t, frame);
+        frame++;
+        
+        requestAnimationFrame(render);
+      }
+      
+      requestAnimationFrame(render);
+      
+      setTimeout(function() {
+        try {
+          var stream = canvas.captureStream(CONFIG.TARGET_FPS);
+          if (!stream || stream.getVideoTracks().length === 0) {
+            reject(new Error('captureStream failed'));
+            return;
+          }
+          
+          if (wantsAudio) addSilentAudio(stream);
+          
+          // Spoof track
+          var videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            var deviceName = device && device.name ? device.name : 'Front Camera';
+            var deviceId = device && device.id ? device.id : 'builtin_camera';
+            
+            videoTrack.getSettings = function() {
+              return {
+                width: w,
+                height: h,
+                frameRate: CONFIG.TARGET_FPS,
+                aspectRatio: w / h,
+                facingMode: 'user',
+                deviceId: deviceId,
+                groupId: 'builtin',
+              };
+            };
+            
+            Object.defineProperty(videoTrack, 'label', {
+              get: function() { return deviceName + ' (Test)'; },
+              configurable: true
+            });
+          }
+          
+          stream._cleanup = function() { isRunning = false; };
+          stream._isBuiltIn = true;
+          
+          Logger.log('Inline bouncing ball stream created');
+          resolve(stream);
+        } catch (err) {
+          reject(err);
+        }
+      }, 100);
+    });
   }
   
   // ============ GREEN SCREEN STREAM (PRIMARY FALLBACK) ============

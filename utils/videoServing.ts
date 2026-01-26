@@ -4,10 +4,25 @@ import type { SavedVideo } from './videoManager';
 export interface VideoServingConfig {
   uri: string;
   isLocal: boolean;
+  isBuiltIn: boolean;
   mimeType: string;
   requiresDownload: boolean;
   warningMessage?: string;
 }
+
+/**
+ * Check if a URI is a built-in test video
+ */
+export const isBuiltInVideoUri = (uri: string): boolean => {
+  return uri.startsWith('builtin:');
+};
+
+/**
+ * Check if a URI is a canvas-generated pattern
+ */
+export const isCanvasPatternUri = (uri: string): boolean => {
+  return uri.startsWith('canvas:');
+};
 
 const VIDEO_MIME_TYPES: Record<string, string> = {
   mp4: 'video/mp4',
@@ -53,6 +68,30 @@ export const isKnownCorsBlockingSite = (url: string): boolean => {
 };
 
 export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig => {
+  // Handle built-in videos - always ready, no download needed
+  if (isBuiltInVideoUri(video.uri)) {
+    console.log('[VideoServing] Built-in video ready for simulation:', video.name);
+    return {
+      uri: video.uri,
+      isLocal: false,
+      isBuiltIn: true,
+      mimeType: 'video/mp4',
+      requiresDownload: false,
+    };
+  }
+  
+  // Handle canvas patterns - always ready, no download needed
+  if (isCanvasPatternUri(video.uri)) {
+    console.log('[VideoServing] Canvas pattern ready for simulation:', video.name);
+    return {
+      uri: video.uri,
+      isLocal: false,
+      isBuiltIn: true,
+      mimeType: 'video/mp4',
+      requiresDownload: false,
+    };
+  }
+  
   const isLocal = isLocalFileUri(video.uri);
   const mimeType = getVideoMimeType(video.uri);
   
@@ -61,6 +100,7 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
     return {
       uri: video.uri,
       isLocal: true,
+      isBuiltIn: false,
       mimeType,
       requiresDownload: false,
     };
@@ -71,6 +111,7 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
     return {
       uri: video.uri,
       isLocal: false,
+      isBuiltIn: false,
       mimeType,
       requiresDownload: true,
       warningMessage: 'This video source may be blocked by CORS. Download it locally for reliable playback.',
@@ -80,12 +121,35 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
   return {
     uri: video.uri,
     isLocal: false,
+    isBuiltIn: false,
     mimeType,
     requiresDownload: !isLocal,
   };
 };
 
 export const prepareUriForSimulation = (uri: string): VideoServingConfig => {
+  // Handle built-in videos
+  if (isBuiltInVideoUri(uri)) {
+    return {
+      uri,
+      isLocal: false,
+      isBuiltIn: true,
+      mimeType: 'video/mp4',
+      requiresDownload: false,
+    };
+  }
+  
+  // Handle canvas patterns
+  if (isCanvasPatternUri(uri)) {
+    return {
+      uri,
+      isLocal: false,
+      isBuiltIn: true,
+      mimeType: 'video/mp4',
+      requiresDownload: false,
+    };
+  }
+  
   const isLocal = isLocalFileUri(uri);
   const mimeType = getVideoMimeType(uri);
   
@@ -93,6 +157,7 @@ export const prepareUriForSimulation = (uri: string): VideoServingConfig => {
     return {
       uri,
       isLocal: true,
+      isBuiltIn: false,
       mimeType,
       requiresDownload: false,
     };
@@ -102,6 +167,7 @@ export const prepareUriForSimulation = (uri: string): VideoServingConfig => {
     return {
       uri,
       isLocal: false,
+      isBuiltIn: false,
       mimeType,
       requiresDownload: true,
       warningMessage: 'External URLs from this site are often blocked. Download the video locally for reliable playback.',
@@ -111,6 +177,7 @@ export const prepareUriForSimulation = (uri: string): VideoServingConfig => {
   return {
     uri,
     isLocal: false,
+    isBuiltIn: false,
     mimeType,
     requiresDownload: isExternalUrl(uri),
     warningMessage: isExternalUrl(uri) 
@@ -141,7 +208,13 @@ export const validateVideoForWebView = (uri: string): { valid: boolean; message?
     return { valid: false, message: 'No video URL provided' };
   }
   
-  if (uri.startsWith('canvas:')) {
+  // Built-in videos are always valid
+  if (isBuiltInVideoUri(uri)) {
+    return { valid: true, message: 'Built-in test video - always available' };
+  }
+  
+  // Canvas patterns are always valid
+  if (isCanvasPatternUri(uri)) {
     return { valid: true };
   }
   
@@ -177,6 +250,12 @@ export const validateVideoForWebView = (uri: string): { valid: boolean; message?
 };
 
 export const formatVideoUriForWebView = (uri: string): string => {
+  // Built-in and canvas URIs should be passed through unchanged
+  // They are handled directly by the injection script
+  if (isBuiltInVideoUri(uri) || isCanvasPatternUri(uri)) {
+    return uri;
+  }
+  
   if (Platform.OS === 'web') {
     return uri;
   }
@@ -192,7 +271,31 @@ export const formatVideoUriForWebView = (uri: string): string => {
   return uri;
 };
 
-export const getRecommendedAction = (uri: string): 'use_directly' | 'download_first' | 'upload_local' => {
+/**
+ * Get the default fallback video URI (built-in bouncing ball)
+ * This is used when no video is assigned or all loading fails
+ */
+export const getDefaultFallbackVideoUri = (): string => {
+  return 'builtin:bouncing_ball';
+};
+
+/**
+ * Get available built-in video patterns
+ */
+export const getBuiltInVideoPatterns = (): Array<{ id: string; name: string; uri: string }> => {
+  return [
+    { id: 'bouncing_ball', name: 'Bouncing Balls', uri: 'builtin:bouncing_ball' },
+    { id: 'color_bars', name: 'SMPTE Color Bars', uri: 'builtin:color_bars' },
+    { id: 'gradient_wave', name: 'Gradient Wave', uri: 'builtin:gradient_wave' },
+  ];
+};
+
+export const getRecommendedAction = (uri: string): 'use_directly' | 'download_first' | 'upload_local' | 'use_builtin' => {
+  // Built-in videos can always be used directly
+  if (isBuiltInVideoUri(uri) || isCanvasPatternUri(uri)) {
+    return 'use_directly';
+  }
+  
   if (isLocalFileUri(uri)) {
     return 'use_directly';
   }
@@ -206,4 +309,11 @@ export const getRecommendedAction = (uri: string): 'use_directly' | 'download_fi
   }
   
   return 'upload_local';
+};
+
+/**
+ * Check if a video is guaranteed to work (built-in or local)
+ */
+export const isVideoGuaranteedToWork = (uri: string): boolean => {
+  return isBuiltInVideoUri(uri) || isCanvasPatternUri(uri) || isLocalFileUri(uri);
 };

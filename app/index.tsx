@@ -35,7 +35,7 @@ import {
   createMediaInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
-import { formatVideoUriForWebView } from '@/utils/videoServing';
+import { formatVideoUriForWebView, getDefaultFallbackVideoUri } from '@/utils/videoServing';
 import { APP_CONFIG } from '@/constants/app';
 import type { SimulationConfig } from '@/types/browser';
 import BrowserHeader from '@/components/browser/BrowserHeader';
@@ -524,13 +524,20 @@ export default function MotionBrowserScreen() {
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
   const getBeforeLoadScript = useCallback(() => {
+    // Ensure all devices have a video URI - use built-in fallback if none assigned
     const devices = (activeTemplate?.captureDevices || []).map(d => {
-      if (!d.assignedVideoUri) return d;
+      const videoUri = d.assignedVideoUri 
+        ? formatVideoUriForWebView(d.assignedVideoUri)
+        : (d.simulationEnabled ? getDefaultFallbackVideoUri() : undefined);
+      
       return {
         ...d,
-        assignedVideoUri: formatVideoUriForWebView(d.assignedVideoUri),
+        assignedVideoUri: videoUri,
+        // If no video assigned but simulation is enabled, use built-in
+        simulationEnabled: d.simulationEnabled || (effectiveStealthMode && d.type === 'camera'),
       };
     });
+    
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = !allowlistEnabled || isAllowlisted;
     const script =
@@ -539,6 +546,7 @@ export default function MotionBrowserScreen() {
       (shouldInjectMedia ? createMediaInjectionScript(devices, effectiveStealthMode) : '') +
       VIDEO_SIMULATION_TEST_SCRIPT;
     console.log('[App] Preparing before-load script with', devices.length, 'devices, stealth:', effectiveStealthMode, 'allowlisted:', shouldInjectMedia);
+    console.log('[App] Devices with videos:', devices.filter(d => d.assignedVideoUri).length);
     return script;
   }, [activeTemplate, safariModeEnabled, effectiveStealthMode, allowlistEnabled, isAllowlisted]);
 
