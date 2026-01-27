@@ -1,4 +1,11 @@
 import { Platform } from 'react-native';
+import {
+  isBase64VideoUri,
+  isBlobUri,
+  validateBase64Video,
+  getMimeTypeFromDataUri,
+  getFormatFromMimeType,
+} from './base64VideoHandler';
 
 export interface VideoValidationConfig {
   maxDurationSeconds: number;
@@ -24,6 +31,7 @@ export interface VideoMetadata {
   bitrate?: number;
   isPortrait?: boolean;
   aspectRatio?: string;
+  isBase64?: boolean;
 }
 
 export interface VideoValidationResult {
@@ -53,7 +61,8 @@ export type VideoErrorCode =
   | 'UNSUPPORTED_CODEC'
   | 'NETWORK_ERROR'
   | 'WRONG_ORIENTATION'
-  | 'WRONG_ASPECT_RATIO';
+  | 'WRONG_ASPECT_RATIO'
+  | 'INVALID_BASE64';
 
 export const DEFAULT_VALIDATION_CONFIG: VideoValidationConfig = {
   maxDurationSeconds: 120,
@@ -154,9 +163,27 @@ export function getVideoErrorSolution(errorCode?: number, context?: string): Vid
 
 
 
+/**
+ * Check if a URL is a valid video URL (supports http(s), data URIs, and blob URLs)
+ */
 export function isValidVideoUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  
+  const trimmedUrl = url.trim();
+  
+  // Base64 data URIs are valid
+  if (isBase64VideoUri(trimmedUrl)) {
+    return true;
+  }
+  
+  // Blob URLs are valid
+  if (isBlobUri(trimmedUrl)) {
+    return true;
+  }
+  
+  // Standard HTTP(S) URLs
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(trimmedUrl);
     return parsed.protocol === 'https:' || parsed.protocol === 'http:';
   } catch {
     return false;
@@ -164,6 +191,17 @@ export function isValidVideoUrl(url: string): boolean {
 }
 
 export function getVideoFormatFromUrl(url: string): string | null {
+  // Handle base64 data URIs
+  if (isBase64VideoUri(url)) {
+    const mimeType = getMimeTypeFromDataUri(url);
+    return getFormatFromMimeType(mimeType);
+  }
+  
+  // Handle blob URLs (assume mp4 as default)
+  if (isBlobUri(url)) {
+    return 'mp4';
+  }
+  
   try {
     const parsed = new URL(url);
     const pathname = parsed.pathname.toLowerCase();
@@ -341,6 +379,17 @@ export async function fetchVideoHeaders(url: string): Promise<{
 }
 
 export function extractVideoExtension(url: string): string | null {
+  // Handle base64 data URIs
+  if (isBase64VideoUri(url)) {
+    const mimeType = getMimeTypeFromDataUri(url);
+    return getFormatFromMimeType(mimeType);
+  }
+  
+  // Handle blob URLs
+  if (isBlobUri(url)) {
+    return 'mp4'; // Default for blob URLs
+  }
+  
   try {
     const parsed = new URL(url);
     const pathname = parsed.pathname.toLowerCase();
@@ -364,7 +413,7 @@ export async function validateVideoUrl(
   url: string,
   config: VideoValidationConfig = DEFAULT_VALIDATION_CONFIG
 ): Promise<VideoValidationResult> {
-  console.log('[VideoValidation] Starting URL validation for:', url);
+  console.log('[VideoValidation] Starting URL validation for:', url?.substring(0, 100));
   
   const warnings: string[] = [];
   
@@ -393,13 +442,74 @@ export async function validateVideoUrl(
     };
   }
   
+  // Handle base64 data URIs
+  if (isBase64VideoUri(trimmedUrl)) {
+    console.log('[VideoValidation] Base64 video data URI detected');
+    const base64Validation = validateBase64Video(trimmedUrl);
+    
+    if (!base64Validation.isValid) {
+      return {
+        isValid: false,
+        errors: [{
+          code: 'INVALID_BASE64',
+          message: 'Invalid base64 video data',
+          details: base64Validation.error || 'The base64 video data is malformed or corrupted',
+        }],
+        warnings,
+        metadata: null,
+      };
+    }
+    
+    const format = getFormatFromMimeType(base64Validation.mimeType);
+    const fileSizeMB = base64Validation.estimatedSizeBytes / (1024 * 1024);
+    
+    if (fileSizeMB > config.maxFileSizeMB) {
+      warnings.push(`Large video detected (${fileSizeMB.toFixed(1)}MB). Processing may take longer.`);
+    }
+    
+    if (base64Validation.isLargeFile) {
+      warnings.push('Very large base64 video. Consider using a file URL for better performance.');
+    }
+    
+    return {
+      isValid: true,
+      errors: [],
+      warnings: [`Base64 video format: ${format.toUpperCase()}`, ...warnings],
+      metadata: {
+        width: 0,
+        height: 0,
+        duration: 0,
+        fileSize: base64Validation.estimatedSizeBytes,
+        format,
+        isBase64: true,
+      },
+    };
+  }
+  
+  // Handle blob URLs
+  if (isBlobUri(trimmedUrl)) {
+    console.log('[VideoValidation] Blob URL detected - valid');
+    return {
+      isValid: true,
+      errors: [],
+      warnings: ['Blob URL video'],
+      metadata: {
+        width: 0,
+        height: 0,
+        duration: 0,
+        fileSize: 0,
+        format: 'mp4',
+      },
+    };
+  }
+  
   if (!isValidVideoUrl(trimmedUrl)) {
     return { 
       isValid: false, 
       errors: [{
         code: 'INVALID_URL',
         message: 'Invalid video URL format',
-        details: 'URL must start with http:// or https://',
+        details: 'URL must start with http://, https://, data:video/, or blob:',
         currentValue: trimmedUrl.substring(0, 50),
       }], 
       warnings, 

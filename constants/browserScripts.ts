@@ -977,6 +977,18 @@ export const createMediaInjectionScript = (
           message: 'Video loading timed out',
           solution: 'The video may be too large or server is slow. Try uploading from your device instead.',
         },
+        'BASE64_DECODE_ERROR': {
+          message: 'Base64 video data could not be decoded',
+          solution: 'The base64 video data may be corrupted or truncated. Ensure the complete base64 string is provided.',
+        },
+        'BASE64_FORMAT_ERROR': {
+          message: 'Base64 video format not supported',
+          solution: 'Use MP4 (H.264) or WebM (VP8/VP9) format. The video may need to be re-encoded.',
+        },
+        'BLOB_EXPIRED': {
+          message: 'Blob URL has expired',
+          solution: 'The blob URL is no longer valid. Try re-processing the video.',
+        },
         'UNKNOWN': {
           message: 'Unknown error occurred',
           solution: 'Try uploading the video from your device instead',
@@ -985,7 +997,9 @@ export const createMediaInjectionScript = (
       
       let errorType = 'UNKNOWN';
       
-      // Check if this is an external URL that likely has CORS issues
+      // Check URL type
+      const isBase64Uri = videoUrl && videoUrl.startsWith && videoUrl.startsWith('data:');
+      const isBlobUri = videoUrl && videoUrl.startsWith && videoUrl.startsWith('blob:');
       const isExternalUrl = videoUrl && (videoUrl.startsWith('http://') || videoUrl.startsWith('https://'));
       const isKnownBlockingSite = videoUrl && (
         videoUrl.includes('imgur.com') ||
@@ -997,10 +1011,21 @@ export const createMediaInjectionScript = (
         switch(error.code) {
           case 1: errorType = 'MEDIA_ERR_ABORTED'; break;
           case 2: errorType = 'MEDIA_ERR_NETWORK'; break;
-          case 3: errorType = 'MEDIA_ERR_DECODE'; break;
+          case 3: 
+            // Decode error for base64/blob might have different cause
+            if (isBase64Uri) {
+              errorType = 'BASE64_FORMAT_ERROR';
+            } else {
+              errorType = 'MEDIA_ERR_DECODE';
+            }
+            break;
           case 4: 
-            // Error code 4 often means CORS blocked, not actually unsupported format
-            if (isKnownBlockingSite) {
+            // Error code 4 - check source type
+            if (isBase64Uri) {
+              errorType = 'BASE64_DECODE_ERROR';
+            } else if (isBlobUri) {
+              errorType = 'BLOB_EXPIRED';
+            } else if (isKnownBlockingSite) {
               errorType = 'EXTERNAL_URL_BLOCKED';
             } else if (isExternalUrl) {
               errorType = 'CORS_BLOCKED';
@@ -1013,6 +1038,10 @@ export const createMediaInjectionScript = (
         errorType = isKnownBlockingSite ? 'EXTERNAL_URL_BLOCKED' : 'CORS_BLOCKED';
       } else if (context === 'timeout') {
         errorType = 'TIMEOUT';
+      } else if (context === 'base64') {
+        errorType = 'BASE64_DECODE_ERROR';
+      } else if (context === 'blob') {
+        errorType = 'BLOB_EXPIRED';
       } else if (isExternalUrl) {
         // Default to CORS blocked for external URLs with unknown errors
         errorType = isKnownBlockingSite ? 'EXTERNAL_URL_BLOCKED' : 'CORS_BLOCKED';
@@ -1024,11 +1053,17 @@ export const createMediaInjectionScript = (
     
     notifyRN: function(errorInfo, videoUrl) {
       if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        // Truncate long URLs (like base64) for logging
+        const displayUrl = videoUrl && videoUrl.length > 100 
+          ? videoUrl.substring(0, 50) + '...[truncated]...' + videoUrl.substring(videoUrl.length - 20)
+          : videoUrl;
         window.ReactNativeWebView.postMessage(JSON.stringify({
           type: 'videoError',
           payload: {
             error: errorInfo,
-            url: videoUrl,
+            url: displayUrl,
+            urlType: videoUrl && videoUrl.startsWith('data:') ? 'base64' : 
+                     videoUrl && videoUrl.startsWith('blob:') ? 'blob' : 'url',
             metrics: Metrics.getSummary()
           }
         }));
@@ -1411,9 +1446,92 @@ export const createMediaInjectionScript = (
   }
   
   // ============ VIDEO LOADING WITH RETRY ============
+  
+  // Helper to check if URI is a base64 data URI
+  function isBase64VideoUri(uri) {
+    if (!uri || typeof uri !== 'string') return false;
+    const patterns = [
+      'data:video/mp4;base64,',
+      'data:video/webm;base64,',
+      'data:video/quicktime;base64,',
+      'data:video/x-m4v;base64,',
+      'data:video/avi;base64,',
+      'data:video/mov;base64,',
+      'data:video/3gpp;base64,',
+      'data:application/octet-stream;base64,'
+    ];
+    const trimmed = uri.trim();
+    return patterns.some(function(p) { return trimmed.startsWith(p); }) ||
+           (trimmed.startsWith('data:video/') && trimmed.includes(';base64,'));
+  }
+  
+  // Helper to check if URI is a blob URL
+  function isBlobUri(uri) {
+    if (!uri || typeof uri !== 'string') return false;
+    return uri.trim().startsWith('blob:');
+  }
+  
+  // Load base64 video directly (no CORS needed)
+  async function loadBase64Video(videoUri, timeout) {
+    Logger.log('Loading base64 video data URI (length:', videoUri.length, ')');
+    notifyLoadingProgress(0.1, 'initializing', 'Processing base64 video data...');
+    
+    try {
+      Metrics.startVideoLoad();
+      const video = await loadVideoElement(videoUri, null, timeout);
+      Metrics.endVideoLoad(true);
+      notifyLoadingProgress(1, 'complete', 'Base64 video loaded successfully');
+      return video;
+    } catch (err) {
+      Metrics.endVideoLoad(false);
+      Logger.error('Base64 video load failed:', err.message);
+      
+      ErrorHandler.notifyRN({
+        message: 'Base64 video failed to load',
+        solution: 'The base64 video data may be corrupted or in an unsupported format. Try using MP4 (H.264) format.'
+      }, 'base64:...');
+      notifyLoadingProgress(0, 'error', 'Base64 video decode failed');
+      throw err;
+    }
+  }
+  
+  // Load blob URL directly (no CORS needed)
+  async function loadBlobVideo(videoUri, timeout) {
+    Logger.log('Loading blob video URL');
+    notifyLoadingProgress(0.1, 'initializing', 'Loading blob video...');
+    
+    try {
+      Metrics.startVideoLoad();
+      const video = await loadVideoElement(videoUri, null, timeout);
+      Metrics.endVideoLoad(true);
+      notifyLoadingProgress(1, 'complete', 'Blob video loaded successfully');
+      return video;
+    } catch (err) {
+      Metrics.endVideoLoad(false);
+      Logger.error('Blob video load failed:', err.message);
+      
+      ErrorHandler.notifyRN({
+        message: 'Blob video failed to load',
+        solution: 'The blob URL may have expired. Try re-processing the video.'
+      }, videoUri);
+      notifyLoadingProgress(0, 'error', 'Blob video load failed');
+      throw err;
+    }
+  }
+  
   async function loadVideoWithRetry(videoUri, maxAttempts) {
     maxAttempts = maxAttempts || CONFIG.MAX_RETRY_ATTEMPTS;
     let lastError = null;
+    
+    // Handle base64 data URIs directly (no CORS needed)
+    if (isBase64VideoUri(videoUri)) {
+      return loadBase64Video(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT * 2); // Extra timeout for large base64
+    }
+    
+    // Handle blob URLs directly (no CORS needed)
+    if (isBlobUri(videoUri)) {
+      return loadBlobVideo(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT);
+    }
     
     // Check connection quality first
     await ConnectionQuality.check();

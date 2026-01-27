@@ -1,11 +1,18 @@
 import { Platform } from 'react-native';
 import type { SavedVideo } from './videoManager';
+import {
+  isBase64VideoUri,
+  isBlobUri,
+  getMimeTypeFromDataUri,
+} from './base64VideoHandler';
 
 export interface VideoServingConfig {
   uri: string;
   isLocal: boolean;
   mimeType: string;
   requiresDownload: boolean;
+  isBase64?: boolean;
+  isBlob?: boolean;
   warningMessage?: string;
 }
 
@@ -20,6 +27,17 @@ const VIDEO_MIME_TYPES: Record<string, string> = {
 };
 
 export const getVideoMimeType = (uri: string): string => {
+  // Handle base64 data URIs
+  if (isBase64VideoUri(uri)) {
+    const mimeType = getMimeTypeFromDataUri(uri);
+    return mimeType || 'video/mp4';
+  }
+  
+  // Handle blob URLs (default to mp4)
+  if (isBlobUri(uri)) {
+    return 'video/mp4';
+  }
+  
   const extension = uri.split('.').pop()?.toLowerCase()?.split('?')[0] || 'mp4';
   return VIDEO_MIME_TYPES[extension] || 'video/mp4';
 };
@@ -39,6 +57,11 @@ export const isExternalUrl = (uri: string): boolean => {
   return uri.startsWith('http://') || uri.startsWith('https://');
 };
 
+/**
+ * Check if the URI is a base64 video data URI
+ */
+export { isBase64VideoUri, isBlobUri } from './base64VideoHandler';
+
 export const isKnownCorsBlockingSite = (url: string): boolean => {
   const blockingSites = [
     'imgur.com',
@@ -53,13 +76,39 @@ export const isKnownCorsBlockingSite = (url: string): boolean => {
 };
 
 export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig => {
-  const isLocal = isLocalFileUri(video.uri);
-  const mimeType = getVideoMimeType(video.uri);
+  const uri = video.uri;
+  const mimeType = getVideoMimeType(uri);
+  
+  // Handle base64 data URIs
+  if (isBase64VideoUri(uri)) {
+    console.log('[VideoServing] Base64 video ready for simulation:', video.name);
+    return {
+      uri,
+      isLocal: true,
+      isBase64: true,
+      mimeType,
+      requiresDownload: false,
+    };
+  }
+  
+  // Handle blob URLs
+  if (isBlobUri(uri)) {
+    console.log('[VideoServing] Blob video ready for simulation:', video.name);
+    return {
+      uri,
+      isLocal: true,
+      isBlob: true,
+      mimeType,
+      requiresDownload: false,
+    };
+  }
+  
+  const isLocal = isLocalFileUri(uri);
   
   if (isLocal) {
     console.log('[VideoServing] Local video ready for simulation:', video.name);
     return {
-      uri: video.uri,
+      uri,
       isLocal: true,
       mimeType,
       requiresDownload: false,
@@ -69,7 +118,7 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
   if (video.sourceUrl && isKnownCorsBlockingSite(video.sourceUrl)) {
     console.log('[VideoServing] Known CORS blocking site detected:', video.sourceUrl);
     return {
-      uri: video.uri,
+      uri,
       isLocal: false,
       mimeType,
       requiresDownload: true,
@@ -78,7 +127,7 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
   }
   
   return {
-    uri: video.uri,
+    uri,
     isLocal: false,
     mimeType,
     requiresDownload: !isLocal,
@@ -86,8 +135,31 @@ export const prepareVideoForSimulation = (video: SavedVideo): VideoServingConfig
 };
 
 export const prepareUriForSimulation = (uri: string): VideoServingConfig => {
-  const isLocal = isLocalFileUri(uri);
   const mimeType = getVideoMimeType(uri);
+  
+  // Handle base64 data URIs
+  if (isBase64VideoUri(uri)) {
+    return {
+      uri,
+      isLocal: true,
+      isBase64: true,
+      mimeType,
+      requiresDownload: false,
+    };
+  }
+  
+  // Handle blob URLs
+  if (isBlobUri(uri)) {
+    return {
+      uri,
+      isLocal: true,
+      isBlob: true,
+      mimeType,
+      requiresDownload: false,
+    };
+  }
+  
+  const isLocal = isLocalFileUri(uri);
   
   if (isLocal) {
     return {
@@ -145,6 +217,16 @@ export const validateVideoForWebView = (uri: string): { valid: boolean; message?
     return { valid: true };
   }
   
+  // Base64 data URIs are valid
+  if (isBase64VideoUri(uri)) {
+    return { valid: true };
+  }
+  
+  // Blob URLs are valid
+  if (isBlobUri(uri)) {
+    return { valid: true };
+  }
+  
   const isLocal = isLocalFileUri(uri);
   if (isLocal) {
     return { valid: true };
@@ -181,6 +263,16 @@ export const formatVideoUriForWebView = (uri: string): string => {
     return uri;
   }
   
+  // Base64 data URIs should be passed through as-is
+  if (isBase64VideoUri(uri)) {
+    return uri;
+  }
+  
+  // Blob URLs should be passed through as-is
+  if (isBlobUri(uri)) {
+    return uri;
+  }
+  
   if (uri.startsWith('file://')) {
     return uri;
   }
@@ -193,6 +285,11 @@ export const formatVideoUriForWebView = (uri: string): string => {
 };
 
 export const getRecommendedAction = (uri: string): 'use_directly' | 'download_first' | 'upload_local' => {
+  // Base64 and blob URIs can be used directly
+  if (isBase64VideoUri(uri) || isBlobUri(uri)) {
+    return 'use_directly';
+  }
+  
   if (isLocalFileUri(uri)) {
     return 'use_directly';
   }
