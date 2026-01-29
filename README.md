@@ -101,6 +101,39 @@ bun run start -- --ios
 bun run start -- --android
 ```
 
+### **Sideload to a real iPhone (IPA)**
+
+If you want a standalone build that installs on a device (without Expo Go), you can sideload an IPA.
+Make sure the iOS bundle identifier in `app.json` is unique to your Apple account.
+
+#### Option A: EAS build (signed IPA, recommended with a paid Apple Developer account)
+
+```bash
+# Install EAS CLI
+bun i -g @expo/eas-cli
+
+# Build a signed IPA for sideloading
+eas build --profile sideload --platform ios
+```
+
+Download the IPA from the EAS build page and install it with AltStore, Sideloadly,
+Apple Configurator, or your MDM. Ad-hoc builds require your device UDID to be
+registered in your Apple Developer account.
+
+#### Option B: Local Xcode build (works with a free Apple ID)
+
+```bash
+# Install dependencies
+bun i
+
+# Generate the native iOS project (kept out of git)
+bunx expo prebuild --platform ios
+```
+
+Open `ios/*.xcworkspace` in Xcode, select your personal team for signing,
+then use **Product > Archive** to export a Development IPA. Install the IPA
+with AltStore or Sideloadly.
+
 ## How can I deploy this project?
 
 ### **Publish to App Store (iOS)**
