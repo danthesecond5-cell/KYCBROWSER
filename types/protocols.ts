@@ -25,13 +25,22 @@ export interface StandardInjectionSettings {
   loggingLevel: 'none' | 'minimal' | 'verbose';
 }
 
-// Protocol 2: Allowlist Mode Settings  
-export interface AllowlistSettings {
+// Protocol 2: Holographic Stream Injection (HSI)
+export interface HolographicSettings {
   enabled: boolean;
-  domains: string[];
-  blockByDefault: boolean;
-  showBlockedNotification: boolean;
-  autoAddCurrentSite: boolean;
+  // Network Layer
+  useWebSocketBridge: boolean;
+  bridgePort: number;
+  latencyMode: 'ultra-low' | 'balanced' | 'quality';
+  
+  // Stream Synthesis
+  canvasResolution: '720p' | '1080p' | '4k';
+  frameRate: 30 | 60;
+  noiseInjectionLevel: number; // 0-1.0, adds sensor noise to bypass "too clean" checks
+  
+  // SDP Mutation
+  sdpMasquerade: boolean; // Rewrites SDP to look like hardware encoder
+  emulatedDevice: 'iphone-front' | 'webcam-c920' | 'obs-virtual';
 }
 
 // Protocol 3: Protected Preview Settings
@@ -57,7 +66,7 @@ export interface TestHarnessSettings {
 // Combined Protocol Settings
 export interface ProtocolSettings {
   standard: StandardInjectionSettings;
-  allowlist: AllowlistSettings;
+  holographic: HolographicSettings;
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
 }
@@ -86,12 +95,16 @@ export const DEFAULT_STANDARD_SETTINGS: StandardInjectionSettings = {
   loggingLevel: 'minimal',
 };
 
-export const DEFAULT_ALLOWLIST_SETTINGS: AllowlistSettings = {
-  enabled: false,
-  domains: [],
-  blockByDefault: true,
-  showBlockedNotification: true,
-  autoAddCurrentSite: false,
+export const DEFAULT_HOLOGRAPHIC_SETTINGS: HolographicSettings = {
+  enabled: true,
+  useWebSocketBridge: true,
+  bridgePort: 8080,
+  latencyMode: 'balanced',
+  canvasResolution: '1080p',
+  frameRate: 30,
+  noiseInjectionLevel: 0.1,
+  sdpMasquerade: true,
+  emulatedDevice: 'iphone-front',
 };
 
 export const DEFAULT_PROTECTED_SETTINGS: ProtectedPreviewSettings = {
@@ -114,7 +127,7 @@ export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
 
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   standard: DEFAULT_STANDARD_SETTINGS,
-  allowlist: DEFAULT_ALLOWLIST_SETTINGS,
+  holographic: DEFAULT_HOLOGRAPHIC_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
 };
@@ -143,10 +156,10 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     isLive: true,
     requiresDeveloperMode: false,
   },
-  allowlist: {
-    id: 'allowlist',
-    name: 'Protocol 2: Allowlist Test Mode',
-    description: 'Limits injection to domains you explicitly allow. Recommended for safe testing. Editing requires Developer Mode.',
+  holographic: {
+    id: 'allowlist', // Keeping ID stable for now, but behavior is changed
+    name: 'Protocol 2: Holographic Stream Injection',
+    description: 'Advanced WebSocket bridge with SDP mutation and canvas-based stream synthesis. The most advanced injection method available.',
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,

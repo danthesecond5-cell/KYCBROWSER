@@ -29,6 +29,10 @@ import {
   AlertTriangle,
   Globe,
   Cpu,
+  Wifi,
+  Video,
+  Activity,
+  ZapOff,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useProtocol, ProtocolType } from '@/contexts/ProtocolContext';
@@ -58,16 +62,17 @@ export default function ProtocolSettingsModal({
     setActiveProtocol,
     protocols,
     standardSettings,
-    allowlistSettings,
+    holographicSettings,
     protectedSettings,
     harnessSettings,
     updateStandardSettings,
-    updateAllowlistSettings,
+    updateHolographicSettings,
     updateProtectedSettings,
     updateHarnessSettings,
-    addAllowlistDomain,
-    removeAllowlistDomain,
-    isAllowlisted,
+    // Legacy helpers removed/stubbed
+    // addAllowlistDomain,
+    // removeAllowlistDomain,
+    // isAllowlisted,
     httpsEnforced,
     setHttpsEnforced,
     mlSafetyEnabled,
@@ -79,9 +84,8 @@ export default function ProtocolSettingsModal({
   const [domainInput, setDomainInput] = useState('');
   const [expandedProtocol, setExpandedProtocol] = useState<ProtocolType | null>(activeProtocol);
 
-  const currentAllowlisted = useMemo(() => {
-    return isAllowlisted(currentHostname);
-  }, [isAllowlisted, currentHostname]);
+  // Legacy allowlist logic removed
+  const currentAllowlisted = true;
 
   const handlePinSubmit = async () => {
     if (pinInput.length < 4) {
@@ -123,16 +127,9 @@ export default function ProtocolSettingsModal({
     }
   };
 
-  const handleAddDomain = () => {
-    if (!domainInput.trim()) return;
-    addAllowlistDomain(domainInput);
-    setDomainInput('');
-  };
-
-  const handleAddCurrentSite = () => {
-    if (!currentHostname) return;
-    addAllowlistDomain(currentHostname);
-  };
+  // Legacy handlers removed
+  const handleAddDomain = () => {};
+  const handleAddCurrentSite = () => {};
 
   const toggleProtocol = (protocol: ProtocolType) => {
     setExpandedProtocol(expandedProtocol === protocol ? null : protocol);
@@ -220,92 +217,96 @@ export default function ProtocolSettingsModal({
           <View style={styles.settingsGroup}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Enable Allowlist</Text>
-                <Text style={styles.settingHint}>Only inject on allowed domains</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.enabled}
-                onValueChange={(v) => updateAllowlistSettings({ enabled: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={allowlistSettings.enabled ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            {currentHostname && (
-              <View style={styles.currentSiteRow}>
-                <Globe size={14} color="#00aaff" />
-                <Text style={styles.currentSiteText}>{currentHostname}</Text>
-                <View style={[
-                  styles.statusBadge,
-                  currentAllowlisted ? styles.statusAllowed : styles.statusBlocked,
-                ]}>
-                  <Text style={styles.statusBadgeText}>
-                    {currentAllowlisted ? 'Allowed' : 'Blocked'}
-                  </Text>
+                <View style={styles.settingLabelRow}>
+                  <Wifi size={12} color="#00aaff" />
+                  <Text style={styles.settingLabel}>WebSocket Bridge</Text>
                 </View>
-                {!currentAllowlisted && (
-                  <TouchableOpacity style={styles.addCurrentBtn} onPress={handleAddCurrentSite}>
-                    <Text style={styles.addCurrentBtnText}>Add</Text>
+                <Text style={styles.settingHint}>Local socket server for binary streaming</Text>
+              </View>
+              <Switch
+                value={holographicSettings.useWebSocketBridge}
+                onValueChange={(v) => updateHolographicSettings({ useWebSocketBridge: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={holographicSettings.useWebSocketBridge ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Video size={12} color="#b388ff" />
+                  <Text style={styles.settingLabel}>Canvas Resolution</Text>
+                </View>
+                <Text style={styles.settingHint}>Target injection quality</Text>
+              </View>
+              <View style={styles.sensitivityButtons}>
+                {(['720p', '1080p', '4k'] as const).map((res) => (
+                  <TouchableOpacity
+                    key={res}
+                    style={[
+                      styles.sensitivityBtn,
+                      holographicSettings.canvasResolution === res && styles.sensitivityBtnActive,
+                    ]}
+                    onPress={() => updateHolographicSettings({ canvasResolution: res })}
+                  >
+                    <Text style={[
+                      styles.sensitivityBtnText,
+                      holographicSettings.canvasResolution === res && styles.sensitivityBtnTextActive,
+                    ]}>
+                      {res}
+                    </Text>
                   </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Block Unlisted</Text>
-                <Text style={styles.settingHint}>Block injection on unlisted domains</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.blockUnlisted}
-                onValueChange={(v) => updateAllowlistSettings({ blockUnlisted: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff4757' }}
-                thumbColor={allowlistSettings.blockUnlisted ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Show Blocked Indicator</Text>
-                <Text style={styles.settingHint}>Display indicator when blocked</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.showBlockedIndicator}
-                onValueChange={(v) => updateAllowlistSettings({ showBlockedIndicator: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                thumbColor={allowlistSettings.showBlockedIndicator ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.domainInputRow}>
-              <TextInput
-                style={styles.domainInput}
-                value={domainInput}
-                onChangeText={setDomainInput}
-                placeholder="Add domain (e.g., example.com)"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.addButton} onPress={handleAddDomain}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-
-            {allowlistSettings.domains.length > 0 ? (
-              <View style={styles.domainList}>
-                {allowlistSettings.domains.map((domain) => (
-                  <View key={domain} style={styles.domainItem}>
-                    <Text style={styles.domainText}>{domain}</Text>
-                    <TouchableOpacity onPress={() => removeAllowlistDomain(domain)}>
-                      <Trash2 size={14} color="#ff4757" />
-                    </TouchableOpacity>
-                  </View>
                 ))}
               </View>
-            ) : (
-              <Text style={styles.emptyText}>No domains in allowlist</Text>
-            )}
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Cpu size={12} color="#ff6b35" />
+                  <Text style={styles.settingLabel}>SDP Masquerade</Text>
+                </View>
+                <Text style={styles.settingHint}>Rewrite WebRTC SDP to mock hardware</Text>
+              </View>
+              <Switch
+                value={holographicSettings.sdpMasquerade}
+                onValueChange={(v) => updateHolographicSettings({ sdpMasquerade: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={holographicSettings.sdpMasquerade ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Activity size={12} color="#ffcc00" />
+                  <Text style={styles.settingLabel}>Noise Injection</Text>
+                </View>
+                <Text style={styles.settingHint}>Add sensor noise to bypass detection</Text>
+              </View>
+               <View style={styles.sliderContainer}>
+                  <Text style={styles.sliderValue}>{(holographicSettings.noiseInjectionLevel * 100).toFixed(0)}%</Text>
+                  <View style={styles.miniBarContainer}>
+                     {[0.1, 0.2, 0.5, 0.8].map((level) => (
+                        <TouchableOpacity 
+                           key={level}
+                           style={[
+                             styles.miniBar, 
+                             holographicSettings.noiseInjectionLevel >= level && styles.miniBarActive
+                           ]}
+                           onPress={() => updateHolographicSettings({ noiseInjectionLevel: level })}
+                        />
+                     ))}
+                  </View>
+               </View>
+            </View>
+            
+            <View style={styles.mlNotice}>
+                <ZapOff size={14} color="#00aaff" />
+                <Text style={styles.mlNoticeText}>
+                  Holographic mode bypasses standard browser security checks.
+                </Text>
+             </View>
           </View>
         );
 
@@ -1075,5 +1076,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#00aaff',
+  },
+  sliderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sliderValue: {
+    fontSize: 12,
+    color: '#ffffff',
+    width: 30,
+    textAlign: 'right',
+  },
+  miniBarContainer: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  miniBar: {
+    width: 8,
+    height: 16,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 2,
+  },
+  miniBarActive: {
+    backgroundColor: '#ffcc00',
   },
 });
