@@ -549,7 +549,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       console.log('[VideoLibrary] ========== COMPATIBILITY CHECK FAILED ==========');
       throw error;
     }
-  }, [savedVideos]);
+  }, [savedVideos, persistCompatibilityResult]);
 
   return {
     savedVideos,
