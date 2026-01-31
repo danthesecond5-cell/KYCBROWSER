@@ -228,7 +228,7 @@ export default function ProtectedPreviewScreen() {
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
               <Text style={styles.settingLabel}>Show Overlay Label</Text>
-              <Text style={styles.settingHint}>Display "Protected" indicator</Text>
+              <Text style={styles.settingHint}>Display &quot;Protected&quot; indicator</Text>
             </View>
             <Switch
               value={protectedSettings.showProtectedBadge}

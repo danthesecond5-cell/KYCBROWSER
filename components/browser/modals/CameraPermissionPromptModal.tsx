@@ -6,7 +6,6 @@ import {
   Modal,
   TouchableOpacity,
   ScrollView,
-  Platform,
 } from 'react-native';
 import {
   Camera,

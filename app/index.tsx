@@ -746,64 +746,65 @@ export default function MotionBrowserScreen() {
       }
 
       if (activeTemplate) {
-      console.log('[VideoSim] ========== PENDING VIDEO EFFECT TRIGGERED ==========');
-      console.log('[VideoSim] Timestamp:', new Date().toISOString());
-      console.log('[VideoSim] Pending video from my-videos:', {
-        name: pendingVideoForApply.name,
-        id: pendingVideoForApply.id,
-        uri: pendingVideoForApply.uri,
-      });
-      console.log('[VideoSim] Active template:', activeTemplate.id);
-      console.log('[VideoSim] Current apply ref state:', isApplyingVideoRef.current);
-      
-      // Reset stuck ref if needed
-      if (isApplyingVideoRef.current) {
-        console.warn('[VideoSim] Resetting stuck isApplyingVideoRef before processing new video');
-        isApplyingVideoRef.current = false;
-      }
-      
-      // Capture video and clear pending immediately to prevent race conditions
-      const videoToProcess = pendingVideoForApply;
-      const templateId = activeTemplate.id;
-      setPendingVideoForApply(null);
-      
-      // Video from my-videos is ALREADY compatibility checked - apply it directly
-      // without opening another modal (which causes freeze due to modal conflicts)
-      console.log('[VideoSim] Video already checked in my-videos, applying directly...');
-      isApplyingVideoRef.current = true;
-      
-      // Use a longer delay to let the navigation animation complete first
-      const timeoutId = setTimeout(async () => {
-        try {
-          console.log('[VideoSim] Applying video directly (skipping redundant check):', videoToProcess.name);
-          console.log('[VideoSim] Timestamp:', new Date().toISOString());
-          
-          // Apply to all devices directly - no modal needed
-          await assignVideoToAllDevices(templateId, videoToProcess.uri, videoToProcess.name, undefined, true);
-          console.log('[VideoSim] Video applied successfully');
-          
+        console.log('[VideoSim] ========== PENDING VIDEO EFFECT TRIGGERED ==========');
+        console.log('[VideoSim] Timestamp:', new Date().toISOString());
+        console.log('[VideoSim] Pending video from my-videos:', {
+          name: pendingVideoForApply.name,
+          id: pendingVideoForApply.id,
+          uri: pendingVideoForApply.uri,
+        });
+        console.log('[VideoSim] Active template:', activeTemplate.id);
+        console.log('[VideoSim] Current apply ref state:', isApplyingVideoRef.current);
+
+        // Reset stuck ref if needed
+        if (isApplyingVideoRef.current) {
+          console.warn('[VideoSim] Resetting stuck isApplyingVideoRef before processing new video');
           isApplyingVideoRef.current = false;
-          
-          // Inject the updated config after a short delay
-          setTimeout(() => {
-            injectMediaConfig();
-            console.log('[VideoSim] Media config injected after apply');
-          }, 100);
-          
-          Alert.alert('Success', `Video "${videoToProcess.name}" applied to all cameras. Reload the page to see changes.`);
-          console.log('[VideoSim] ========== PENDING VIDEO APPLY COMPLETE ==========');
-        } catch (error) {
-          console.error('[VideoSim] ERROR applying pending video:', error);
-          console.error('[VideoSim] Error stack:', error instanceof Error ? error.stack : 'No stack');
-          isApplyingVideoRef.current = false;
-          Alert.alert('Error', `Failed to apply video: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-      }, 350); // Longer delay to let modal dismiss animation complete
-      
-      return () => {
-        clearTimeout(timeoutId);
-        isApplyingVideoRef.current = false;
-      };
+
+        // Capture video and clear pending immediately to prevent race conditions
+        const videoToProcess = pendingVideoForApply;
+        const templateId = activeTemplate.id;
+        setPendingVideoForApply(null);
+
+        // Video from my-videos is ALREADY compatibility checked - apply it directly
+        // without opening another modal (which causes freeze due to modal conflicts)
+        console.log('[VideoSim] Video already checked in my-videos, applying directly...');
+        isApplyingVideoRef.current = true;
+
+        // Use a longer delay to let the navigation animation complete first
+        const timeoutId = setTimeout(async () => {
+          try {
+            console.log('[VideoSim] Applying video directly (skipping redundant check):', videoToProcess.name);
+            console.log('[VideoSim] Timestamp:', new Date().toISOString());
+
+            // Apply to all devices directly - no modal needed
+            await assignVideoToAllDevices(templateId, videoToProcess.uri, videoToProcess.name, undefined, true);
+            console.log('[VideoSim] Video applied successfully');
+
+            isApplyingVideoRef.current = false;
+
+            // Inject the updated config after a short delay
+            setTimeout(() => {
+              injectMediaConfig();
+              console.log('[VideoSim] Media config injected after apply');
+            }, 100);
+
+            Alert.alert('Success', `Video "${videoToProcess.name}" applied to all cameras. Reload the page to see changes.`);
+            console.log('[VideoSim] ========== PENDING VIDEO APPLY COMPLETE ==========');
+          } catch (error) {
+            console.error('[VideoSim] ERROR applying pending video:', error);
+            console.error('[VideoSim] Error stack:', error instanceof Error ? error.stack : 'No stack');
+            isApplyingVideoRef.current = false;
+            Alert.alert('Error', `Failed to apply video: ${error instanceof Error ? error.message : 'Unknown error'}`);
+          }
+        }, 350); // Longer delay to let modal dismiss animation complete
+
+        return () => {
+          clearTimeout(timeoutId);
+          isApplyingVideoRef.current = false;
+        };
+      }
     }
   }, [pendingVideoForApply, activeTemplate, setPendingVideoForApply, assignVideoToAllDevices, injectMediaConfig]);
 
