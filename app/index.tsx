@@ -32,7 +32,9 @@ import {
   MOTION_INJECTION_SCRIPT,
   CONSOLE_CAPTURE_SCRIPT,
   VIDEO_SIMULATION_TEST_SCRIPT,
+  BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
+  createSimplifiedInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
 import { formatVideoUriForWebView, isBase64VideoUri, isBlobUri, isLocalFileUri } from '@/utils/videoServing';

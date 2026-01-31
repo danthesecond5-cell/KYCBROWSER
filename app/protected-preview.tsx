@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,14 +7,232 @@ import {
   Switch,
   Platform,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
-import { ChevronLeft, Shield, Film, FlaskConical, Settings, Lock } from 'lucide-react-native';
+import { ChevronLeft, Shield, Film, FlaskConical, Settings, Lock, Play, CheckCircle } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import TestingWatermark from '@/components/TestingWatermark';
+
+// Built-in animated fallback pattern component
+const AnimatedFallbackPattern = ({ isActive }: { isActive: boolean }) => {
+  const animation = useRef(new Animated.Value(0)).current;
+  const pulseAnimation = useRef(new Animated.Value(1)).current;
+  const frameCount = useRef(0);
+  const [displayFrame, setDisplayFrame] = useState(0);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    // Continuous rotation animation
+    const rotateAnim = Animated.loop(
+      Animated.timing(animation, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    // Pulse animation
+    const pulseAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnimation, {
+          toValue: 1.15,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnimation, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    rotateAnim.start();
+    pulseAnim.start();
+
+    // Frame counter update
+    const interval = setInterval(() => {
+      frameCount.current += 1;
+      setDisplayFrame(frameCount.current % 10000);
+    }, 33); // ~30fps
+
+    return () => {
+      rotateAnim.stop();
+      pulseAnim.stop();
+      clearInterval(interval);
+    };
+  }, [isActive, animation, pulseAnimation]);
+
+  const rotate = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  if (!isActive) return null;
+
+  return (
+    <View style={fallbackStyles.container}>
+      {/* Animated gradient background simulation with circles */}
+      <View style={fallbackStyles.background}>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Animated.View
+            key={i}
+            style={[
+              fallbackStyles.circle,
+              {
+                top: 100 + i * 120,
+                transform: [
+                  { rotate },
+                  { translateX: 80 + i * 20 },
+                ],
+                backgroundColor: `hsla(${(i * 60 + displayFrame) % 360}, 60%, 50%, 0.7)`,
+              },
+            ]}
+          />
+        ))}
+      </View>
+
+      {/* Center pulsing play icon */}
+      <Animated.View style={[fallbackStyles.centerIcon, { transform: [{ scale: pulseAnimation }] }]}>
+        <Play size={50} color="#ffffff" fill="#ffffff" />
+      </Animated.View>
+
+      {/* Status bar */}
+      <View style={fallbackStyles.statusBar}>
+        <View style={fallbackStyles.statusRow}>
+          <CheckCircle size={16} color="#00ff88" />
+          <Text style={fallbackStyles.statusTitle}>PROTECTION ACTIVE</Text>
+        </View>
+        <Text style={fallbackStyles.statusInfo}>
+          Frame: {String(displayFrame).padStart(5, '0')} | 1080x1920 @30fps
+        </Text>
+        <Text style={fallbackStyles.statusHint}>Using built-in test pattern</Text>
+      </View>
+
+      {/* Scanning line effect */}
+      <Animated.View
+        style={[
+          fallbackStyles.scanLine,
+          {
+            top: `${(displayFrame * 0.5) % 100}%`,
+          },
+        ]}
+      />
+
+      {/* Corner markers */}
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerTL]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerTR]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerBL]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerBR]} />
+    </View>
+  );
+};
+
+const fallbackStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a2e',
+    overflow: 'hidden',
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  circle: {
+    position: 'absolute',
+    left: '30%',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  centerIcon: {
+    position: 'absolute',
+    top: '55%',
+    left: '50%',
+    marginLeft: -30,
+    marginTop: -30,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBar: {
+    position: 'absolute',
+    bottom: 20,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 12,
+    padding: 14,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#00ff88',
+  },
+  statusInfo: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  statusHint: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(0, 255, 136, 0.4)',
+  },
+  corner: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderColor: '#00ff88',
+    borderWidth: 4,
+  },
+  cornerTL: {
+    top: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+  },
+  cornerTR: {
+    top: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+  },
+  cornerBL: {
+    bottom: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+  },
+  cornerBR: {
+    bottom: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderTopWidth: 0,
+  },
+});
 
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -141,14 +359,9 @@ export default function ProtectedPreviewScreen() {
                     resizeMode={ResizeMode.COVER}
                   />
                 ) : (
-                  <View style={styles.overlayFallback}>
-                    <Film size={24} color="rgba(255,255,255,0.6)" />
-                    <Text style={styles.overlayFallbackText}>
-                      Select a compatible video to enable replacement.
-                    </Text>
-                  </View>
+                  <AnimatedFallbackPattern isActive={simulateBodyDetected} />
                 )}
-                {protectedSettings.showProtectedBadge && (
+                {protectedSettings.showProtectedBadge && selectedVideo && (
                   <View style={styles.overlayLabel}>
                     <Text style={styles.overlayLabelText}>Protected Replacement Active</Text>
                   </View>

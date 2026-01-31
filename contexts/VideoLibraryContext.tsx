@@ -20,7 +20,7 @@ import {
   checkVideoCompatibilityWithPlayback,
   type CompatibilityResult,
 } from '@/utils/videoCompatibilityChecker';
-import { ensureBundledSampleVideo, isBundledSampleVideo } from '@/utils/sampleVideo';
+import { BUILTIN_TEST_VIDEO_ID, BUILTIN_TEST_VIDEO_NAME, TEST_VIDEO_SPECS } from '@/constants/testVideoAssets';
 
 interface ProcessingState {
   isProcessing: boolean;
@@ -46,9 +46,12 @@ interface VideoLibraryContextValue {
   checkCompatibility: (idOrVideo: string | SavedVideo) => Promise<CompatibilityResult | null>;
   pendingVideoForApply: SavedVideo | null;
   setPendingVideoForApply: (video: SavedVideo | null) => void;
+  getBuiltinTestVideo: () => SavedVideo | undefined;
+  builtinTestVideoId: string;
 }
 
 const VIDEOS_METADATA_KEY = '@video_library_metadata_v2';
+const BUILTIN_VIDEO_INITIALIZED_KEY = '@builtin_video_initialized_v1';
 
 const initialProcessingState: ProcessingState = {
   isProcessing: false,
@@ -56,6 +59,37 @@ const initialProcessingState: ProcessingState = {
   stage: 'idle',
   message: '',
 };
+
+/**
+ * Creates the built-in test video entry
+ * This is a canvas-generated video that always works without external files
+ */
+function createBuiltinTestVideoEntry(): SavedVideo {
+  return {
+    id: BUILTIN_TEST_VIDEO_ID,
+    name: BUILTIN_TEST_VIDEO_NAME,
+    originalName: 'builtin_test_video.mp4',
+    uri: 'canvas:test_pattern', // Special URI that triggers canvas generation
+    sourceType: 'local',
+    fileSize: 0,
+    createdAt: new Date().toISOString(),
+    thumbnailUri: undefined,
+    metadata: {
+      duration: TEST_VIDEO_SPECS.duration,
+      width: TEST_VIDEO_SPECS.width,
+      height: TEST_VIDEO_SPECS.height,
+      orientation: 'portrait',
+      aspectRatio: TEST_VIDEO_SPECS.aspectRatio,
+      isVertical: true,
+    },
+    compatibility: {
+      overallStatus: 'perfect',
+      score: 100,
+      readyForSimulation: true,
+      checkedAt: new Date().toISOString(),
+    },
+  };
+}
 
 const getStageMessage = (stage: DownloadProgress['stage'] | 'extracting_metadata' | 'copying', progress: number): string => {
   switch (stage) {
@@ -158,7 +192,6 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       return allVideos;
     }
 
-    console.log('[VideoLibrary] Syncing with file system...');
     ensureVideosDirectory();
 
     const actualFiles = listSavedVideos();
@@ -200,7 +233,13 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       ];
     }
 
-    allVideos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    // Sort: built-in first, then by date
+    allVideos.sort((a, b) => {
+      // Built-in video always first
+      if (a.id === BUILTIN_TEST_VIDEO_ID) return -1;
+      if (b.id === BUILTIN_TEST_VIDEO_ID) return 1;
+      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
 
     const baseChanged = validMetadata.length !== storedMetadata.filter(v => !isBundledSampleVideo(v)).length;
     const sampleChanged = Boolean(sampleToUse && (!existingSample || existingSample.uri !== sampleToUse.uri));
@@ -210,7 +249,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       await enqueueSaveVideosMetadata(allVideos);
     }
 
-    console.log('[VideoLibrary] Sync complete:', allVideos.length, 'videos');
+    console.log('[VideoLibrary] Sync complete:', allVideos.length, 'videos (including built-in test)');
     return allVideos;
   }, [loadVideosMetadata, enqueueSaveVideosMetadata]);
 
@@ -495,6 +534,12 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
   const isVideoReady = useCallback((id: string): boolean => {
     const video = savedVideos.find(v => v.id === id);
     if (!video) return false;
+    
+    // Built-in test video is always ready (it's canvas-generated)
+    if (video.id === BUILTIN_TEST_VIDEO_ID || video.uri.startsWith('canvas:')) {
+      return true;
+    }
+    
     return isVideoReadyForSimulation(video);
   }, [savedVideos]);
 
@@ -503,6 +548,12 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
     if (!video) {
       console.warn('[VideoLibrary] Video not found for simulation:', id);
       return undefined;
+    }
+
+    // Built-in test video is always ready
+    if (video.id === BUILTIN_TEST_VIDEO_ID || video.uri.startsWith('canvas:')) {
+      console.log('[VideoLibrary] Selected built-in test video for simulation');
+      return video;
     }
 
     if (!video.compatibility?.readyForSimulation) {
@@ -536,6 +587,19 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
     } else {
       console.log('[VideoLibrary] Using provided video object directly');
       video = idOrVideo;
+    }
+
+    // Built-in test video is always compatible
+    if (video.id === BUILTIN_TEST_VIDEO_ID || video.uri.startsWith('canvas:')) {
+      console.log('[VideoLibrary] Built-in test video - automatically compatible');
+      const perfectResult: CompatibilityResult = {
+        overallStatus: 'perfect',
+        score: 100,
+        readyForSimulation: true,
+        summary: 'Built-in test video is always compatible',
+        items: [],
+      };
+      return perfectResult;
     }
 
     console.log('[VideoLibrary] Found video:', {
@@ -572,6 +636,10 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
     }
   }, [savedVideos, persistCompatibilityResult]);
 
+  const getBuiltinTestVideo = useCallback((): SavedVideo | undefined => {
+    return savedVideos.find(v => v.id === BUILTIN_TEST_VIDEO_ID);
+  }, [savedVideos]);
+
   return {
     savedVideos,
     isLoading,
@@ -588,5 +656,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
     checkCompatibility,
     pendingVideoForApply,
     setPendingVideoForApply,
+    getBuiltinTestVideo,
+    builtinTestVideoId: BUILTIN_TEST_VIDEO_ID,
   };
 });

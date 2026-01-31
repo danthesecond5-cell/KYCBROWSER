@@ -3021,3 +3021,452 @@ export const VIDEO_SIMULATION_TEST_SCRIPT = `
 })();
 true;
 `;
+
+/**
+ * BULLETPROOF CAMERA REPLACEMENT SCRIPT
+ * 
+ * This is a simplified, robust injection script that ALWAYS works.
+ * It uses a canvas-based animated test pattern that is guaranteed to:
+ * 1. Work without external video files (no CORS issues)
+ * 2. Show visible movement for verification
+ * 3. Display status information on the stream
+ * 4. Fall back gracefully on any error
+ */
+export const BULLETPROOF_INJECTION_SCRIPT = `
+(function() {
+  if (window.__bulletproofActive) {
+    console.log('[Bulletproof] Already active');
+    return;
+  }
+  window.__bulletproofActive = true;
+  
+  console.log('[Bulletproof] ========================================');
+  console.log('[Bulletproof] CAMERA REPLACEMENT SYSTEM INITIALIZING');
+  console.log('[Bulletproof] ========================================');
+  
+  // Configuration
+  const CONFIG = {
+    WIDTH: 1080,
+    HEIGHT: 1920,
+    FPS: 30,
+    SHOW_DEBUG: true,
+  };
+  
+  // Store originals
+  const _origGUM = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+  const _origEnumerate = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
+  
+  // Animation state
+  let canvas = null;
+  let ctx = null;
+  let isAnimating = false;
+  let animFrame = null;
+  let startTime = 0;
+  let frameNum = 0;
+  const activeStreams = new Set();
+  
+  // Assigned video URL (from RN config)
+  let assignedVideoUrl = null;
+  let videoElement = null;
+  let useVideoSource = false;
+  
+  // ============ CANVAS SETUP ============
+  function initCanvas() {
+    if (canvas) return;
+    canvas = document.createElement('canvas');
+    canvas.width = CONFIG.WIDTH;
+    canvas.height = CONFIG.HEIGHT;
+    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    console.log('[Bulletproof] Canvas initialized:', CONFIG.WIDTH, 'x', CONFIG.HEIGHT);
+  }
+  
+  // ============ ANIMATED TEST PATTERN ============
+  function renderAnimatedPattern(time, frame) {
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    // Animated gradient background
+    const hue = (time * 40) % 360;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'hsl(' + hue + ', 55%, 25%)');
+    grad.addColorStop(0.5, 'hsl(' + ((hue + 100) % 360) + ', 55%, 15%)');
+    grad.addColorStop(1, 'hsl(' + ((hue + 200) % 360) + ', 55%, 25%)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    
+    // MOVING CIRCLES - clearly visible animation
+    for (let i = 0; i < 6; i++) {
+      const angle = time * (1 + i * 0.25) + (i * 1.1);
+      const orbitR = 180 + i * 40;
+      const r = 35 + i * 15;
+      const cx = w / 2 + Math.cos(angle) * orbitR;
+      const cy = h * 0.35 + i * (h * 0.08) + Math.sin(angle * 0.8) * 50;
+      
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsla(' + ((hue + i * 50) % 360) + ', 65%, 55%, 0.85)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    
+    // PULSING CENTER INDICATOR
+    const pulse = 1 + Math.sin(time * 5) * 0.2;
+    ctx.save();
+    ctx.translate(w / 2, h * 0.68);
+    ctx.scale(pulse, pulse);
+    
+    // Play triangle
+    ctx.beginPath();
+    ctx.moveTo(-40, -50);
+    ctx.lineTo(-40, 50);
+    ctx.lineTo(50, 0);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
+    ctx.restore();
+    
+    // STATUS BAR
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(15, h - 155, 520, 140);
+    
+    // Status text
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('✓ CAMERA REPLACED', 35, h - 115);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '20px monospace';
+    ctx.fillText('Frame: ' + String(frame % 10000).padStart(5, '0'), 35, h - 80);
+    ctx.fillText('Time: ' + time.toFixed(2) + 's', 250, h - 80);
+    ctx.fillText(w + 'x' + h + ' @ ' + CONFIG.FPS + 'fps', 35, h - 50);
+    ctx.fillText('Protocol: ACTIVE', 300, h - 50);
+    
+    // SCANNING LINE - proof of movement
+    const scanY = (frame * 18) % h;
+    ctx.fillStyle = 'rgba(0,255,136,0.4)';
+    ctx.fillRect(0, scanY, w, 5);
+    
+    // CORNER MARKERS
+    const cs = 70;
+    ctx.fillStyle = '#00ff88';
+    ctx.fillRect(0, 0, cs, 7);
+    ctx.fillRect(0, 0, 7, cs);
+    ctx.fillRect(w - cs, 0, cs, 7);
+    ctx.fillRect(w - 7, 0, 7, cs);
+    ctx.fillRect(0, h - 7, cs, 7);
+    ctx.fillRect(0, h - cs, 7, cs);
+    ctx.fillRect(w - cs, h - 7, cs, 7);
+    ctx.fillRect(w - 7, h - cs, 7, cs);
+  }
+  
+  // ============ VIDEO SOURCE RENDERING ============
+  function renderVideoSource() {
+    if (!videoElement || videoElement.paused || videoElement.ended) {
+      renderAnimatedPattern((Date.now() - startTime) / 1000, frameNum);
+      return;
+    }
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const vw = videoElement.videoWidth || w;
+    const vh = videoElement.videoHeight || h;
+    
+    // Cover mode - fill canvas
+    const scale = Math.max(w / vw, h / vh);
+    const sw = w / scale;
+    const sh = h / scale;
+    const sx = (vw - sw) / 2;
+    const sy = (vh - sh) / 2;
+    
+    try {
+      ctx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, w, h);
+    } catch (e) {
+      // Fallback to pattern on error
+      renderAnimatedPattern((Date.now() - startTime) / 1000, frameNum);
+    }
+  }
+  
+  // ============ ANIMATION LOOP ============
+  function animate() {
+    if (!isAnimating) return;
+    
+    const elapsed = (Date.now() - startTime) / 1000;
+    
+    if (useVideoSource && videoElement && !videoElement.paused) {
+      renderVideoSource();
+    } else {
+      renderAnimatedPattern(elapsed, frameNum);
+    }
+    
+    frameNum++;
+    animFrame = requestAnimationFrame(animate);
+  }
+  
+  function startAnimation() {
+    if (isAnimating) return;
+    initCanvas();
+    isAnimating = true;
+    startTime = Date.now();
+    frameNum = 0;
+    animate();
+    console.log('[Bulletproof] Animation started');
+  }
+  
+  function stopAnimation() {
+    isAnimating = false;
+    if (animFrame) {
+      cancelAnimationFrame(animFrame);
+      animFrame = null;
+    }
+  }
+  
+  // ============ LOAD VIDEO ============
+  function loadAssignedVideo(url) {
+    if (!url || url === assignedVideoUrl) return;
+    
+    console.log('[Bulletproof] Loading assigned video:', url.substring(0, 60));
+    assignedVideoUrl = url;
+    
+    if (videoElement) {
+      videoElement.pause();
+      videoElement.src = '';
+    }
+    
+    videoElement = document.createElement('video');
+    videoElement.muted = true;
+    videoElement.loop = true;
+    videoElement.playsInline = true;
+    videoElement.setAttribute('playsinline', 'true');
+    videoElement.crossOrigin = 'anonymous';
+    videoElement.preload = 'auto';
+    videoElement.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;';
+    document.body.appendChild(videoElement);
+    
+    videoElement.onloadeddata = function() {
+      console.log('[Bulletproof] Video loaded:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+      useVideoSource = true;
+      videoElement.play().catch(function(e) {
+        console.warn('[Bulletproof] Video autoplay failed:', e);
+        useVideoSource = false;
+      });
+    };
+    
+    videoElement.onerror = function() {
+      console.warn('[Bulletproof] Video load failed, using test pattern');
+      useVideoSource = false;
+    };
+    
+    videoElement.src = url;
+  }
+  
+  // ============ CREATE STREAM ============
+  function createReplacementStream(constraints) {
+    startAnimation();
+    
+    try {
+      const stream = canvas.captureStream(CONFIG.FPS);
+      
+      if (!stream || stream.getVideoTracks().length === 0) {
+        throw new Error('captureStream failed');
+      }
+      
+      const track = stream.getVideoTracks()[0];
+      
+      // Spoof track methods
+      track.getSettings = function() {
+        return {
+          width: CONFIG.WIDTH,
+          height: CONFIG.HEIGHT,
+          frameRate: CONFIG.FPS,
+          facingMode: 'user',
+          deviceId: 'bulletproof-camera',
+          groupId: 'bulletproof-group',
+          aspectRatio: CONFIG.WIDTH / CONFIG.HEIGHT,
+        };
+      };
+      
+      track.getCapabilities = function() {
+        return {
+          width: { min: 1, max: CONFIG.WIDTH },
+          height: { min: 1, max: CONFIG.HEIGHT },
+          frameRate: { min: 1, max: CONFIG.FPS },
+          facingMode: ['user', 'environment'],
+          deviceId: 'bulletproof-camera',
+        };
+      };
+      
+      track.getConstraints = function() {
+        return {
+          width: { ideal: CONFIG.WIDTH },
+          height: { ideal: CONFIG.HEIGHT },
+          facingMode: 'user',
+        };
+      };
+      
+      Object.defineProperty(track, 'label', {
+        get: function() { return 'Bulletproof Test Camera (1080x1920)'; },
+        configurable: true,
+      });
+      
+      // Handle audio
+      if (constraints?.audio) {
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          const dest = audioCtx.createMediaStreamDestination();
+          gain.gain.value = 0;
+          osc.connect(gain);
+          gain.connect(dest);
+          osc.start();
+          dest.stream.getAudioTracks().forEach(function(t) { stream.addTrack(t); });
+        } catch (e) {}
+      }
+      
+      // Track stream for cleanup
+      activeStreams.add(stream);
+      
+      stream.getTracks().forEach(function(t) {
+        const origStop = t.stop.bind(t);
+        t.stop = function() {
+          origStop();
+          activeStreams.delete(stream);
+          if (activeStreams.size === 0) {
+            stopAnimation();
+          }
+        };
+      });
+      
+      console.log('[Bulletproof] Created replacement stream - tracks:', stream.getTracks().length);
+      return stream;
+      
+    } catch (err) {
+      console.error('[Bulletproof] Stream creation failed:', err);
+      throw err;
+    }
+  }
+  
+  // ============ OVERRIDE APIS ============
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.getUserMedia = async function(constraints) {
+      console.log('[Bulletproof] getUserMedia intercepted');
+      
+      if (constraints?.video) {
+        try {
+          return createReplacementStream(constraints);
+        } catch (err) {
+          console.error('[Bulletproof] Replacement failed, trying original');
+          if (_origGUM) {
+            return _origGUM(constraints);
+          }
+          throw err;
+        }
+      }
+      
+      if (_origGUM) {
+        return _origGUM(constraints);
+      }
+      throw new Error('getUserMedia not available');
+    };
+    
+    navigator.mediaDevices.enumerateDevices = async function() {
+      console.log('[Bulletproof] enumerateDevices intercepted');
+      return [
+        {
+          deviceId: 'bulletproof-camera',
+          groupId: 'bulletproof-group',
+          kind: 'videoinput',
+          label: 'Bulletproof Test Camera (1080x1920)',
+          toJSON: function() { return this; },
+        },
+        {
+          deviceId: 'bulletproof-audio',
+          groupId: 'bulletproof-group',
+          kind: 'audioinput',
+          label: 'Bulletproof Audio Input',
+          toJSON: function() { return this; },
+        },
+      ];
+    };
+  }
+  
+  // ============ CONFIG UPDATE ============
+  window.__bulletproofConfig = {
+    setVideoUrl: function(url) {
+      if (url) loadAssignedVideo(url);
+    },
+    useTestPattern: function() {
+      useVideoSource = false;
+    },
+    getStatus: function() {
+      return {
+        active: isAnimating,
+        streamCount: activeStreams.size,
+        usingVideo: useVideoSource,
+        videoUrl: assignedVideoUrl,
+        frame: frameNum,
+      };
+    },
+    forceRefresh: function() {
+      startTime = Date.now();
+      frameNum = 0;
+    },
+  };
+  
+  // Listen for config from RN
+  window.addEventListener('message', function(e) {
+    try {
+      const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (data?.type === 'bulletproof') {
+        if (data.videoUrl) {
+          window.__bulletproofConfig.setVideoUrl(data.videoUrl);
+        }
+      }
+    } catch (err) {}
+  });
+  
+  document.addEventListener('message', function(e) {
+    try {
+      if (typeof e.data !== 'string' || !e.data.startsWith('{')) return;
+      const data = JSON.parse(e.data);
+      if (data?.type === 'bulletproof') {
+        if (data.videoUrl) {
+          window.__bulletproofConfig.setVideoUrl(data.videoUrl);
+        }
+      }
+    } catch (err) {}
+  });
+  
+  console.log('[Bulletproof] ========================================');
+  console.log('[Bulletproof] CAMERA REPLACEMENT SYSTEM ACTIVE');
+  console.log('[Bulletproof] Resolution:', CONFIG.WIDTH, 'x', CONFIG.HEIGHT, '@', CONFIG.FPS, 'fps');
+  console.log('[Bulletproof] ========================================');
+  
+  // Notify RN that we're ready
+  if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'bulletproofReady',
+      config: { width: CONFIG.WIDTH, height: CONFIG.HEIGHT, fps: CONFIG.FPS }
+    }));
+  }
+})();
+true;
+`;
+
+/**
+ * Creates a simple bulletproof injection script that uses the built-in test pattern
+ * with optional video URL override. This is more reliable than the complex version.
+ */
+export const createSimplifiedInjectionScript = (videoUrl?: string): string => {
+  const videoConfig = videoUrl ? `window.__bulletproofConfig?.setVideoUrl(${JSON.stringify(videoUrl)});` : '';
+  
+  return BULLETPROOF_INJECTION_SCRIPT + `
+(function() {
+  ${videoConfig}
+  console.log('[SimplifiedInjection] Configured with video:', ${JSON.stringify(videoUrl || 'test pattern')});
+})();
+true;
+`;
+};
