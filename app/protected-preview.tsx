@@ -26,6 +26,7 @@ export default function ProtectedPreviewScreen() {
     protectedSettings,
     updateProtectedSettings,
     developerModeEnabled,
+    showTestingWatermark,
     protocols,
   } = useProtocol();
 

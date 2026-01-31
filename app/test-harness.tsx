@@ -124,6 +124,7 @@ export default function TestHarnessScreen() {
     harnessSettings,
     updateHarnessSettings,
     developerModeEnabled,
+    showTestingWatermark,
     protocols,
   } = useProtocol();
 

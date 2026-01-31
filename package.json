@@ -6,6 +6,7 @@
     "start": "bunx rork start -p vox4j88n0gic6axkyp2gk --tunnel",
     "start-web": "bunx rork start -p vox4j88n0gic6axkyp2gk --web --tunnel",
     "start-web-dev": "DEBUG=expo* bunx rork start -p vox4j88n0gic6axkyp2gk --web --tunnel",
+    "build-web": "expo export --platform web",
     "lint": "expo lint",
     "test": "jest",
     "test:watch": "jest --watch",

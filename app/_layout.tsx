@@ -87,6 +87,7 @@ export default function RootLayout() {
           </VideoLibraryProvider>
         </DeviceTemplateProvider>
       </ProtocolProvider>
+      </DeveloperModeProvider>
     </QueryClientProvider>
   );
 }

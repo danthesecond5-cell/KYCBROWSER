@@ -12,9 +12,6 @@ module.exports = {
     '<rootDir>/build/',
     '<rootDir>/.expo/',
   ],
-  transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|native-base|react-native-svg|@rork-ai/.*|@nkzw/.*|lucide-react-native)',
-  ],
   collectCoverageFrom: [
     '**/*.{ts,tsx}',
     '!**/node_modules/**',
@@ -23,5 +20,8 @@ module.exports = {
     '!**/babel.config.js',
     '!**/jest.config.js',
     '!**/metro.config.js',
+  ],
+  transformIgnorePatterns: [
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@sentry/react-native|sentry-expo|native-base|react-native-svg|@unimodules/.*|unimodules|@rork-ai/.*|@nkzw/.*|lucide-react-native)',
   ],
 };
