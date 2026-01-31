@@ -47,7 +47,6 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
 
   const overlayMlSafetyEnabled = mlSafetyEnabled ?? (wantsFullscreen ? false : true);
   const overlayHttpsEnforced = httpsEnforced ?? (wantsFullscreen ? false : true);
-
   const pulseAnim = useRef(new Animated.Value(0.7)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
