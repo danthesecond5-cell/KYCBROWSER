@@ -13,7 +13,6 @@ import { Stack, router } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity, Shield } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import { formatVideoUriForWebView, isLocalFileUri } from '@/utils/videoServing';
 import TestingWatermark from '@/components/TestingWatermark';
@@ -121,12 +120,12 @@ export default function TestHarnessScreen() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
-  const { developerMode } = useDeveloperMode();
   const {
     harnessSettings,
     updateHarnessSettings,
     developerModeEnabled,
     presentationMode,
+    showTestingWatermark,
     mlSafetyEnabled,
     protocols,
   } = useProtocol();
@@ -151,6 +150,8 @@ export default function TestHarnessScreen() {
     });
   }, [savedVideos, isVideoReady]);
 
+  const selectedVideo = compatibleVideos.find(video => video.id === selectedVideoId) || null;
+
   const webViewOriginWhitelist = useMemo(() => ['about:blank'], []);
   const allowLocalFileAccess = Platform.OS === 'android' && Boolean(selectedVideo && isLocalFileUri(selectedVideo.uri));
 
@@ -159,8 +160,6 @@ export default function TestHarnessScreen() {
       setSelectedVideoId(compatibleVideos[0].id);
     }
   }, [selectedVideoId, compatibleVideos]);
-
-  const selectedVideo = compatibleVideos.find(video => video.id === selectedVideoId) || null;
 
   const applyOverlaySettings = useCallback(() => {
     if (!webViewRef.current) return;
@@ -188,7 +187,7 @@ export default function TestHarnessScreen() {
   return (
     <View style={styles.container}>
       <TestingWatermark 
-        visible={developerMode.showWatermark}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
       />
@@ -367,7 +366,7 @@ export default function TestHarnessScreen() {
             </View>
             <Switch
               value={harnessSettings.enableAudioPassthrough}
-              onValueChange={(val) => developerModeEnabled && updateHarnessSettings({ enableAudioPassthrough: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateHarnessSettings({ enableAudioPassthrough: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={harnessSettings.enableAudioPassthrough ? '#ffffff' : '#888888'}
@@ -381,7 +380,7 @@ export default function TestHarnessScreen() {
             </View>
             <Switch
               value={harnessSettings.testPatternOnNoVideo}
-              onValueChange={(val) => developerModeEnabled && updateHarnessSettings({ testPatternOnNoVideo: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateHarnessSettings({ testPatternOnNoVideo: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={harnessSettings.testPatternOnNoVideo ? '#ffffff' : '#888888'}
@@ -395,7 +394,7 @@ export default function TestHarnessScreen() {
             </View>
             <Switch
               value={isHighFrameRate}
-              onValueChange={(val) => developerModeEnabled && setHighFrameRate(val)}
+              onValueChange={(val) => { if (developerModeEnabled) setHighFrameRate(val); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
               thumbColor={isHighFrameRate ? '#ffffff' : '#888888'}

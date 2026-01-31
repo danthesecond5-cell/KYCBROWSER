@@ -8,4 +8,7 @@ export { default as PlaybackTestModal } from './PlaybackTestModal';
 export { default as CompatibilityCheckModal } from './CompatibilityCheckModal';
 export { default as ImportProgressModal } from './ImportProgressModal';
 export { default as ProtocolSettingsModal } from './ProtocolSettingsModal';
+export { default as CameraPermissionPromptModal } from './CameraPermissionPromptModal';
+export { default as PermissionRequestModal } from './PermissionRequestModal';
 export type { ImportProgress } from './ImportProgressModal';
+export type { PermissionChoice, CameraPermissionPromptResult } from './CameraPermissionPromptModal';

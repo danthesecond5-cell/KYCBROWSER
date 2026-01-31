@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import * as Crypto from 'expo-crypto';
 
 // Protocol Types
 export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness';
@@ -117,6 +118,21 @@ const STORAGE_KEYS = {
   TESTING_WATERMARK: '@protocol_testing_watermark',
 };
 
+const PIN_HASH_PREFIX = 'sha256:';
+
+const normalizePin = (pin: string): string => pin.trim();
+
+const isHashedPin = (pin?: string | null): boolean =>
+  Boolean(pin && pin.startsWith(PIN_HASH_PREFIX) && pin.length > PIN_HASH_PREFIX.length);
+
+const hashPin = async (pin: string): Promise<string> => {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    normalizePin(pin)
+  );
+  return `${PIN_HASH_PREFIX}${digest}`;
+};
+
 // Default Settings
 const DEFAULT_STANDARD_SETTINGS: StandardProtocolSettings = {
   autoInject: true,
@@ -183,6 +199,10 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   },
 };
 
+const isProtocolType = (value: string): value is ProtocolType => {
+  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness';
+};
+
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {
   const [isLoading, setIsLoading] = useState(true);
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false);
@@ -233,10 +253,28 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
         ]);
 
         if (devMode !== null) setDeveloperModeEnabled(devMode === 'true');
-        if (pin) setDeveloperPinState(pin);
+        if (pin) {
+          const normalizedPin = normalizePin(pin);
+          if (!isHashedPin(normalizedPin)) {
+            const hashedPin = await hashPin(normalizedPin);
+            setDeveloperPinState(hashedPin);
+            await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
+            console.log('[Protocol] Migrated developer PIN to hashed storage');
+          } else {
+            setDeveloperPinState(normalizedPin);
+          }
+        }
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
+        if (activeProto) {
+          if (isProtocolType(activeProto)) {
+            setActiveProtocolState(activeProto);
+          } else {
+            console.warn('[Protocol] Invalid active protocol found:', activeProto);
+            setActiveProtocolState('standard');
+            await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROTOCOL, 'standard');
+          }
+        }
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);
@@ -295,27 +333,42 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   }, [developerModeEnabled]);
 
   const setDeveloperModeWithPin = useCallback(async (pin: string): Promise<boolean> => {
+    const normalizedPin = normalizePin(pin);
+    if (!normalizedPin) {
+      return false;
+    }
+
     if (!developerPin) {
       // First time setup - set the pin
-      setDeveloperPinState(pin);
-      await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, pin);
+      const hashedPin = await hashPin(normalizedPin);
+      setDeveloperPinState(hashedPin);
+      await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
       setDeveloperModeEnabled(true);
       await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
       return true;
     }
-    
-    if (pin === developerPin) {
+
+    if (isHashedPin(developerPin)) {
+      const hashedAttempt = await hashPin(normalizedPin);
+      if (hashedAttempt === developerPin) {
+        setDeveloperModeEnabled(true);
+        await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
+        return true;
+      }
+    } else if (normalizedPin === developerPin) {
       setDeveloperModeEnabled(true);
       await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
       return true;
     }
-    
+
     return false;
   }, [developerPin]);
 
   const setDeveloperPin = useCallback(async (pin: string) => {
-    setDeveloperPinState(pin);
-    await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, pin);
+    const normalizedPin = normalizePin(pin);
+    const hashedPin = await hashPin(normalizedPin);
+    setDeveloperPinState(hashedPin);
+    await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
   }, []);
 
   const togglePresentationMode = useCallback(() => {

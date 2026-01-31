@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,14 @@ import {
   Switch,
   TextInput,
   Alert,
-  Platform,
 } from 'react-native';
 import {
   X,
   Shield,
-  ShieldOff,
   Lock,
   Unlock,
-  Settings,
   Trash2,
   ChevronRight,
-  Eye,
   EyeOff,
   Zap,
   Monitor,
@@ -49,7 +45,6 @@ export default function ProtocolSettingsModal({
     toggleDeveloperMode,
     setDeveloperModeWithPin,
     developerPin,
-    setDeveloperPin,
     presentationMode,
     togglePresentationMode,
     showTestingWatermark,

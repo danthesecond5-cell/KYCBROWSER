@@ -36,7 +36,8 @@ describe('DeveloperModeContext', () => {
     });
 
     expect(ctxRef!.developerMode.enabled).toBe(DEFAULT_DEVELOPER_MODE.enabled);
-    expect(ctxRef!.developerMode.pinCode).toBe(DEFAULT_DEVELOPER_MODE.pinCode);
+    expect(ctxRef!.developerMode.pinCode).toEqual(expect.any(String));
+    expect(ctxRef!.developerMode.pinCode).toMatch(/^sha256:/);
   });
 
   test('incorrect PIN does not enable developer mode', async () => {

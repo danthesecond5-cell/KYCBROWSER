@@ -13,7 +13,7 @@ import {
   Lock,
 } from 'lucide-react-native';
 
-type WatermarkPosition = 'top' | 'bottom' | 'top-right' | 'bottom-right';
+type WatermarkPosition = 'top' | 'bottom' | 'top-right' | 'bottom-right' | 'fullscreen';
 type WatermarkVariant = 'minimal' | 'full';
 
 interface TestingWatermarkProps {
@@ -38,15 +38,15 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
   } = props;
 
   const hasVariantProp = props.variant !== undefined;
-  const showOverlay = !hasVariantProp && (
+  const wantsFullscreen = position === 'fullscreen';
+  const showOverlay = wantsFullscreen || (!hasVariantProp && (
     typeof mlSafetyEnabled === 'boolean' ||
     typeof httpsEnforced === 'boolean' ||
     typeof protocolName === 'string'
-  );
+  ));
 
-  const overlayMlSafetyEnabled = mlSafetyEnabled ?? true;
-  const overlayHttpsEnforced = httpsEnforced ?? true;
-
+  const overlayMlSafetyEnabled = mlSafetyEnabled ?? (wantsFullscreen ? false : true);
+  const overlayHttpsEnforced = httpsEnforced ?? (wantsFullscreen ? false : true);
   const pulseAnim = useRef(new Animated.Value(0.7)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -162,6 +162,7 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
     bottom: styles.positionBottom,
     'top-right': styles.positionTopRight,
     'bottom-right': styles.positionBottomRight,
+    fullscreen: styles.positionTopRight,
   };
 
   return (

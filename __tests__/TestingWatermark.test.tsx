@@ -1,24 +1,46 @@
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import renderer, { act } from 'react-test-renderer';
 import TestingWatermark from '@/components/TestingWatermark';
 
 describe('TestingWatermark', () => {
+  const renderTree = (element: React.ReactElement) => {
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(element);
+    });
+    return tree!.toJSON();
+  };
+
   it('renders minimal variant', () => {
-    const { toJSON } = render(
+    const tree = renderTree(
       <TestingWatermark visible={true} variant="minimal" showPulse={false} />
     );
-    expect(toJSON()).toMatchSnapshot();
+    expect(tree).toMatchSnapshot();
   });
 
   it('renders full variant', () => {
-    const { toJSON } = render(
+    const tree = renderTree(
       <TestingWatermark visible={true} variant="full" showPulse={false} />
     );
-    expect(toJSON()).toMatchSnapshot();
+    expect(tree).toMatchSnapshot();
   });
 
   it('returns null when not visible', () => {
-    const { toJSON } = render(<TestingWatermark visible={false} />);
-    expect(toJSON()).toBeNull();
+    const tree = renderTree(<TestingWatermark visible={false} />);
+    expect(tree).toBeNull();
+  });
+
+  it('renders fullscreen position with all elements', () => {
+    const tree = renderTree(
+      <TestingWatermark
+        visible={true}
+        position="fullscreen"
+        showPulse={false}
+        mlSafetyEnabled={true}
+        httpsEnforced={true}
+        protocolName="TEST-PROTOCOL"
+      />
+    );
+    expect(tree).toMatchSnapshot();
   });
 });

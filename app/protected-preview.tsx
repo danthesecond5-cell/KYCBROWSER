@@ -13,7 +13,6 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Video, ResizeMode } from 'expo-av';
 import { ChevronLeft, Shield, Film, FlaskConical, Settings, Lock } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import TestingWatermark from '@/components/TestingWatermark';
 
@@ -22,12 +21,12 @@ export default function ProtectedPreviewScreen() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
-  const { developerMode } = useDeveloperMode();
   const {
     protectedSettings,
     updateProtectedSettings,
     developerModeEnabled,
     presentationMode,
+    showTestingWatermark,
     mlSafetyEnabled,
     protocols,
   } = useProtocol();
@@ -64,7 +63,7 @@ export default function ProtectedPreviewScreen() {
   return (
     <View style={styles.container}>
       <TestingWatermark 
-        visible={developerMode.showWatermark}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
       />
@@ -228,12 +227,12 @@ export default function ProtectedPreviewScreen() {
 
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Show Protected Badge</Text>
-              <Text style={styles.settingHint}>Display protection indicator</Text>
+              <Text style={styles.settingLabel}>Show Overlay Label</Text>
+              <Text style={styles.settingHint}>Display &quot;Protected&quot; indicator</Text>
             </View>
             <Switch
               value={protectedSettings.showProtectedBadge}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ showProtectedBadge: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateProtectedSettings({ showProtectedBadge: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.showProtectedBadge ? '#ffffff' : '#888888'}
@@ -273,7 +272,7 @@ export default function ProtectedPreviewScreen() {
             </View>
             <Switch
               value={protectedSettings.blurFallback}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ blurFallback: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateProtectedSettings({ blurFallback: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.blurFallback ? '#ffffff' : '#888888'}
