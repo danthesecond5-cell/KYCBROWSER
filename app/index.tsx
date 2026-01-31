@@ -37,7 +37,13 @@ import {
   createSimplifiedInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
-import { formatVideoUriForWebView, isBase64VideoUri, isBlobUri, isLocalFileUri } from '@/utils/videoServing';
+import {
+  formatVideoUriForWebView,
+  getDefaultFallbackVideoUri,
+  isBase64VideoUri,
+  isBlobUri,
+  isLocalFileUri,
+} from '@/utils/videoServing';
 import { isBundledSampleVideo } from '@/utils/sampleVideo';
 import { APP_CONFIG } from '@/constants/app';
 import type { SimulationConfig } from '@/types/browser';
@@ -891,22 +897,27 @@ export default function MotionBrowserScreen() {
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
   const getBeforeLoadScript = useCallback(() => {
+    // Ensure all devices have a video URI - use built-in fallback if none assigned
+    const builtInFallbackUri = getDefaultFallbackVideoUri();
     const devices = (activeTemplate?.captureDevices || []).map(d => {
       const assignedUri = d.assignedVideoUri
         ? formatVideoUriForWebView(d.assignedVideoUri)
         : null;
-      const resolvedUri = assignedUri || fallbackVideoUri || undefined;
+      const shouldSimulate = d.simulationEnabled || (effectiveStealthMode && d.type === 'camera');
+      const resolvedUri = assignedUri || fallbackVideoUri || (shouldSimulate ? builtInFallbackUri : undefined);
       return {
         ...d,
+        simulationEnabled: shouldSimulate,
         assignedVideoUri: resolvedUri,
-        assignedVideoName: d.assignedVideoName || fallbackVideo?.name,
+        assignedVideoName: d.assignedVideoName || fallbackVideo?.name || 'Built-in Test Video',
       };
     });
+    
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
     const injectionOptions = {
       stealthMode: effectiveStealthMode,
-      fallbackVideoUri,
+      fallbackVideoUri: fallbackVideoUri || builtInFallbackUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
       protocolLabel: protocolOverlayLabel,
@@ -923,10 +934,11 @@ export default function MotionBrowserScreen() {
       VIDEO_SIMULATION_TEST_SCRIPT;
     console.log('[App] Preparing before-load script with', {
       devices: devices.length,
+      devicesWithVideos: devices.filter(d => d.assignedVideoUri).length,
       stealth: effectiveStealthMode,
       allowlisted: shouldInjectMedia,
       protocol: activeProtocol,
-      fallback: fallbackVideo?.name || 'none',
+      fallback: fallbackVideo?.name || 'built-in',
     });
     return script;
   }, [

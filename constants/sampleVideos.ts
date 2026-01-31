@@ -55,6 +55,68 @@ export const DEFAULT_PORTRAIT_RESOLUTION = {
 };
 
 export const SAMPLE_VIDEOS: SampleVideo[] = [
+  // ===== BUILT-IN TEST VIDEOS (Always Available) =====
+  {
+    id: 'builtin_bouncing_ball',
+    name: 'Built-in: Bouncing Balls',
+    description: 'Animated bouncing balls - perfect for testing camera injection. No upload needed!',
+    category: 'test_pattern',
+    duration: 999,
+    isLooping: true,
+    aspectRatio: '9:16',
+    resolutions: [
+      {
+        label: '1080x1920 30fps',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        url: 'builtin:bouncing_ball',
+        fileSize: 'Built-in',
+        isPortrait: true,
+      },
+    ],
+  },
+  {
+    id: 'builtin_color_bars',
+    name: 'Built-in: SMPTE Color Bars',
+    description: 'Classic SMPTE color bars with animated shimmer - industry standard test pattern',
+    category: 'test_pattern',
+    duration: 999,
+    isLooping: true,
+    aspectRatio: '9:16',
+    resolutions: [
+      {
+        label: '1080x1920 30fps',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        url: 'builtin:color_bars',
+        fileSize: 'Built-in',
+        isPortrait: true,
+      },
+    ],
+  },
+  {
+    id: 'builtin_gradient_wave',
+    name: 'Built-in: Gradient Wave',
+    description: 'Smooth animated gradient waves with floating circles - visually appealing test',
+    category: 'animation',
+    duration: 999,
+    isLooping: true,
+    aspectRatio: '9:16',
+    resolutions: [
+      {
+        label: '1080x1920 30fps',
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        url: 'builtin:gradient_wave',
+        fileSize: 'Built-in',
+        isPortrait: true,
+      },
+    ],
+  },
+  // ===== CANVAS-GENERATED VIDEOS =====
   {
     id: 'canvas_color_bars',
     name: 'Color Bars Test',
@@ -320,11 +382,28 @@ export const QUICK_SAMPLE_VIDEOS = SAMPLE_VIDEOS.filter(v =>
 ).slice(0, 5);
 
 export const RECOMMENDED_FOR_WEBCAM = [
+  'builtin_bouncing_ball',  // Best for testing - always works
+  'builtin_color_bars',     // Industry standard test pattern
+  'builtin_gradient_wave',  // Visually appealing animated test
   'canvas_face_sim',
   'canvas_color_bars',
   'canvas_motion_test',
   'canvas_webcam_ready',
 ];
+
+/**
+ * Get built-in videos that are always available without upload
+ */
+export function getBuiltInVideos(): SampleVideo[] {
+  return SAMPLE_VIDEOS.filter(v => v.id.startsWith('builtin_'));
+}
+
+/**
+ * Check if a video URL is a built-in test video
+ */
+export function isBuiltInVideo(url: string): boolean {
+  return url.startsWith('builtin:');
+}
 
 export function getRecommendedVideos(): SampleVideo[] {
   return SAMPLE_VIDEOS.filter(v => RECOMMENDED_FOR_WEBCAM.includes(v.id));
