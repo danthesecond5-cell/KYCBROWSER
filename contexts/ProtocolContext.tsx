@@ -21,12 +21,65 @@ export interface StandardProtocolSettings {
   loopVideo: boolean;
 }
 
+// Advanced Relay Protocol Settings (Protocol 2)
+// The most technically advanced video injection system
 export interface AllowlistProtocolSettings {
   enabled: boolean;
   domains: string[];
   blockUnlisted: boolean;
   showBlockedIndicator: boolean;
   autoAddCurrentSite: boolean;
+  
+  // Advanced Protocol 2 Settings
+  advancedRelay: {
+    // Video Pipeline
+    pipeline: {
+      hotSwitchThresholdMs: number;
+      minAcceptableFps: number;
+      enableParallelDecoding: boolean;
+    };
+    
+    // WebRTC Relay
+    webrtc: {
+      enabled: boolean;
+      virtualTurnEnabled: boolean;
+      sdpManipulationEnabled: boolean;
+      stealthMode: boolean;
+    };
+    
+    // GPU Processing
+    gpu: {
+      enabled: boolean;
+      qualityPreset: 'ultra' | 'high' | 'medium' | 'low' | 'potato';
+      noiseInjection: boolean;
+      noiseIntensity: number;
+    };
+    
+    // Adaptive Stream Intelligence
+    asi: {
+      enabled: boolean;
+      siteFingerprinting: boolean;
+      autoResolutionMatching: boolean;
+      antiDetectionMeasures: boolean;
+      storeHistory: boolean;
+    };
+    
+    // Cross-Device Streaming
+    crossDevice: {
+      enabled: boolean;
+      discoveryMethod: 'manual' | 'mdns' | 'qr';
+      targetLatencyMs: number;
+      autoReconnect: boolean;
+      connectedDeviceId: string | null;
+    };
+    
+    // Cryptographic Validation
+    crypto: {
+      enabled: boolean;
+      frameSigning: boolean;
+      tamperDetection: boolean;
+    };
+  };
 }
 
 export interface ProtectedProtocolSettings {
@@ -127,11 +180,62 @@ const DEFAULT_STANDARD_SETTINGS: StandardProtocolSettings = {
 };
 
 const DEFAULT_ALLOWLIST_SETTINGS: AllowlistProtocolSettings = {
-  enabled: false,
+  enabled: true, // Now enabled by default with Advanced Relay
   domains: [],
-  blockUnlisted: true,
-  showBlockedIndicator: true,
+  blockUnlisted: false, // Less restrictive with Advanced Relay
+  showBlockedIndicator: false,
   autoAddCurrentSite: false,
+  
+  // Advanced Protocol 2 Settings
+  advancedRelay: {
+    // Video Pipeline - optimized for quality
+    pipeline: {
+      hotSwitchThresholdMs: 50,
+      minAcceptableFps: 15,
+      enableParallelDecoding: true,
+    },
+    
+    // WebRTC Relay - maximum stealth
+    webrtc: {
+      enabled: true,
+      virtualTurnEnabled: true,
+      sdpManipulationEnabled: true,
+      stealthMode: true,
+    },
+    
+    // GPU Processing - balanced quality
+    gpu: {
+      enabled: true,
+      qualityPreset: 'high',
+      noiseInjection: true,
+      noiseIntensity: 0.02,
+    },
+    
+    // ASI - intelligent adaptation
+    asi: {
+      enabled: true,
+      siteFingerprinting: true,
+      autoResolutionMatching: true,
+      antiDetectionMeasures: true,
+      storeHistory: true,
+    },
+    
+    // Cross-Device - ready for pairing
+    crossDevice: {
+      enabled: true,
+      discoveryMethod: 'qr',
+      targetLatencyMs: 100,
+      autoReconnect: true,
+      connectedDeviceId: null,
+    },
+    
+    // Crypto - secure by default
+    crypto: {
+      enabled: true,
+      frameSigning: true,
+      tamperDetection: true,
+    },
+  },
 };
 
 const DEFAULT_PROTECTED_SETTINGS: ProtectedProtocolSettings = {
@@ -162,8 +266,8 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   },
   allowlist: {
     id: 'allowlist',
-    name: 'Protocol 2: Allowlist Test Mode',
-    description: 'Limits injection to explicitly allowed domains. Recommended for safe testing.',
+    name: 'Protocol 2: Advanced Relay',
+    description: 'The most technically advanced video injection system with WebRTC relay, GPU processing, AI-powered site adaptation, cross-device streaming, and cryptographic validation.',
     enabled: true,
     settings: {},
   },

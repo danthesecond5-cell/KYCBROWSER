@@ -25,14 +25,74 @@ export interface StandardInjectionSettings {
   loggingLevel: 'none' | 'minimal' | 'verbose';
 }
 
-// Protocol 2: Allowlist Mode Settings  
-export interface AllowlistSettings {
+// Protocol 2: Advanced Relay Settings (Replaces old Allowlist Mode)
+// This is the most technically advanced video injection system featuring:
+// - Multi-source video pipeline with hot-switching
+// - WebRTC local relay with virtual TURN emulation
+// - GPU-accelerated video processing
+// - Adaptive Stream Intelligence (ASI)
+// - Cross-device live streaming support
+// - Cryptographic stream validation
+export interface AdvancedRelaySettings {
   enabled: boolean;
+  
+  // Video Pipeline Settings
+  pipeline: {
+    hotSwitchThresholdMs: number;
+    minAcceptableFps: number;
+    enableParallelDecoding: boolean;
+  };
+  
+  // WebRTC Relay Settings
+  webrtc: {
+    enabled: boolean;
+    virtualTurnEnabled: boolean;
+    sdpManipulationEnabled: boolean;
+    stealthMode: boolean;
+  };
+  
+  // GPU Processing Settings
+  gpu: {
+    enabled: boolean;
+    qualityPreset: 'ultra' | 'high' | 'medium' | 'low' | 'potato';
+    noiseInjection: boolean;
+    noiseIntensity: number;
+  };
+  
+  // Adaptive Stream Intelligence Settings
+  asi: {
+    enabled: boolean;
+    siteFingerprinting: boolean;
+    autoResolutionMatching: boolean;
+    antiDetectionMeasures: boolean;
+    storeHistory: boolean;
+  };
+  
+  // Cross-Device Streaming Settings
+  crossDevice: {
+    enabled: boolean;
+    discoveryMethod: 'manual' | 'mdns' | 'qr';
+    targetLatencyMs: number;
+    autoReconnect: boolean;
+  };
+  
+  // Cryptographic Validation Settings
+  crypto: {
+    enabled: boolean;
+    frameSigning: boolean;
+    tamperDetection: boolean;
+    keyRotationIntervalMs: number;
+  };
+  
+  // Legacy compatibility - domains still supported for filtering
   domains: string[];
   blockByDefault: boolean;
   showBlockedNotification: boolean;
   autoAddCurrentSite: boolean;
 }
+
+// Legacy alias for backwards compatibility
+export type AllowlistSettings = AdvancedRelaySettings;
 
 // Protocol 3: Protected Preview Settings
 export interface ProtectedPreviewSettings {
@@ -86,13 +146,66 @@ export const DEFAULT_STANDARD_SETTINGS: StandardInjectionSettings = {
   loggingLevel: 'minimal',
 };
 
-export const DEFAULT_ALLOWLIST_SETTINGS: AllowlistSettings = {
-  enabled: false,
+export const DEFAULT_ADVANCED_RELAY_SETTINGS: AdvancedRelaySettings = {
+  enabled: true,
+  
+  // Video Pipeline - optimized for quality
+  pipeline: {
+    hotSwitchThresholdMs: 50,
+    minAcceptableFps: 15,
+    enableParallelDecoding: true,
+  },
+  
+  // WebRTC Relay - maximum stealth
+  webrtc: {
+    enabled: true,
+    virtualTurnEnabled: true,
+    sdpManipulationEnabled: true,
+    stealthMode: true,
+  },
+  
+  // GPU Processing - balanced quality
+  gpu: {
+    enabled: true,
+    qualityPreset: 'high',
+    noiseInjection: true,
+    noiseIntensity: 0.02,
+  },
+  
+  // ASI - intelligent adaptation
+  asi: {
+    enabled: true,
+    siteFingerprinting: true,
+    autoResolutionMatching: true,
+    antiDetectionMeasures: true,
+    storeHistory: true,
+  },
+  
+  // Cross-Device - ready for pairing
+  crossDevice: {
+    enabled: true,
+    discoveryMethod: 'qr',
+    targetLatencyMs: 100,
+    autoReconnect: true,
+  },
+  
+  // Crypto - secure by default
+  crypto: {
+    enabled: true,
+    frameSigning: true,
+    tamperDetection: true,
+    keyRotationIntervalMs: 3600000, // 1 hour
+  },
+  
+  // Legacy domain filtering (preserved for compatibility)
   domains: [],
-  blockByDefault: true,
-  showBlockedNotification: true,
+  blockByDefault: false,
+  showBlockedNotification: false,
   autoAddCurrentSite: false,
 };
+
+// Legacy alias for backwards compatibility
+export const DEFAULT_ALLOWLIST_SETTINGS = DEFAULT_ADVANCED_RELAY_SETTINGS;
 
 export const DEFAULT_PROTECTED_SETTINGS: ProtectedPreviewSettings = {
   enabled: true,
@@ -145,8 +258,8 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
   },
   allowlist: {
     id: 'allowlist',
-    name: 'Protocol 2: Allowlist Test Mode',
-    description: 'Limits injection to domains you explicitly allow. Recommended for safe testing. Editing requires Developer Mode.',
+    name: 'Protocol 2: Advanced Relay',
+    description: 'The most technically advanced video injection system featuring WebRTC relay, GPU processing, Adaptive Stream Intelligence, cross-device streaming, and cryptographic validation.',
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,
