@@ -8,6 +8,7 @@ import * as Clipboard from "expo-clipboard";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
 import { ProtocolProvider } from "@/contexts/ProtocolContext";
+import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import {
   installConsoleCapture,
   startFreezeDetection,
@@ -78,15 +79,16 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ProtocolProvider>
-        <DeviceTemplateProvider>
-          <VideoLibraryProvider>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <RootLayoutNav />
-            </GestureHandlerRootView>
-          </VideoLibraryProvider>
-        </DeviceTemplateProvider>
-      </ProtocolProvider>
+      <DeveloperModeProvider>
+        <ProtocolProvider>
+          <DeviceTemplateProvider>
+            <VideoLibraryProvider>
+              <GestureHandlerRootView style={{ flex: 1 }}>
+                <RootLayoutNav />
+              </GestureHandlerRootView>
+            </VideoLibraryProvider>
+          </DeviceTemplateProvider>
+        </ProtocolProvider>
       </DeveloperModeProvider>
     </QueryClientProvider>
   );

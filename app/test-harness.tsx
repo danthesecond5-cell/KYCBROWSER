@@ -126,6 +126,8 @@ export default function TestHarnessScreen() {
     developerModeEnabled,
     showTestingWatermark,
     protocols,
+    presentationMode,
+    mlSafetyEnabled,
   } = useProtocol();
 
   const protocolEnabled = protocols.harness?.enabled ?? true;
@@ -226,8 +228,19 @@ export default function TestHarnessScreen() {
             </View>
           )}
         </View>
-        
-        {developerModeEnabled && (
+
+        {presentationMode ? (
+          <View style={styles.protocolBadge}>
+            <FlaskConical size={14} color="#ffcc00" />
+            <Text style={styles.protocolBadgeText}>Protocol 4: Local Test Harness</Text>
+            {mlSafetyEnabled && (
+              <View style={styles.mlBadge}>
+                <Shield size={10} color="#00aaff" />
+                <Text style={styles.mlBadgeText}>ML SAFE</Text>
+              </View>
+            )}
+          </View>
+        ) : developerModeEnabled ? (
           <View style={styles.protocolBadge}>
             <FlaskConical size={14} color="#ffcc00" />
             <Text style={styles.protocolBadgeText}>Developer Mode Active</Text>
@@ -236,7 +249,7 @@ export default function TestHarnessScreen() {
               <Text style={styles.mlBadgeText}>ML SAFE</Text>
             </View>
           </View>
-        )}
+        ) : null}
 
         <View style={styles.infoCard}>
           <View style={styles.infoHeader}>
@@ -257,6 +270,7 @@ export default function TestHarnessScreen() {
               onValueChange={setOverlayEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={overlayEnabled ? '#ffffff' : '#888888'}
+              disabled={!developerModeEnabled}
             />
           </View>
 
@@ -270,7 +284,16 @@ export default function TestHarnessScreen() {
               disabled={!developerModeEnabled}
             />
           </View>
-
+          <View style={styles.toggleRow}>
+            <Text style={styles.toggleLabel}>Mirror Video</Text>
+            <Switch
+              value={harnessSettings.mirrorVideo}
+              onValueChange={(v) => updateHarnessSettings({ mirrorVideo: v })}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+              thumbColor={harnessSettings.mirrorVideo ? '#ffffff' : '#888888'}
+              disabled={!developerModeEnabled}
+            />
+          </View>
           {!developerModeEnabled && (
             <Text style={styles.lockedHint}>
               Enable developer mode in Protocols to modify settings.

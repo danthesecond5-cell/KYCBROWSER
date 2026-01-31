@@ -64,7 +64,6 @@ type CameraPermissionRequest = {
 };
 
 type PermissionAction = 'simulate' | 'real' | 'deny';
-
 export default function MotionBrowserScreen() {
   const webViewRef = useRef<WebView>(null);
 
@@ -109,9 +108,9 @@ export default function MotionBrowserScreen() {
     setPendingVideoForApply,
   } = useVideoLibrary();
 
-  const { developerMode } = useDeveloperMode();
   // Protocol Context for allowlist and presentation mode
   const {
+    developerModeEnabled,
     presentationMode,
     showTestingWatermark,
     activeProtocol,
@@ -223,7 +222,6 @@ export default function MotionBrowserScreen() {
 
   const accelData = simulationActive ? simAccelData : realAccelData;
   const gyroData = simulationActive ? simGyroData : realGyroData;
-
   const currentWebsiteSettings = useMemo(() => 
     getWebsiteSettings(url),
     [getWebsiteSettings, url]

@@ -19,7 +19,6 @@ import TestingWatermark from '@/components/TestingWatermark';
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
-  const [bodyDetectionActive, setBodyDetectionActive] = useState(false);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
   const {
@@ -28,9 +27,12 @@ export default function ProtectedPreviewScreen() {
     developerModeEnabled,
     showTestingWatermark,
     protocols,
+    presentationMode,
+    mlSafetyEnabled,
   } = useProtocol();
 
   const protocolEnabled = protocols.protected?.enabled ?? true;
+  const simulateBodyDetected = protectedSettings.bodyDetectionEnabled;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -164,10 +166,11 @@ export default function ProtectedPreviewScreen() {
           <View style={styles.toggleRow}>
             <Text style={styles.toggleLabel}>Body Detection Active</Text>
             <Switch
-              value={bodyDetectionActive}
-              onValueChange={setBodyDetectionActive}
+              value={simulateBodyDetected}
+              onValueChange={(v) => updateProtectedSettings({ bodyDetectionEnabled: v })}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-              thumbColor={bodyDetectionActive ? '#ffffff' : '#888888'}
+              thumbColor={simulateBodyDetected ? '#ffffff' : '#888888'}
+              disabled={!developerModeEnabled}
             />
           </View>
           
@@ -201,6 +204,19 @@ export default function ProtectedPreviewScreen() {
               : 'Enable developer mode in Protocols to modify settings.'}
           </Text>
         </View>
+        
+        {presentationMode && (
+          <View style={styles.protocolBadge}>
+            <FlaskConical size={14} color="#ffcc00" />
+            <Text style={styles.protocolBadgeText}>Protocol 3: Protected Preview</Text>
+            {mlSafetyEnabled && (
+              <View style={styles.mlBadge}>
+                <Shield size={10} color="#00aaff" />
+                <Text style={styles.mlBadgeText}>ML SAFE</Text>
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Settings Card */}
         <View style={styles.settingsCard}>
@@ -513,6 +529,37 @@ const styles = StyleSheet.create({
   },
   sensitivityBtnTextActive: {
     color: '#ffffff',
+  },
+  protocolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
+  },
+  protocolBadgeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    color: '#ffcc00',
+  },
+  mlBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 170, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  mlBadgeText: {
+    fontSize: 9,
+    fontWeight: '700' as const,
+    color: '#00aaff',
   },
   selectorCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
