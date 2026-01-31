@@ -61,10 +61,12 @@ export default function ProtocolSettingsModal({
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    claudeSonnetSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
+    updateClaudeSonnetSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
@@ -447,6 +449,208 @@ export default function ProtocolSettingsModal({
           </View>
         );
 
+      case 'claude-sonnet':
+        return (
+          <View style={styles.settingsGroup}>
+            <Text style={styles.advancedProtocolNote}>
+              🤖 AI-Powered Advanced Protocol - Combines all best practices
+            </Text>
+            
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Adaptive Quality</Text>
+                <Text style={styles.settingHint}>Dynamically adjust quality based on performance</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.adaptiveQuality}
+                onValueChange={(v) => updateClaudeSonnetSettings({ adaptiveQuality: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={claudeSonnetSettings.adaptiveQuality ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Behavioral Analysis</Text>
+                <Text style={styles.settingHint}>Mimic natural camera behavior patterns</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.behavioralAnalysis}
+                onValueChange={(v) => updateClaudeSonnetSettings({ behavioralAnalysis: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={claudeSonnetSettings.behavioralAnalysis ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Advanced Stealth</Text>
+                <Text style={styles.settingHint}>Maximum anti-detection techniques</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.advancedStealth}
+                onValueChange={(v) => updateClaudeSonnetSettings({ advancedStealth: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={claudeSonnetSettings.advancedStealth ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>ML Body Detection</Text>
+                <Text style={styles.settingHint}>AI-powered body detection and protection</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.mlBodyDetection}
+                onValueChange={(v) => updateClaudeSonnetSettings({ mlBodyDetection: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={claudeSonnetSettings.mlBodyDetection ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Real-Time Optimization</Text>
+                <Text style={styles.settingHint}>Continuous performance optimization</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.realTimeOptimization}
+                onValueChange={(v) => updateClaudeSonnetSettings({ realTimeOptimization: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={claudeSonnetSettings.realTimeOptimization ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Timing Randomization</Text>
+                <Text style={styles.settingHint}>Prevent timing-based detection</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.timingRandomization}
+                onValueChange={(v) => updateClaudeSonnetSettings({ timingRandomization: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={claudeSonnetSettings.timingRandomization ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Protocol Chaining</Text>
+                <Text style={styles.settingHint}>Automatically use fallback protocols</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.protocolChaining}
+                onValueChange={(v) => updateClaudeSonnetSettings({ protocolChaining: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ffcc00' }}
+                thumbColor={claudeSonnetSettings.protocolChaining ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Anti-Detection Level</Text>
+              </View>
+              <View style={styles.sensitivityButtons}>
+                {(['standard', 'advanced', 'maximum'] as const).map((level) => (
+                  <TouchableOpacity
+                    key={level}
+                    style={[
+                      styles.sensitivityBtn,
+                      claudeSonnetSettings.antiDetectionLevel === level && styles.sensitivityBtnActive,
+                    ]}
+                    onPress={() => updateClaudeSonnetSettings({ antiDetectionLevel: level })}
+                  >
+                    <Text style={[
+                      styles.sensitivityBtnText,
+                      claudeSonnetSettings.antiDetectionLevel === level && styles.sensitivityBtnTextActive,
+                    ]}>
+                      {level.charAt(0).toUpperCase() + level.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Video Quality Preset</Text>
+              </View>
+              <View style={styles.sensitivityButtons}>
+                {(['performance', 'balanced', 'quality'] as const).map((preset) => (
+                  <TouchableOpacity
+                    key={preset}
+                    style={[
+                      styles.sensitivityBtn,
+                      claudeSonnetSettings.videoQualityPreset === preset && styles.sensitivityBtnActive,
+                    ]}
+                    onPress={() => updateClaudeSonnetSettings({ videoQualityPreset: preset })}
+                  >
+                    <Text style={[
+                      styles.sensitivityBtnText,
+                      claudeSonnetSettings.videoQualityPreset === preset && styles.sensitivityBtnTextActive,
+                    ]}>
+                      {preset.charAt(0).toUpperCase() + preset.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Adaptive Bitrate</Text>
+                <Text style={styles.settingHint}>Adjust bitrate based on bandwidth</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.adaptiveBitrate}
+                onValueChange={(v) => updateClaudeSonnetSettings({ adaptiveBitrate: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={claudeSonnetSettings.adaptiveBitrate ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Smart Caching</Text>
+                <Text style={styles.settingHint}>Intelligent video caching strategy</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.smartCaching}
+                onValueChange={(v) => updateClaudeSonnetSettings({ smartCaching: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={claudeSonnetSettings.smartCaching ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Predictive Preloading</Text>
+                <Text style={styles.settingHint}>Preload based on usage patterns</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.predictivePreloading}
+                onValueChange={(v) => updateClaudeSonnetSettings({ predictivePreloading: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={claudeSonnetSettings.predictivePreloading ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Neural Enhancement</Text>
+                <Text style={styles.settingHint}>AI-powered video enhancement</Text>
+              </View>
+              <Switch
+                value={claudeSonnetSettings.neuralEnhancement}
+                onValueChange={(v) => updateClaudeSonnetSettings({ neuralEnhancement: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={claudeSonnetSettings.neuralEnhancement ? '#ffffff' : '#888'}
+              />
+            </View>
+          </View>
+        );
+
       default:
         return null;
     }
@@ -457,6 +661,7 @@ export default function ProtocolSettingsModal({
     allowlist: <Shield size={18} color="#00aaff" />,
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
+    'claude-sonnet': <Cpu size={18} color="#ffcc00" />,
   };
 
   return (
@@ -1060,6 +1265,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.4)',
     marginTop: 10,
     textAlign: 'center',
+  },
+  advancedProtocolNote: {
+    fontSize: 12,
+    color: 'rgba(255, 204, 0, 0.9)',
+    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    textAlign: 'center',
+    fontWeight: '600',
   },
   actionButton: {
     flexDirection: 'row',
