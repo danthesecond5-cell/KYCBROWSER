@@ -806,7 +806,14 @@ export default function MotionBrowserScreen() {
         };
       }
     }
-  }, [pendingVideoForApply, activeTemplate, setPendingVideoForApply, assignVideoToAllDevices, injectMediaConfig]);
+  }, [
+    pendingVideoForApply,
+    activeTemplate,
+    permissionRequest,
+    setPendingVideoForApply,
+    assignVideoToAllDevices,
+    injectMediaConfig,
+  ]);
 
   const applySavedVideoToDevice = useCallback(async (deviceId: string, video: SavedVideo) => {
     if (activeTemplate) {
@@ -1011,7 +1018,7 @@ export default function MotionBrowserScreen() {
     console.log('[App] Website settings deleted:', id);
   }, [deleteWebsiteSettings]);
 
-  const handlePermissionAction = useCallback((requestId: string, action: 'simulate' | 'allow' | 'deny', config?: any) => {
+  const handlePermissionRequestAction = useCallback((requestId: string, action: 'simulate' | 'allow' | 'deny', config?: any) => {
     if (webViewRef.current) {
       console.log('[App] Sending permission response:', action, config);
       webViewRef.current.injectJavaScript(`
@@ -1410,7 +1417,7 @@ export default function MotionBrowserScreen() {
           requestId={permissionRequest.requestId}
           protocols={protocols}
           selectedVideo={permissionSelectedVideo || fallbackVideo}
-          onAction={handlePermissionAction}
+          onAction={handlePermissionRequestAction}
           onSelectVideo={() => router.push('/my-videos')}
         />
       )}
