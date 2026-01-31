@@ -1,19 +1,8 @@
 import React, { memo, useEffect, useRef } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Animated,
-  Easing,
-} from 'react-native';
-import {
-  Shield,
-  AlertTriangle,
-  FlaskConical,
-  Lock,
-} from 'lucide-react-native';
+import { View, Text, StyleSheet, Animated, Easing } from 'react-native';
+import { Shield, AlertTriangle, FlaskConical, Lock } from 'lucide-react-native';
 
-type WatermarkPosition = 'top' | 'bottom' | 'top-right' | 'bottom-right';
+type WatermarkPosition = 'top' | 'bottom' | 'top-right' | 'bottom-right' | 'fullscreen';
 type WatermarkVariant = 'minimal' | 'full';
 
 interface TestingWatermarkProps {
@@ -38,11 +27,12 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
   } = props;
 
   const hasVariantProp = props.variant !== undefined;
-  const showOverlay = !hasVariantProp && (
-    typeof mlSafetyEnabled === 'boolean' ||
-    typeof httpsEnforced === 'boolean' ||
-    typeof protocolName === 'string'
-  );
+  const showOverlay =
+    position === 'fullscreen' ||
+    (!hasVariantProp &&
+      (typeof mlSafetyEnabled === 'boolean' ||
+        typeof httpsEnforced === 'boolean' ||
+        typeof protocolName === 'string'));
 
   const overlayMlSafetyEnabled = mlSafetyEnabled ?? true;
   const overlayHttpsEnforced = httpsEnforced ?? true;
@@ -100,9 +90,7 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
         style={[styles.overlayContainer, { opacity: fadeAnim }]}
       >
         <View style={styles.topBanner}>
-          <Animated.View
-            style={[styles.bannerContent, { opacity: showPulse ? pulseAnim : 1 }]}
-          >
+          <Animated.View style={[styles.bannerContent, { opacity: showPulse ? pulseAnim : 1 }]}>
             <FlaskConical size={14} color="#ffcc00" />
             <Text style={styles.bannerText}>TESTING PROTOTYPE</Text>
             <FlaskConical size={14} color="#ffcc00" />
@@ -111,17 +99,15 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
 
         <View style={styles.safetyBadges}>
           {overlayHttpsEnforced && (
-            <View style={styles.badge}>
+            <View style={styles.httpsBadge}>
               <Lock size={10} color="#00ff88" />
-              <Text style={styles.badgeText}>HTTPS</Text>
+              <Text style={styles.httpsBadgeText}>HTTPS</Text>
             </View>
           )}
           {overlayMlSafetyEnabled && (
-            <View style={[styles.badge, styles.mlBadge]}>
+            <View style={styles.mlSafetyBadge}>
               <Shield size={10} color="#00aaff" />
-              <Text style={[styles.badgeText, styles.mlBadgeText]}>
-                ML SAFETY
-              </Text>
+              <Text style={styles.mlSafetyBadgeText}>ML SAFETY</Text>
             </View>
           )}
         </View>
@@ -157,7 +143,7 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
     );
   }
 
-  const positionStyles: Record<WatermarkPosition, object> = {
+  const positionStyles: Record<Exclude<WatermarkPosition, 'fullscreen'>, object> = {
     top: styles.positionTop,
     bottom: styles.positionBottom,
     'top-right': styles.positionTopRight,
@@ -169,7 +155,7 @@ const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkP
       pointerEvents="none"
       style={[
         styles.badgeContainer,
-        positionStyles[position],
+        positionStyles[position as Exclude<WatermarkPosition, 'fullscreen'>],
         {
           opacity: showPulse ? pulseAnim : fadeAnim,
         },
@@ -264,81 +250,39 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: 4,
   },
-  badge: {
+  httpsBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    gap: 4,
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(255, 184, 0, 0.3)',
-    gap: 4,
+    borderColor: 'rgba(0, 255, 136, 0.3)',
   },
-  badgeFull: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    gap: 8,
-  },
-  iconContainer: {
-    width: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  textContainer: {
-    alignItems: 'flex-start',
-  },
-  label: {
-    fontSize: 8,
-    fontWeight: '700',
-    color: '#FFB800',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-  },
-  labelFull: {
-    fontSize: 10,
-    letterSpacing: 1,
-  },
-  sublabel: {
-    fontSize: 8,
-    color: 'rgba(255, 184, 0, 0.7)',
-    marginTop: 1,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#00ff88',
-    marginLeft: 4,
-  },
-  securityNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  securityNoteText: {
-    fontSize: 8,
-    color: 'rgba(255, 184, 0, 0.7)',
-  },
-  mlBadge: {
-    backgroundColor: 'rgba(0, 170, 255, 0.15)',
-    borderColor: 'rgba(0, 170, 255, 0.3)',
-  },
-  badgeText: {
+  httpsBadgeText: {
     color: '#00ff88',
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  mlBadgeText: {
+  mlSafetyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 170, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 170, 255, 0.3)',
+  },
+  mlSafetyBadgeText: {
     color: '#00aaff',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   protocolIndicator: {
     position: 'absolute',
@@ -401,5 +345,68 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     marginTop: 2,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 184, 0, 0.3)',
+    gap: 4,
+  },
+  badgeFull: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    gap: 8,
+  },
+  iconContainer: {
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textContainer: {
+    alignItems: 'flex-start',
+  },
+  label: {
+    fontSize: 8,
+    fontWeight: '700',
+    color: '#FFB800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  labelFull: {
+    fontSize: 10,
+    letterSpacing: 1,
+  },
+  sublabel: {
+    fontSize: 8,
+    color: 'rgba(255, 184, 0, 0.7)',
+    marginTop: 1,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#00ff88',
+    marginLeft: 4,
+  },
+  securityNote: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  securityNoteText: {
+    fontSize: 8,
+    color: 'rgba(255, 184, 0, 0.7)',
   },
 });

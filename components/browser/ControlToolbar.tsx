@@ -808,7 +808,9 @@ export function ProtocolSettingsModal({
             </View>
             <Switch
               value={isDeveloperModeEnabled}
-              onValueChange={toggleDeveloperMode}
+              onValueChange={() => {
+                toggleDeveloperMode();
+              }}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={isDeveloperModeEnabled ? '#ffffff' : '#888888'}
             />

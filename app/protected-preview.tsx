@@ -20,6 +20,7 @@ import TestingWatermark from '@/components/TestingWatermark';
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [bodyDetectionActive, setBodyDetectionActive] = useState(false);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
   const { developerMode } = useDeveloperMode();
@@ -27,14 +28,10 @@ export default function ProtectedPreviewScreen() {
     protectedSettings,
     updateProtectedSettings,
     developerModeEnabled,
-    presentationMode,
-    mlSafetyEnabled,
     protocols,
   } = useProtocol();
 
   const protocolEnabled = protocols.protected?.enabled ?? true;
-
-  const simulateBodyDetected = protectedSettings.bodyDetectionEnabled;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -102,6 +99,13 @@ export default function ProtectedPreviewScreen() {
             </View>
           )}
         </View>
+        
+        {developerModeEnabled && (
+          <View style={styles.protocolBadge}>
+            <FlaskConical size={14} color="#ffcc00" />
+            <Text style={styles.protocolBadgeText}>Developer Mode Active</Text>
+          </View>
+        )}
 
         <View style={styles.previewCard}>
           <View style={styles.previewHeader}>
@@ -131,7 +135,7 @@ export default function ProtectedPreviewScreen() {
               </View>
             )}
 
-            {simulateBodyDetected && (
+            {bodyDetectionActive && (
               <View style={styles.overlay}>
                 {selectedVideo ? (
                   <Video
@@ -161,11 +165,10 @@ export default function ProtectedPreviewScreen() {
           <View style={styles.toggleRow}>
             <Text style={styles.toggleLabel}>Body Detection Active</Text>
             <Switch
-              value={simulateBodyDetected}
-              onValueChange={(v) => updateProtectedSettings({ bodyDetectionEnabled: v })}
+              value={bodyDetectionActive}
+              onValueChange={setBodyDetectionActive}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-              thumbColor={simulateBodyDetected ? '#ffffff' : '#888888'}
-              disabled={!developerModeEnabled}
+              thumbColor={bodyDetectionActive ? '#ffffff' : '#888888'}
             />
           </View>
           
@@ -199,19 +202,6 @@ export default function ProtectedPreviewScreen() {
               : 'Enable developer mode in Protocols to modify settings.'}
           </Text>
         </View>
-        
-        {presentationMode && (
-          <View style={styles.protocolBadge}>
-            <FlaskConical size={14} color="#ffcc00" />
-            <Text style={styles.protocolBadgeText}>Protocol 3: Protected Preview</Text>
-            {mlSafetyEnabled && (
-              <View style={styles.mlBadge}>
-                <Shield size={10} color="#00aaff" />
-                <Text style={styles.mlBadgeText}>ML SAFE</Text>
-              </View>
-            )}
-          </View>
-        )}
 
         {/* Settings Card */}
         <View style={styles.settingsCard}>
@@ -233,7 +223,9 @@ export default function ProtectedPreviewScreen() {
             </View>
             <Switch
               value={protectedSettings.showProtectedBadge}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ showProtectedBadge: val })}
+              onValueChange={(val) =>
+                developerModeEnabled && updateProtectedSettings({ showProtectedBadge: val })
+              }
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.showProtectedBadge ? '#ffffff' : '#888888'}
@@ -273,7 +265,9 @@ export default function ProtectedPreviewScreen() {
             </View>
             <Switch
               value={protectedSettings.blurFallback}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ blurFallback: val })}
+              onValueChange={(val) =>
+                developerModeEnabled && updateProtectedSettings({ blurFallback: val })
+              }
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.blurFallback ? '#ffffff' : '#888888'}
@@ -360,14 +354,14 @@ const styles = StyleSheet.create({
   },
   protocolBannerTitle: {
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
   },
   protocolBannerStatus: {
     fontSize: 10,
     color: '#00ff88',
     marginTop: 2,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   lockedIndicator: {
     width: 24,
@@ -376,6 +370,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 107, 53, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  protocolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
+  },
+  protocolBadgeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffcc00',
   },
   previewCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -393,7 +404,7 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: 16,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     color: '#ffffff',
   },
   previewSubtitle: {
@@ -420,7 +431,7 @@ const styles = StyleSheet.create({
   cameraFallbackText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   permissionButton: {
     marginTop: 12,
@@ -431,7 +442,7 @@ const styles = StyleSheet.create({
   },
   permissionButtonText: {
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#0a0a0a',
   },
   overlay: {
@@ -449,7 +460,7 @@ const styles = StyleSheet.create({
   overlayFallbackText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   overlayLabel: {
     position: 'absolute',
@@ -464,7 +475,7 @@ const styles = StyleSheet.create({
   overlayLabelText: {
     fontSize: 12,
     color: '#00ff88',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   toggleRow: {
     flexDirection: 'row',
@@ -474,7 +485,7 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 13,
     color: '#ffffff',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   toggleHint: {
     fontSize: 11,
@@ -502,42 +513,11 @@ const styles = StyleSheet.create({
   },
   sensitivityBtnText: {
     fontSize: 11,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: 'rgba(255,255,255,0.6)',
   },
   sensitivityBtnTextActive: {
     color: '#ffffff',
-  },
-  protocolBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255, 204, 0, 0.1)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 204, 0, 0.3)',
-  },
-  protocolBadgeText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#ffcc00',
-  },
-  mlBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0, 170, 255, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  mlBadgeText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: '#00aaff',
   },
   selectorCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -548,7 +528,7 @@ const styles = StyleSheet.create({
   },
   selectorTitle: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
     marginBottom: 10,
   },
@@ -559,7 +539,7 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   openLibraryButton: {
     paddingHorizontal: 16,
@@ -569,7 +549,7 @@ const styles = StyleSheet.create({
   },
   openLibraryButtonText: {
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#00aaff',
   },
   videoList: {
@@ -601,7 +581,7 @@ const styles = StyleSheet.create({
   videoOptionBadge: {
     fontSize: 10,
     color: '#00ff88',
-    fontWeight: '600' as const,
+    fontWeight: '600',
     marginLeft: 8,
   },
   settingsCard: {
@@ -610,7 +590,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    marginTop: 16,
+    marginBottom: 16,
   },
   settingsHeader: {
     flexDirection: 'row',
@@ -623,7 +603,7 @@ const styles = StyleSheet.create({
   },
   settingsTitle: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
     flex: 1,
   },
@@ -639,7 +619,7 @@ const styles = StyleSheet.create({
   settingsLockedText: {
     fontSize: 10,
     color: '#ff6b35',
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   settingRow: {
     flexDirection: 'row',
@@ -655,7 +635,7 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 13,
-    fontWeight: '500' as const,
+    fontWeight: '500',
     color: '#ffffff',
   },
   settingHint: {
@@ -679,11 +659,11 @@ const styles = StyleSheet.create({
   },
   segmentButtonText: {
     fontSize: 11,
-    fontWeight: '500' as const,
+    fontWeight: '500',
     color: 'rgba(255,255,255,0.6)',
   },
   segmentButtonTextActive: {
     color: '#0a0a0a',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
 });
