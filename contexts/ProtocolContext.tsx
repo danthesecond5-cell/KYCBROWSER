@@ -270,7 +270,9 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           if (isProtocolType(activeProto)) {
             setActiveProtocolState(activeProto);
           } else {
-            console.warn('[Protocol] Unknown active protocol in storage:', activeProto);
+            console.warn('[Protocol] Invalid active protocol found:', activeProto);
+            setActiveProtocolState('standard');
+            await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROTOCOL, 'standard');
           }
         }
         if (protocolsConfig) {
