@@ -85,6 +85,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
   const isMountedRef = useRef(true);
   const isRefreshingRef = useRef(false);
   const hasInitializedRef = useRef(false);
+  const saveQueueRef = useRef(Promise.resolve());
 
   const loadVideosMetadata = useCallback(async (): Promise<SavedVideo[]> => {
     try {
@@ -111,6 +112,12 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
     }
   }, []);
 
+  const queueSaveVideos = useCallback((videos: SavedVideo[]) => {
+    saveQueueRef.current = saveQueueRef.current
+      .then(() => saveVideosMetadata(videos))
+      .catch(() => saveVideosMetadata(videos));
+  }, [saveVideosMetadata]);
+
   const persistCompatibilityResult = useCallback((videoId: string, result: CompatibilityResult) => {
     const compatibility = {
       overallStatus: result.overallStatus,
@@ -125,10 +132,10 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
           ? { ...video, compatibility }
           : video
       );
-      void saveVideosMetadata(updated);
+      queueSaveVideos(updated);
       return updated;
     });
-  }, [saveVideosMetadata]);
+  }, [queueSaveVideos]);
 
   const syncWithFileSystem = useCallback(async (): Promise<SavedVideo[]> => {
     const storedMetadata = await loadVideosMetadata();
@@ -317,9 +324,11 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       message: 'Saving to library...',
     });
 
-    const updatedVideos = [videoWithMetadata, ...savedVideos];
-    setSavedVideos(updatedVideos);
-    await saveVideosMetadata(updatedVideos);
+    setSavedVideos(prev => {
+      const updated = [videoWithMetadata, ...prev];
+      queueSaveVideos(updated);
+      return updated;
+    });
 
     setProcessingState({
       isProcessing: false,
@@ -330,7 +339,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
 
     console.log('[VideoLibrary] Video saved:', videoWithMetadata.name);
     return videoWithMetadata;
-  }, [savedVideos, saveVideosMetadata]);
+  }, [queueSaveVideos]);
 
   const saveLocalVideo = useCallback(async (uri: string, name: string): Promise<SavedVideo | null> => {
     console.log('[VideoLibrary] Saving local video:', uri);
@@ -401,9 +410,11 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
       message: 'Saving to library...',
     });
 
-    const updatedVideos = [videoWithMetadata, ...savedVideos];
-    setSavedVideos(updatedVideos);
-    await saveVideosMetadata(updatedVideos);
+    setSavedVideos(prev => {
+      const updated = [videoWithMetadata, ...prev];
+      queueSaveVideos(updated);
+      return updated;
+    });
 
     setProcessingState({
       isProcessing: false,
@@ -414,7 +425,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
 
     console.log('[VideoLibrary] Local video saved:', videoWithMetadata.name);
     return videoWithMetadata;
-  }, [savedVideos, saveVideosMetadata]);
+  }, [queueSaveVideos]);
 
   const removeVideo = useCallback(async (id: string): Promise<boolean> => {
     const video = savedVideos.find(v => v.id === id);

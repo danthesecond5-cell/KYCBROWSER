@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import * as Crypto from 'expo-crypto';
 import {
   DeveloperModeSettings,
   ProtocolSettings,
@@ -15,6 +16,20 @@ import {
 
 const DEVELOPER_MODE_KEY = '@developer_mode_settings';
 const PROTOCOL_SETTINGS_KEY = '@protocol_settings';
+const PIN_HASH_PREFIX = 'sha256:';
+
+const normalizePin = (pin: string): string => pin.trim();
+
+const isHashedPin = (pin?: string | null): boolean =>
+  Boolean(pin && pin.startsWith(PIN_HASH_PREFIX) && pin.length > PIN_HASH_PREFIX.length);
+
+const hashPin = async (pin: string): Promise<string> => {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    normalizePin(pin)
+  );
+  return `${PIN_HASH_PREFIX}${digest}`;
+};
 
 interface DeveloperModeContextValue {
   // Developer Mode
@@ -25,7 +40,7 @@ interface DeveloperModeContextValue {
   // Toggle now accepts an optional PIN attempt and returns a boolean indicating success
   toggleDeveloperMode: (pin?: string) => Promise<boolean>;
   updateDeveloperSettings: (updates: Partial<DeveloperModeSettings>) => Promise<void>;
-  verifyPinCode: (pin: string) => boolean;
+  verifyPinCode: (pin: string) => Promise<boolean>;
   setPinCode: (pin: string | null) => Promise<void>;
   
   // Protocol Settings
@@ -55,11 +70,22 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
           AsyncStorage.getItem(PROTOCOL_SETTINGS_KEY),
         ]);
 
+        let loadedDeveloperMode = DEFAULT_DEVELOPER_MODE;
+
         if (devModeData) {
           const parsed = JSON.parse(devModeData);
-          setDeveloperMode({ ...DEFAULT_DEVELOPER_MODE, ...parsed });
-          console.log('[DeveloperMode] Loaded developer mode settings');
+          loadedDeveloperMode = { ...DEFAULT_DEVELOPER_MODE, ...parsed };
         }
+
+        if (loadedDeveloperMode.pinCode && !isHashedPin(loadedDeveloperMode.pinCode)) {
+          const hashedPin = await hashPin(loadedDeveloperMode.pinCode);
+          loadedDeveloperMode = { ...loadedDeveloperMode, pinCode: hashedPin };
+          await AsyncStorage.setItem(DEVELOPER_MODE_KEY, JSON.stringify(loadedDeveloperMode));
+          console.log('[DeveloperMode] Migrated developer PIN to hashed storage');
+        }
+
+        setDeveloperMode(loadedDeveloperMode);
+        console.log('[DeveloperMode] Loaded developer mode settings');
 
         if (protocolData) {
           const parsed = JSON.parse(protocolData);
@@ -102,23 +128,32 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
   }, []);
 
   // PIN code management
-  const verifyPinCode = useCallback((pin: string): boolean => {
+  const verifyPinCode = useCallback(async (pin: string): Promise<boolean> => {
     if (!developerMode.pinCode) return true;
-    return developerMode.pinCode === pin;
+    const normalizedPin = normalizePin(pin);
+    if (!normalizedPin) return false;
+    if (isHashedPin(developerMode.pinCode)) {
+      const hashed = await hashPin(normalizedPin);
+      return hashed === developerMode.pinCode;
+    }
+    return developerMode.pinCode === normalizedPin;
   }, [developerMode.pinCode]);
 
   const setPinCode = useCallback(async (pin: string | null) => {
-    const updated = { ...developerMode, pinCode: pin };
+    const normalizedPin = pin ? normalizePin(pin) : null;
+    const hashedPin = normalizedPin ? await hashPin(normalizedPin) : null;
+    const updated = { ...developerMode, pinCode: hashedPin };
     setDeveloperMode(updated);
     await saveDeveloperMode(updated);
-    console.log('[DeveloperMode] PIN code', pin ? 'set' : 'cleared');
+    console.log('[DeveloperMode] PIN code', hashedPin ? 'set' : 'cleared');
   }, [developerMode, saveDeveloperMode]);
 
   // Toggle developer mode (requires PIN when enabling)
   const toggleDeveloperMode = useCallback(async (pinAttempt?: string) => {
     // If enabling developer mode, require correct PIN
     if (!developerMode.enabled) {
-      if (!verifyPinCode(pinAttempt ?? '')) {
+      const validPin = await verifyPinCode(pinAttempt ?? '');
+      if (!validPin) {
         console.warn('[DeveloperMode] Incorrect PIN attempt to enable developer mode');
         return false;
       }
