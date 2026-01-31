@@ -61,10 +61,12 @@ export default function ProtocolSettingsModal({
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    codexSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
+    updateCodexSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
@@ -190,6 +192,18 @@ export default function ProtocolSettingsModal({
             </View>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Respect Site Settings</Text>
+                <Text style={styles.settingHint}>Apply per-site stealth preferences</Text>
+              </View>
+              <Switch
+                value={standardSettings.respectSiteSettings}
+                onValueChange={(v) => updateStandardSettings({ respectSiteSettings: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={standardSettings.respectSiteSettings ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Inject Motion Data</Text>
                 <Text style={styles.settingHint}>Include accelerometer/gyroscope simulation</Text>
               </View>
@@ -274,6 +288,18 @@ export default function ProtocolSettingsModal({
                 onValueChange={(v) => updateAllowlistSettings({ showBlockedIndicator: v })}
                 trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
                 thumbColor={allowlistSettings.showBlockedIndicator ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Auto-Add Current Site</Text>
+                <Text style={styles.settingHint}>Add visited sites automatically</Text>
+              </View>
+              <Switch
+                value={allowlistSettings.autoAddCurrentSite}
+                onValueChange={(v) => updateAllowlistSettings({ autoAddCurrentSite: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={allowlistSettings.autoAddCurrentSite ? '#ffffff' : '#888'}
               />
             </View>
 
@@ -447,6 +473,120 @@ export default function ProtocolSettingsModal({
           </View>
         );
 
+      case 'gpt-5-2-codex-high':
+        return (
+          <View style={styles.settingsGroup}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Auto Inject</Text>
+                <Text style={styles.settingHint}>Continuously apply the latest config</Text>
+              </View>
+              <Switch
+                value={codexSettings.autoInject}
+                onValueChange={(v) => updateCodexSettings({ autoInject: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={codexSettings.autoInject ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Stealth Mode</Text>
+                <Text style={styles.settingHint}>Maintain high-fidelity stealth signals</Text>
+              </View>
+              <Switch
+                value={codexSettings.stealthMode}
+                onValueChange={(v) => updateCodexSettings({ stealthMode: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={codexSettings.stealthMode ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Force Simulation</Text>
+                <Text style={styles.settingHint}>Always return simulated streams</Text>
+              </View>
+              <Switch
+                value={codexSettings.forceSimulation}
+                onValueChange={(v) => updateCodexSettings({ forceSimulation: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={codexSettings.forceSimulation ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Aggressive Retries</Text>
+                <Text style={styles.settingHint}>Extend retry budget for difficult sources</Text>
+              </View>
+              <Switch
+                value={codexSettings.aggressiveRetries}
+                onValueChange={(v) => updateCodexSettings({ aggressiveRetries: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={codexSettings.aggressiveRetries ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Auto Recovery</Text>
+                <Text style={styles.settingHint}>Re-inject if stream health degrades</Text>
+              </View>
+              <Switch
+                value={codexSettings.autoRecover}
+                onValueChange={(v) => updateCodexSettings({ autoRecover: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={codexSettings.autoRecover ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Overlay Label</Text>
+                <Text style={styles.settingHint}>Show protocol label on-page</Text>
+              </View>
+              <Switch
+                value={codexSettings.showOverlayLabel}
+                onValueChange={(v) => updateCodexSettings({ showOverlayLabel: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={codexSettings.showOverlayLabel ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Loop Video</Text>
+                <Text style={styles.settingHint}>Keep the simulated feed looping</Text>
+              </View>
+              <Switch
+                value={codexSettings.loopVideo}
+                onValueChange={(v) => updateCodexSettings({ loopVideo: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={codexSettings.loopVideo ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Mirror Video</Text>
+                <Text style={styles.settingHint}>Flip video horizontally</Text>
+              </View>
+              <Switch
+                value={codexSettings.mirrorVideo}
+                onValueChange={(v) => updateCodexSettings({ mirrorVideo: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={codexSettings.mirrorVideo ? '#ffffff' : '#888'}
+              />
+            </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Telemetry</Text>
+                <Text style={styles.settingHint}>Enable advanced debug telemetry</Text>
+              </View>
+              <Switch
+                value={codexSettings.enableTelemetry}
+                onValueChange={(v) => updateCodexSettings({ enableTelemetry: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ffcc00' }}
+                thumbColor={codexSettings.enableTelemetry ? '#ffffff' : '#888'}
+              />
+            </View>
+          </View>
+        );
+
       default:
         return null;
     }
@@ -457,6 +597,7 @@ export default function ProtocolSettingsModal({
     allowlist: <Shield size={18} color="#00aaff" />,
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
+    'gpt-5-2-codex-high': <Cpu size={18} color="#ffcc00" />,
   };
 
   return (

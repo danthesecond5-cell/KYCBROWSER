@@ -13,7 +13,6 @@ import { Stack, router } from 'expo-router';
 import { WebView } from 'react-native-webview';
 import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity, Shield } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
 import { formatVideoUriForWebView, isLocalFileUri } from '@/utils/videoServing';
 import TestingWatermark from '@/components/TestingWatermark';
@@ -121,12 +120,12 @@ export default function TestHarnessScreen() {
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
-  const { developerMode } = useDeveloperMode();
   const {
     harnessSettings,
     updateHarnessSettings,
     developerModeEnabled,
     presentationMode,
+    showTestingWatermark,
     mlSafetyEnabled,
     protocols,
   } = useProtocol();
@@ -188,7 +187,7 @@ export default function TestHarnessScreen() {
   return (
     <View style={styles.container}>
       <TestingWatermark 
-        visible={developerMode.showWatermark}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
       />
