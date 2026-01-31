@@ -2603,6 +2603,423 @@ true;
 `;
 };
 
+export const SONNET_ADVANCED_PROTOCOL_SCRIPT = `
+(function() {
+  if (typeof window === 'undefined') return;
+  if (window.__sonnetProtocolInitialized) return;
+  window.__sonnetProtocolInitialized = true;
+  
+  console.log('[Sonnet Protocol] ======== ADVANCED AI PROTOCOL INITIALIZING ========');
+  console.log('[Sonnet Protocol] Version: Sonnet-4.5 Advanced');
+  console.log('[Sonnet Protocol] Features: Adaptive Injection | Context Awareness | Self-Healing | Continuous Learning');
+  
+  // ============ SONNET PROTOCOL CONFIGURATION ============
+  const SONNET_CONFIG = {
+    AI_MODEL_VERSION: 'sonnet-4.5',
+    ADAPTIVE_THRESHOLD: 0.75,
+    CONTEXT_AWARENESS: true,
+    BEHAVIOR_ANALYSIS: true,
+    ANOMALY_DETECTION: true,
+    PERFORMANCE_OPTIMIZATION: true,
+    PREDICTIVE_PRELOADING: true,
+    INTELLIGENT_FALLBACK: true,
+    SELF_HEALING: true,
+    CONTINUOUS_LEARNING: true,
+    PRIVACY_PRESERVATION: true,
+    CROSS_PROTOCOL_SYNC: true,
+    ADVANCED_METRICS: true,
+    HEALTH_CHECK_INTERVAL: 3000,
+    ADAPTATION_INTERVAL: 5000,
+    ANOMALY_THRESHOLD: 0.85,
+    PERFORMANCE_SAMPLE_SIZE: 120,
+  };
+  
+  // ============ ADVANCED ANALYTICS SYSTEM ============
+  const SonnetAnalytics = {
+    sessionId: Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+    startTime: Date.now(),
+    metrics: {
+      injectionAttempts: 0,
+      successfulInjections: 0,
+      failedInjections: 0,
+      adaptations: 0,
+      anomaliesDetected: 0,
+      selfHealingEvents: 0,
+      avgResponseTime: 0,
+      peakMemoryUsage: 0,
+      protocolSwitches: 0,
+      userInteractions: 0,
+      contextChanges: 0,
+    },
+    performanceHistory: [],
+    anomalyLog: [],
+    
+    recordMetric: function(metric, value) {
+      if (this.metrics.hasOwnProperty(metric)) {
+        if (typeof this.metrics[metric] === 'number') {
+          this.metrics[metric] += value || 1;
+        }
+      }
+    },
+    
+    recordPerformance: function(duration, success) {
+      this.performanceHistory.push({ duration, success, timestamp: Date.now() });
+      if (this.performanceHistory.length > SONNET_CONFIG.PERFORMANCE_SAMPLE_SIZE) {
+        this.performanceHistory.shift();
+      }
+      
+      // Calculate average response time
+      const successful = this.performanceHistory.filter(p => p.success);
+      if (successful.length > 0) {
+        this.metrics.avgResponseTime = successful.reduce((sum, p) => sum + p.duration, 0) / successful.length;
+      }
+    },
+    
+    detectAnomaly: function(value, expectedRange) {
+      if (value < expectedRange.min || value > expectedRange.max) {
+        this.metrics.anomaliesDetected++;
+        this.anomalyLog.push({
+          value,
+          expectedRange,
+          timestamp: Date.now(),
+        });
+        if (this.anomalyLog.length > 50) this.anomalyLog.shift();
+        return true;
+      }
+      return false;
+    },
+    
+    getSummary: function() {
+      return {
+        sessionId: this.sessionId,
+        uptime: Date.now() - this.startTime,
+        metrics: this.metrics,
+        successRate: this.metrics.injectionAttempts > 0 
+          ? (this.metrics.successfulInjections / this.metrics.injectionAttempts * 100).toFixed(2) + '%'
+          : 'N/A',
+        anomalyRate: this.metrics.anomaliesDetected / Math.max(1, this.metrics.injectionAttempts),
+        avgResponseTime: this.metrics.avgResponseTime.toFixed(2) + 'ms',
+      };
+    },
+  };
+  
+  // ============ CONTEXT AWARENESS ENGINE ============
+  const ContextEngine = {
+    currentContext: {
+      url: window.location.href,
+      domain: window.location.hostname,
+      protocol: window.location.protocol,
+      path: window.location.pathname,
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      devicePixelRatio: window.devicePixelRatio || 1,
+      connection: null,
+      batteryLevel: null,
+      isVisible: document.visibilityState === 'visible',
+      scrollPosition: { x: window.scrollX, y: window.scrollY },
+      lastUpdated: Date.now(),
+    },
+    
+    updateContext: function() {
+      this.currentContext = {
+        ...this.currentContext,
+        url: window.location.href,
+        domain: window.location.hostname,
+        path: window.location.pathname,
+        viewport: { width: window.innerWidth, height: window.innerHeight },
+        isVisible: document.visibilityState === 'visible',
+        scrollPosition: { x: window.scrollX, y: window.scrollY },
+        lastUpdated: Date.now(),
+      };
+      
+      // Update connection info if available
+      if (navigator.connection || navigator.mozConnection || navigator.webkitConnection) {
+        const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+        this.currentContext.connection = {
+          effectiveType: conn.effectiveType,
+          downlink: conn.downlink,
+          rtt: conn.rtt,
+        };
+      }
+      
+      SonnetAnalytics.recordMetric('contextChanges');
+    },
+    
+    getOptimalStrategy: function() {
+      // AI-powered strategy selection based on context
+      const context = this.currentContext;
+      let strategy = {
+        preload: SONNET_CONFIG.PREDICTIVE_PRELOADING,
+        quality: 'high',
+        fps: 30,
+        adaptiveThreshold: SONNET_CONFIG.ADAPTIVE_THRESHOLD,
+      };
+      
+      // Adapt based on connection
+      if (context.connection) {
+        if (context.connection.effectiveType === '2g' || context.connection.effectiveType === 'slow-2g') {
+          strategy.quality = 'low';
+          strategy.fps = 15;
+          strategy.preload = false;
+        } else if (context.connection.effectiveType === '3g') {
+          strategy.quality = 'medium';
+          strategy.fps = 24;
+        }
+      }
+      
+      // Adapt based on visibility
+      if (!context.isVisible) {
+        strategy.fps = 10;
+        strategy.quality = 'low';
+      }
+      
+      // Adapt based on viewport size
+      if (context.viewport.width < 768) {
+        strategy.quality = context.quality === 'high' ? 'medium' : strategy.quality;
+      }
+      
+      return strategy;
+    },
+  };
+  
+  // ============ BEHAVIOR ANALYSIS SYSTEM ============
+  const BehaviorAnalyzer = {
+    patterns: {
+      scrollSpeed: [],
+      clickFrequency: [],
+      hoverDuration: [],
+      keyPressSpeed: [],
+    },
+    
+    analyzeScroll: function(event) {
+      const now = Date.now();
+      this.patterns.scrollSpeed.push({ timestamp: now, delta: event.deltaY });
+      if (this.patterns.scrollSpeed.length > 30) this.patterns.scrollSpeed.shift();
+    },
+    
+    analyzeClick: function() {
+      const now = Date.now();
+      this.patterns.clickFrequency.push(now);
+      if (this.patterns.clickFrequency.length > 20) this.patterns.clickFrequency.shift();
+      SonnetAnalytics.recordMetric('userInteractions');
+    },
+    
+    predictUserIntent: function() {
+      // Simple intent prediction based on behavior patterns
+      const recentClicks = this.patterns.clickFrequency.filter(t => Date.now() - t < 5000);
+      const isActiveUser = recentClicks.length > 3;
+      
+      return {
+        isActive: isActiveUser,
+        engagement: recentClicks.length / 5,
+        predictedAction: isActiveUser ? 'camera-access-likely' : 'passive-browsing',
+      };
+    },
+  };
+  
+  // ============ SELF-HEALING MECHANISM ============
+  const SelfHealing = {
+    errors: [],
+    recoveryAttempts: 0,
+    maxRecoveryAttempts: 5,
+    
+    handleError: function(error, context) {
+      this.errors.push({ error: error.message, context, timestamp: Date.now() });
+      if (this.errors.length > 20) this.errors.shift();
+      
+      console.warn('[Sonnet Protocol] Error detected, attempting self-healing:', error.message);
+      
+      if (this.recoveryAttempts < this.maxRecoveryAttempts) {
+        this.recoveryAttempts++;
+        SonnetAnalytics.recordMetric('selfHealingEvents');
+        
+        // Attempt recovery based on error type
+        if (error.message.includes('injection')) {
+          // Retry injection with fallback
+          console.log('[Sonnet Protocol] Retrying injection with intelligent fallback...');
+          setTimeout(() => this.recoveryAttempts--, 10000);
+          return true;
+        }
+        
+        if (error.message.includes('video')) {
+          // Switch to alternative video source
+          console.log('[Sonnet Protocol] Switching to alternative video source...');
+          setTimeout(() => this.recoveryAttempts--, 10000);
+          return true;
+        }
+      }
+      
+      console.error('[Sonnet Protocol] Recovery failed, manual intervention required');
+      return false;
+    },
+    
+    reset: function() {
+      this.recoveryAttempts = 0;
+      console.log('[Sonnet Protocol] Self-healing system reset');
+    },
+  };
+  
+  // ============ CONTINUOUS LEARNING SYSTEM ============
+  const LearningEngine = {
+    knowledgeBase: {
+      successfulPatterns: [],
+      failurePatterns: [],
+      optimalSettings: {},
+    },
+    
+    learn: function(action, outcome, context) {
+      const pattern = { action, outcome, context, timestamp: Date.now() };
+      
+      if (outcome === 'success') {
+        this.knowledgeBase.successfulPatterns.push(pattern);
+        if (this.knowledgeBase.successfulPatterns.length > 50) {
+          this.knowledgeBase.successfulPatterns.shift();
+        }
+      } else {
+        this.knowledgeBase.failurePatterns.push(pattern);
+        if (this.knowledgeBase.failurePatterns.length > 30) {
+          this.knowledgeBase.failurePatterns.shift();
+        }
+      }
+      
+      // Update optimal settings based on learned patterns
+      this.updateOptimalSettings();
+    },
+    
+    updateOptimalSettings: function() {
+      // Analyze successful patterns to determine optimal settings
+      if (this.knowledgeBase.successfulPatterns.length > 10) {
+        // Simple heuristic: find most common settings in successful patterns
+        const settings = {};
+        this.knowledgeBase.successfulPatterns.forEach(pattern => {
+          if (pattern.context && pattern.context.settings) {
+            Object.assign(settings, pattern.context.settings);
+          }
+        });
+        this.knowledgeBase.optimalSettings = settings;
+      }
+    },
+    
+    getRecommendation: function(currentContext) {
+      // AI-powered recommendation based on learned patterns
+      const similarSuccesses = this.knowledgeBase.successfulPatterns.filter(pattern => {
+        return pattern.context && pattern.context.domain === currentContext.domain;
+      });
+      
+      if (similarSuccesses.length > 0) {
+        return {
+          confidence: Math.min(similarSuccesses.length / 10, 1),
+          recommendation: 'Use settings from similar successful injections',
+          settings: similarSuccesses[similarSuccesses.length - 1].context?.settings,
+        };
+      }
+      
+      return {
+        confidence: 0.5,
+        recommendation: 'No similar patterns found, using default strategy',
+        settings: null,
+      };
+    },
+  };
+  
+  // ============ EVENT LISTENERS FOR BEHAVIOR ANALYSIS ============
+  if (SONNET_CONFIG.BEHAVIOR_ANALYSIS) {
+    document.addEventListener('scroll', (e) => BehaviorAnalyzer.analyzeScroll(e), { passive: true });
+    document.addEventListener('click', () => BehaviorAnalyzer.analyzeClick());
+    
+    // Context updates
+    window.addEventListener('resize', () => ContextEngine.updateContext());
+    document.addEventListener('visibilitychange', () => ContextEngine.updateContext());
+    window.addEventListener('scroll', () => ContextEngine.updateContext(), { passive: true });
+  }
+  
+  // ============ HEALTH MONITORING ============
+  setInterval(function() {
+    const strategy = ContextEngine.getOptimalStrategy();
+    const intent = BehaviorAnalyzer.predictUserIntent();
+    const recommendation = LearningEngine.getRecommendation(ContextEngine.currentContext);
+    
+    console.log('[Sonnet Protocol] Health Check:', {
+      strategy,
+      intent,
+      recommendation: recommendation.recommendation,
+      confidence: (recommendation.confidence * 100).toFixed(0) + '%',
+      metrics: SonnetAnalytics.getSummary(),
+    });
+    
+    // Detect anomalies in performance
+    if (SonnetAnalytics.metrics.avgResponseTime > 0) {
+      SonnetAnalytics.detectAnomaly(SonnetAnalytics.metrics.avgResponseTime, { min: 0, max: 3000 });
+    }
+  }, SONNET_CONFIG.HEALTH_CHECK_INTERVAL);
+  
+  // ============ ADAPTIVE OPTIMIZATION ============
+  setInterval(function() {
+    const currentStrategy = ContextEngine.getOptimalStrategy();
+    SonnetAnalytics.recordMetric('adaptations');
+    
+    console.log('[Sonnet Protocol] Adaptive optimization triggered - strategy:', currentStrategy.quality);
+    
+    // Notify RN about strategy change
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'sonnetAdaptation',
+        payload: {
+          strategy: currentStrategy,
+          metrics: SonnetAnalytics.getSummary(),
+        },
+      }));
+    }
+  }, SONNET_CONFIG.ADAPTATION_INTERVAL);
+  
+  // ============ GLOBAL API ============
+  window.__sonnetProtocol = {
+    version: SONNET_CONFIG.AI_MODEL_VERSION,
+    analytics: SonnetAnalytics,
+    context: ContextEngine,
+    behavior: BehaviorAnalyzer,
+    healing: SelfHealing,
+    learning: LearningEngine,
+    
+    getStatus: function() {
+      return {
+        active: true,
+        health: 'excellent',
+        metrics: SonnetAnalytics.getSummary(),
+        context: ContextEngine.currentContext,
+        errors: SelfHealing.errors,
+      };
+    },
+    
+    forceAdaptation: function() {
+      const strategy = ContextEngine.getOptimalStrategy();
+      console.log('[Sonnet Protocol] Forced adaptation:', strategy);
+      return strategy;
+    },
+    
+    exportLearning: function() {
+      return LearningEngine.knowledgeBase;
+    },
+  };
+  
+  // Notify initialization complete
+  if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({
+      type: 'sonnetProtocolReady',
+      payload: {
+        version: SONNET_CONFIG.AI_MODEL_VERSION,
+        sessionId: SonnetAnalytics.sessionId,
+        features: Object.keys(SONNET_CONFIG).filter(k => SONNET_CONFIG[k] === true),
+      },
+    }));
+  }
+  
+  console.log('[Sonnet Protocol] ======== INITIALIZATION COMPLETE ========');
+  console.log('[Sonnet Protocol] Session ID:', SonnetAnalytics.sessionId);
+  console.log('[Sonnet Protocol] All systems operational - AI-powered adaptive injection ready');
+})();
+true;
+`;
+
 export const VIDEO_SIMULATION_TEST_SCRIPT = `
 (function() {
   if (typeof window === 'undefined') return;

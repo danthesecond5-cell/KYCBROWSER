@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 
 // Protocol Types
-export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness';
+export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'sonnet';
 
 export interface ProtocolConfig {
   id: ProtocolType;
@@ -47,6 +47,25 @@ export interface HarnessProtocolSettings {
   testPatternOnNoVideo: boolean;
 }
 
+export interface SonnetProtocolSettings {
+  aiModelVersion: string;
+  adaptiveInjection: boolean;
+  adaptiveThreshold: number;
+  contextAwareness: boolean;
+  behaviorAnalysis: boolean;
+  anomalyDetection: boolean;
+  performanceOptimization: boolean;
+  predictivePreloading: boolean;
+  intelligentFallback: boolean;
+  mlInferenceEnabled: boolean;
+  mlModelPath: string | null;
+  selfHealing: boolean;
+  continuousLearning: boolean;
+  privacyPreservation: boolean;
+  crossProtocolSync: boolean;
+  advancedMetrics: boolean;
+}
+
 export interface ProtocolContextValue {
   // Developer Mode
   developerModeEnabled: boolean;
@@ -77,12 +96,14 @@ export interface ProtocolContextValue {
   allowlistSettings: AllowlistProtocolSettings;
   protectedSettings: ProtectedProtocolSettings;
   harnessSettings: HarnessProtocolSettings;
+  sonnetSettings: SonnetProtocolSettings;
   
   // Settings Updaters
   updateStandardSettings: (settings: Partial<StandardProtocolSettings>) => Promise<void>;
   updateAllowlistSettings: (settings: Partial<AllowlistProtocolSettings>) => Promise<void>;
   updateProtectedSettings: (settings: Partial<ProtectedProtocolSettings>) => Promise<void>;
   updateHarnessSettings: (settings: Partial<HarnessProtocolSettings>) => Promise<void>;
+  updateSonnetSettings: (settings: Partial<SonnetProtocolSettings>) => Promise<void>;
   
   // Allowlist helpers
   addAllowlistDomain: (domain: string) => Promise<void>;
@@ -112,6 +133,7 @@ const STORAGE_KEYS = {
   ALLOWLIST_SETTINGS: '@protocol_allowlist_settings',
   PROTECTED_SETTINGS: '@protocol_protected_settings',
   HARNESS_SETTINGS: '@protocol_harness_settings',
+  SONNET_SETTINGS: '@protocol_sonnet_settings',
   HTTPS_ENFORCED: '@protocol_https_enforced',
   ML_SAFETY: '@protocol_ml_safety',
   TESTING_WATERMARK: '@protocol_testing_watermark',
@@ -152,6 +174,25 @@ const DEFAULT_HARNESS_SETTINGS: HarnessProtocolSettings = {
   testPatternOnNoVideo: true,
 };
 
+const DEFAULT_SONNET_SETTINGS: SonnetProtocolSettings = {
+  aiModelVersion: 'sonnet-4.5',
+  adaptiveInjection: true,
+  adaptiveThreshold: 0.75,
+  contextAwareness: true,
+  behaviorAnalysis: true,
+  anomalyDetection: true,
+  performanceOptimization: true,
+  predictivePreloading: true,
+  intelligentFallback: true,
+  mlInferenceEnabled: true,
+  mlModelPath: null,
+  selfHealing: true,
+  continuousLearning: true,
+  privacyPreservation: true,
+  crossProtocolSync: true,
+  advancedMetrics: true,
+};
+
 const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   standard: {
     id: 'standard',
@@ -181,6 +222,13 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
     enabled: true,
     settings: {},
   },
+  sonnet: {
+    id: 'sonnet',
+    name: 'Protocol 5: Sonnet Advanced AI',
+    description: 'AI-powered adaptive injection with intelligent context awareness, predictive optimization, self-healing, and continuous learning. Most advanced protocol.',
+    enabled: true,
+    settings: {},
+  },
 };
 
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {
@@ -199,6 +247,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   const [allowlistSettings, setAllowlistSettings] = useState<AllowlistProtocolSettings>(DEFAULT_ALLOWLIST_SETTINGS);
   const [protectedSettings, setProtectedSettings] = useState<ProtectedProtocolSettings>(DEFAULT_PROTECTED_SETTINGS);
   const [harnessSettings, setHarnessSettings] = useState<HarnessProtocolSettings>(DEFAULT_HARNESS_SETTINGS);
+  const [sonnetSettings, setSonnetSettings] = useState<SonnetProtocolSettings>(DEFAULT_SONNET_SETTINGS);
 
   // Load all settings on mount
   useEffect(() => {
@@ -215,6 +264,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           allowlist,
           protected_,
           harness,
+          sonnet,
           https,
           mlSafety,
         ] = await Promise.all([
@@ -228,6 +278,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           AsyncStorage.getItem(STORAGE_KEYS.ALLOWLIST_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.PROTECTED_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HARNESS_SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.SONNET_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HTTPS_ENFORCED),
           AsyncStorage.getItem(STORAGE_KEYS.ML_SAFETY),
         ]);
@@ -271,6 +322,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
             setHarnessSettings({ ...DEFAULT_HARNESS_SETTINGS, ...JSON.parse(harness) });
           } catch (e) {
             console.warn('[Protocol] Failed to parse harness settings:', e);
+          }
+        }
+        if (sonnet) {
+          try {
+            setSonnetSettings({ ...DEFAULT_SONNET_SETTINGS, ...JSON.parse(sonnet) });
+          } catch (e) {
+            console.warn('[Protocol] Failed to parse sonnet settings:', e);
           }
         }
         if (https !== null) setHttpsEnforcedState(https === 'true');
@@ -374,6 +432,12 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.HARNESS_SETTINGS, JSON.stringify(newSettings));
   }, [harnessSettings]);
 
+  const updateSonnetSettings = useCallback(async (settings: Partial<SonnetProtocolSettings>) => {
+    const newSettings = { ...sonnetSettings, ...settings };
+    setSonnetSettings(newSettings);
+    await AsyncStorage.setItem(STORAGE_KEYS.SONNET_SETTINGS, JSON.stringify(newSettings));
+  }, [sonnetSettings]);
+
   const addAllowlistDomain = useCallback(async (domain: string) => {
     const normalized = domain.trim().toLowerCase().replace(/^www\./, '');
     if (!normalized || allowlistSettings.domains.includes(normalized)) return;
@@ -423,10 +487,12 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    sonnetSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
+    updateSonnetSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,

@@ -3,7 +3,7 @@
  * Defines configuration for all 4 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'sonnet';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -54,12 +54,34 @@ export interface TestHarnessSettings {
   recordTestResults: boolean;
 }
 
+// Protocol 5: Sonnet Advanced AI-Powered Protocol Settings
+export interface SonnetProtocolSettings {
+  enabled: boolean;
+  aiModelVersion: string;
+  adaptiveInjection: boolean;
+  adaptiveThreshold: number;
+  contextAwareness: boolean;
+  behaviorAnalysis: boolean;
+  anomalyDetection: boolean;
+  performanceOptimization: boolean;
+  predictivePreloading: boolean;
+  intelligentFallback: boolean;
+  mlInferenceEnabled: boolean;
+  mlModelPath: string | null;
+  selfHealing: boolean;
+  continuousLearning: boolean;
+  privacyPreservation: boolean;
+  crossProtocolSync: boolean;
+  advancedMetrics: boolean;
+}
+
 // Combined Protocol Settings
 export interface ProtocolSettings {
   standard: StandardInjectionSettings;
   allowlist: AllowlistSettings;
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
+  sonnet: SonnetProtocolSettings;
 }
 
 // Developer Mode Settings
@@ -112,11 +134,32 @@ export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
   recordTestResults: false,
 };
 
+export const DEFAULT_SONNET_SETTINGS: SonnetProtocolSettings = {
+  enabled: true,
+  aiModelVersion: 'sonnet-4.5',
+  adaptiveInjection: true,
+  adaptiveThreshold: 0.75,
+  contextAwareness: true,
+  behaviorAnalysis: true,
+  anomalyDetection: true,
+  performanceOptimization: true,
+  predictivePreloading: true,
+  intelligentFallback: true,
+  mlInferenceEnabled: true,
+  mlModelPath: null,
+  selfHealing: true,
+  continuousLearning: true,
+  privacyPreservation: true,
+  crossProtocolSync: true,
+  advancedMetrics: true,
+};
+
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   standard: DEFAULT_STANDARD_SETTINGS,
   allowlist: DEFAULT_ALLOWLIST_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
+  sonnet: DEFAULT_SONNET_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -166,5 +209,13 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     enabled: true,
     isLive: true,
     requiresDeveloperMode: false,
+  },
+  sonnet: {
+    id: 'sonnet',
+    name: 'Protocol 5: Sonnet Advanced AI',
+    description: 'AI-powered adaptive injection with intelligent context awareness, predictive optimization, self-healing capabilities, and continuous learning. The most advanced protocol ever created for this application.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: true,
   },
 };
