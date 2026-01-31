@@ -139,7 +139,7 @@ export default function DeviceCheckScreen() {
               isActive && styles.stepDotActive,
               isPast && styles.stepDotComplete,
             ]}>
-              {isPast && <CheckCircle size={12} color="#0a0a0a" />}
+              {isPast && <CheckCircle size={10} color="#0a0a0a" />}
             </View>
             {index < STEPS.length - 1 && <View style={[styles.stepLine, isPast && styles.stepLineComplete]} />}
           </View>
@@ -227,9 +227,16 @@ export default function DeviceCheckScreen() {
 
         {renderStepIndicator()}
 
-        <Animated.View style={[styles.progressBar, { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+        <Animated.View style={[
+          styles.progressBar, 
+          { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }
+        ]} />
 
-        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView 
+          style={styles.content} 
+          contentContainerStyle={styles.contentContainer} 
+          showsVerticalScrollIndicator={false}
+        >
           {renderCurrentStep()}
         </ScrollView>
 
@@ -285,16 +292,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 40,
+    paddingHorizontal: 20,
   },
   stepDotContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   stepDot: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.1)',
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.2)',
@@ -314,10 +321,10 @@ const styles = StyleSheet.create({
     borderColor: '#8a2be2',
   },
   stepLine: {
-    width: 32,
+    width: 20,
     height: 2,
     backgroundColor: 'rgba(255,255,255,0.1)',
-    marginHorizontal: 4,
+    marginHorizontal: 2,
   },
   stepLineComplete: {
     backgroundColor: '#00ff88',
