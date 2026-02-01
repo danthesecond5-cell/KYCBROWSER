@@ -47,14 +47,12 @@ export interface HarnessProtocolSettings {
   testPatternOnNoVideo: boolean;
 }
 
-export interface GPT52ProtocolSettings {
-  autoInject: boolean;
-  stealthByDefault: boolean;
-  injectMotionData: boolean;
+export interface CodexProtocolSettings {
+  adaptiveQuality: boolean;
+  forceStealth: boolean;
   forceSimulation: boolean;
-  loopVideo: boolean;
-  mirrorVideo: boolean;
-  aggressiveRetry: boolean;
+  aggressiveRetries: boolean;
+  showOverlayLabel: boolean;
 }
 
 export interface ProtocolContextValue {
@@ -87,14 +85,14 @@ export interface ProtocolContextValue {
   allowlistSettings: AllowlistProtocolSettings;
   protectedSettings: ProtectedProtocolSettings;
   harnessSettings: HarnessProtocolSettings;
-  gpt52Settings: GPT52ProtocolSettings;
+  codexSettings: CodexProtocolSettings;
   
   // Settings Updaters
   updateStandardSettings: (settings: Partial<StandardProtocolSettings>) => Promise<void>;
   updateAllowlistSettings: (settings: Partial<AllowlistProtocolSettings>) => Promise<void>;
   updateProtectedSettings: (settings: Partial<ProtectedProtocolSettings>) => Promise<void>;
   updateHarnessSettings: (settings: Partial<HarnessProtocolSettings>) => Promise<void>;
-  updateGpt52Settings: (settings: Partial<GPT52ProtocolSettings>) => Promise<void>;
+  updateCodexSettings: (settings: Partial<CodexProtocolSettings>) => Promise<void>;
   
   // Allowlist helpers
   addAllowlistDomain: (domain: string) => Promise<void>;
@@ -124,7 +122,7 @@ const STORAGE_KEYS = {
   ALLOWLIST_SETTINGS: '@protocol_allowlist_settings',
   PROTECTED_SETTINGS: '@protocol_protected_settings',
   HARNESS_SETTINGS: '@protocol_harness_settings',
-  GPT52_SETTINGS: '@protocol_gpt52_settings',
+  CODEX_SETTINGS: '@protocol_codex_settings',
   HTTPS_ENFORCED: '@protocol_https_enforced',
   ML_SAFETY: '@protocol_ml_safety',
   TESTING_WATERMARK: '@protocol_testing_watermark',
@@ -165,14 +163,12 @@ const DEFAULT_HARNESS_SETTINGS: HarnessProtocolSettings = {
   testPatternOnNoVideo: true,
 };
 
-const DEFAULT_GPT52_SETTINGS: GPT52ProtocolSettings = {
-  autoInject: true,
-  stealthByDefault: true,
-  injectMotionData: true,
+const DEFAULT_CODEX_SETTINGS: CodexProtocolSettings = {
+  adaptiveQuality: true,
+  forceStealth: true,
   forceSimulation: true,
-  loopVideo: true,
-  mirrorVideo: false,
-  aggressiveRetry: true,
+  aggressiveRetries: true,
+  showOverlayLabel: true,
 };
 
 const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
@@ -206,8 +202,8 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   },
   gpt52: {
     id: 'gpt52',
-    name: 'Protocol 5: GPT-5.2 Advanced',
-    description: 'Aggressive, best-effort injection preset with enhanced self-healing and diagnostics.',
+    name: 'Protocol 5: GPT-5.2 Codex High',
+    description: 'Most advanced adaptive injection mode with resilience, stealth-first defaults, and performance tuning.',
     enabled: true,
     settings: {},
   },
@@ -229,7 +225,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   const [allowlistSettings, setAllowlistSettings] = useState<AllowlistProtocolSettings>(DEFAULT_ALLOWLIST_SETTINGS);
   const [protectedSettings, setProtectedSettings] = useState<ProtectedProtocolSettings>(DEFAULT_PROTECTED_SETTINGS);
   const [harnessSettings, setHarnessSettings] = useState<HarnessProtocolSettings>(DEFAULT_HARNESS_SETTINGS);
-  const [gpt52Settings, setGpt52Settings] = useState<GPT52ProtocolSettings>(DEFAULT_GPT52_SETTINGS);
+  const [codexSettings, setCodexSettings] = useState<CodexProtocolSettings>(DEFAULT_CODEX_SETTINGS);
 
   // Load all settings on mount
   useEffect(() => {
@@ -246,7 +242,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           allowlist,
           protected_,
           harness,
-          gpt52,
+          codex,
           https,
           mlSafety,
         ] = await Promise.all([
@@ -260,7 +256,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           AsyncStorage.getItem(STORAGE_KEYS.ALLOWLIST_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.PROTECTED_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HARNESS_SETTINGS),
-          AsyncStorage.getItem(STORAGE_KEYS.GPT52_SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.CODEX_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HTTPS_ENFORCED),
           AsyncStorage.getItem(STORAGE_KEYS.ML_SAFETY),
         ]);
@@ -269,7 +265,14 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
         if (pin) setDeveloperPinState(pin);
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
+        if (activeProto) {
+          if (Object.prototype.hasOwnProperty.call(DEFAULT_PROTOCOLS, activeProto)) {
+            setActiveProtocolState(activeProto as ProtocolType);
+          } else {
+            console.warn('[Protocol] Unknown active protocol in storage, defaulting:', activeProto);
+            setActiveProtocolState('standard');
+          }
+        }
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);
@@ -306,11 +309,11 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
             console.warn('[Protocol] Failed to parse harness settings:', e);
           }
         }
-        if (gpt52) {
+        if (codex) {
           try {
-            setGpt52Settings({ ...DEFAULT_GPT52_SETTINGS, ...JSON.parse(gpt52) });
+            setCodexSettings({ ...DEFAULT_CODEX_SETTINGS, ...JSON.parse(codex) });
           } catch (e) {
-            console.warn('[Protocol] Failed to parse gpt52 settings:', e);
+            console.warn('[Protocol] Failed to parse codex settings:', e);
           }
         }
         if (https !== null) setHttpsEnforcedState(https === 'true');
@@ -414,11 +417,11 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.HARNESS_SETTINGS, JSON.stringify(newSettings));
   }, [harnessSettings]);
 
-  const updateGpt52Settings = useCallback(async (settings: Partial<GPT52ProtocolSettings>) => {
-    const newSettings = { ...gpt52Settings, ...settings };
-    setGpt52Settings(newSettings);
-    await AsyncStorage.setItem(STORAGE_KEYS.GPT52_SETTINGS, JSON.stringify(newSettings));
-  }, [gpt52Settings]);
+  const updateCodexSettings = useCallback(async (settings: Partial<CodexProtocolSettings>) => {
+    const newSettings = { ...codexSettings, ...settings };
+    setCodexSettings(newSettings);
+    await AsyncStorage.setItem(STORAGE_KEYS.CODEX_SETTINGS, JSON.stringify(newSettings));
+  }, [codexSettings]);
 
   const addAllowlistDomain = useCallback(async (domain: string) => {
     const normalized = domain.trim().toLowerCase().replace(/^www\./, '');
@@ -469,12 +472,12 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     allowlistSettings,
     protectedSettings,
     harnessSettings,
-    gpt52Settings,
+    codexSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
-    updateGpt52Settings,
+    updateCodexSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
