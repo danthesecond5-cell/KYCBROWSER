@@ -190,7 +190,7 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     };
     setProtocolSettings(updated);
     await saveProtocolSettings(updated);
-    console.log('[DeveloperMode] Claude protocol settings updated');
+    console.log('[DeveloperMode] Claude Protocol settings updated');
   }, [protocolSettings, saveProtocolSettings]);
 
   // Toggle protocol enabled status

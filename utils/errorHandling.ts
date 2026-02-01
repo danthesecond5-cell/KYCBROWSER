@@ -13,15 +13,6 @@ export enum ErrorCode {
   TEMPLATE_NOT_FOUND = 'TEMPLATE_NOT_FOUND',
   DEVICE_NOT_FOUND = 'DEVICE_NOT_FOUND',
   WEBVIEW_ERROR = 'WEBVIEW_ERROR',
-  // Claude Protocol specific error codes
-  PROTOCOL_ERROR = 'PROTOCOL_ERROR',
-  INJECTION_FAILED = 'INJECTION_FAILED',
-  STREAM_ERROR = 'STREAM_ERROR',
-  QUALITY_DEGRADATION = 'QUALITY_DEGRADATION',
-  FINGERPRINT_DETECTION = 'FINGERPRINT_DETECTION',
-  NEURAL_ENGINE_ERROR = 'NEURAL_ENGINE_ERROR',
-  ADAPTIVE_LEARNING_ERROR = 'ADAPTIVE_LEARNING_ERROR',
-  CONTEXT_ANALYSIS_ERROR = 'CONTEXT_ANALYSIS_ERROR',
 }
 
 export interface AppError {
@@ -458,251 +449,433 @@ export function getPlatformSpecificError(error: unknown): string {
   return baseMessage;
 }
 
-// ============ PROTOCOL VALIDATION UTILITIES ============
+// ============ ADVANCED RECOVERY MECHANISMS ============
 
-export interface ProtocolValidationResult {
-  valid: boolean;
-  errors: string[];
-  warnings: string[];
+/**
+ * Recovery strategy types
+ */
+export type RecoveryStrategy = 
+  | 'retry'           // Simple retry
+  | 'backoff'         // Exponential backoff
+  | 'fallback'        // Use alternative
+  | 'reset'           // Reset state and retry
+  | 'skip'            // Skip and continue
+  | 'abort';          // Give up
+
+/**
+ * Recovery action configuration
+ */
+export interface RecoveryAction {
+  strategy: RecoveryStrategy;
+  maxAttempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  fallbackValue?: unknown;
+  onRecoveryAttempt?: (attempt: number, error: AppError) => void;
+  onRecoverySuccess?: (attempt: number) => void;
+  onRecoveryFailed?: (error: AppError) => void;
 }
 
 /**
- * Validate protocol settings object
+ * Default recovery actions for different error codes
  */
-export function validateProtocolSettings(settings: unknown): ProtocolValidationResult {
-  const result: ProtocolValidationResult = {
-    valid: true,
-    errors: [],
-    warnings: [],
+export const DEFAULT_RECOVERY_ACTIONS: Partial<Record<ErrorCode, RecoveryAction>> = {
+  [ErrorCode.NETWORK]: {
+    strategy: 'backoff',
+    maxAttempts: 4,
+    initialDelayMs: 1000,
+    maxDelayMs: 16000,
+  },
+  [ErrorCode.VIDEO_LOAD_ERROR]: {
+    strategy: 'fallback',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.CAMERA_ERROR]: {
+    strategy: 'reset',
+    maxAttempts: 2,
+    initialDelayMs: 1000,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.WEBVIEW_ERROR]: {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 3000,
+  },
+  [ErrorCode.STORAGE]: {
+    strategy: 'skip',
+    maxAttempts: 1,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PERMISSION_DENIED]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+};
+
+/**
+ * Get recommended recovery action for an error
+ */
+export function getRecoveryAction(error: AppError): RecoveryAction {
+  const defaultAction: RecoveryAction = {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 10000,
   };
-
-  if (!settings || typeof settings !== 'object') {
-    result.valid = false;
-    result.errors.push('Protocol settings must be an object');
-    return result;
-  }
-
-  const settingsObj = settings as Record<string, unknown>;
-
-  // Check for required protocol keys
-  const requiredProtocols = ['standard', 'allowlist', 'protected', 'harness', 'claude'];
-  for (const protocol of requiredProtocols) {
-    if (!(protocol in settingsObj)) {
-      result.warnings.push(`Missing protocol settings for: ${protocol}`);
-    }
-  }
-
-  return result;
+  
+  return DEFAULT_RECOVERY_ACTIONS[error.code] || defaultAction;
 }
 
 /**
- * Validate Claude protocol specific settings
+ * Execute a function with automatic recovery
  */
-export function validateClaudeSettings(settings: unknown): ProtocolValidationResult {
-  const result: ProtocolValidationResult = {
-    valid: true,
-    errors: [],
-    warnings: [],
-  };
-
-  if (!settings || typeof settings !== 'object') {
-    result.valid = false;
-    result.errors.push('Claude settings must be an object');
-    return result;
-  }
-
-  const claudeSettings = settings as Record<string, unknown>;
-
-  // Validate anti-detection level
-  const validAntiDetectionLevels = ['standard', 'enhanced', 'maximum', 'paranoid'];
-  if (claudeSettings.antiDetectionLevel && 
-      !validAntiDetectionLevels.includes(claudeSettings.antiDetectionLevel as string)) {
-    result.errors.push(`Invalid antiDetectionLevel: ${claudeSettings.antiDetectionLevel}. Must be one of: ${validAntiDetectionLevels.join(', ')}`);
-    result.valid = false;
-  }
-
-  // Validate noise reduction level
-  const validNoiseReductionLevels = ['off', 'light', 'moderate', 'aggressive'];
-  if (claudeSettings.noiseReductionLevel && 
-      !validNoiseReductionLevels.includes(claudeSettings.noiseReductionLevel as string)) {
-    result.errors.push(`Invalid noiseReductionLevel: ${claudeSettings.noiseReductionLevel}. Must be one of: ${validNoiseReductionLevels.join(', ')}`);
-    result.valid = false;
-  }
-
-  // Validate error recovery mode
-  const validErrorRecoveryModes = ['graceful', 'aggressive', 'silent'];
-  if (claudeSettings.errorRecoveryMode && 
-      !validErrorRecoveryModes.includes(claudeSettings.errorRecoveryMode as string)) {
-    result.errors.push(`Invalid errorRecoveryMode: ${claudeSettings.errorRecoveryMode}. Must be one of: ${validErrorRecoveryModes.join(', ')}`);
-    result.valid = false;
-  }
-
-  // Validate priority level
-  const validPriorityLevels = ['background', 'normal', 'high', 'realtime'];
-  if (claudeSettings.priorityLevel && 
-      !validPriorityLevels.includes(claudeSettings.priorityLevel as string)) {
-    result.errors.push(`Invalid priorityLevel: ${claudeSettings.priorityLevel}. Must be one of: ${validPriorityLevels.join(', ')}`);
-    result.valid = false;
-  }
-
-  // Warnings for potentially conflicting settings
-  if (claudeSettings.powerEfficiencyMode && claudeSettings.priorityLevel === 'realtime') {
-    result.warnings.push('Power efficiency mode may conflict with realtime priority level');
-  }
-
-  if (claudeSettings.superResolutionEnabled && claudeSettings.memoryOptimization) {
-    result.warnings.push('Super resolution with memory optimization enabled may cause performance issues');
-  }
-
-  return result;
-}
-
-/**
- * Validate video URI for injection
- */
-export function validateInjectionVideoUri(uri: string | null | undefined): ProtocolValidationResult {
-  const result: ProtocolValidationResult = {
-    valid: true,
-    errors: [],
-    warnings: [],
-  };
-
-  if (!uri) {
-    result.warnings.push('No video URI provided, will use fallback');
-    return result;
-  }
-
-  if (typeof uri !== 'string') {
-    result.valid = false;
-    result.errors.push('Video URI must be a string');
-    return result;
-  }
-
-  const trimmedUri = uri.trim();
-
-  // Check for empty URI
-  if (trimmedUri.length === 0) {
-    result.warnings.push('Empty video URI, will use fallback');
-    return result;
-  }
-
-  // Validate base64 data URIs
-  if (trimmedUri.startsWith('data:video/')) {
-    if (!trimmedUri.includes(';base64,')) {
-      result.valid = false;
-      result.errors.push('Invalid base64 video data URI format');
-    }
-    return result;
-  }
-
-  // Validate blob URIs
-  if (trimmedUri.startsWith('blob:')) {
-    result.warnings.push('Blob URIs may expire and should be used immediately');
-    return result;
-  }
-
-  // Validate HTTP(S) URIs
-  if (trimmedUri.startsWith('http://') || trimmedUri.startsWith('https://')) {
-    if (trimmedUri.startsWith('http://')) {
-      result.warnings.push('HTTP URIs may be blocked by CORS or security policies');
-    }
-    
-    // Check for known problematic hosts
-    const problematicHosts = ['imgur.com', 'giphy.com', 'gfycat.com', 'streamable.com'];
-    for (const host of problematicHosts) {
-      if (trimmedUri.includes(host)) {
-        result.warnings.push(`Videos from ${host} often fail due to CORS restrictions. Consider downloading first.`);
+export async function executeWithRecovery<T>(
+  fn: () => Promise<T>,
+  action: RecoveryAction,
+  errorCode: ErrorCode = ErrorCode.UNKNOWN
+): Promise<{ success: boolean; result?: T; error?: AppError; attempts: number }> {
+  let lastError: AppError | null = null;
+  
+  for (let attempt = 1; attempt <= action.maxAttempts; attempt++) {
+    try {
+      const result = await fn();
+      action.onRecoverySuccess?.(attempt);
+      return { success: true, result, attempts: attempt };
+    } catch (error) {
+      lastError = isAppError(error) 
+        ? error 
+        : createAppError(errorCode, getErrorMessage(error), error);
+      
+      action.onRecoveryAttempt?.(attempt, lastError);
+      
+      if (attempt >= action.maxAttempts) {
+        break;
+      }
+      
+      // Calculate delay based on strategy
+      let delay = action.initialDelayMs;
+      
+      switch (action.strategy) {
+        case 'backoff':
+          delay = Math.min(
+            action.initialDelayMs * Math.pow(2, attempt - 1),
+            action.maxDelayMs
+          );
+          break;
+        case 'abort':
+          break;
+        case 'skip':
+          break;
+        default:
+          // Linear delay
+          delay = action.initialDelayMs;
+      }
+      
+      if (action.strategy !== 'abort' && action.strategy !== 'skip') {
+        await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
-    
-    return result;
   }
-
-  // Validate file URIs
-  if (trimmedUri.startsWith('file://') || trimmedUri.startsWith('/')) {
-    return result;
+  
+  if (lastError) {
+    action.onRecoveryFailed?.(lastError);
   }
-
-  // Canvas fallback pattern
-  if (trimmedUri.startsWith('canvas:')) {
-    return result;
-  }
-
-  result.warnings.push('Unknown URI format, may not work as expected');
-  return result;
+  
+  return { 
+    success: false, 
+    error: lastError || createAppError(errorCode, 'Recovery failed'),
+    attempts: action.maxAttempts 
+  };
 }
 
 /**
- * Create a protocol-specific error with context
+ * Circuit breaker state
  */
-export function createProtocolError(
-  code: ErrorCode,
-  message: string,
-  protocolId: string,
-  originalError?: Error | unknown
-): AppError {
-  const enrichedMessage = `[Protocol ${protocolId}] ${message}`;
-  return createAppError(code, enrichedMessage, originalError, true);
+interface CircuitBreakerState {
+  failures: number;
+  lastFailureTime: number;
+  isOpen: boolean;
+  successCount: number;
 }
 
 /**
- * Handle protocol errors with automatic recovery suggestions
+ * Circuit breaker for preventing repeated failures
  */
-export function getProtocolErrorRecovery(error: AppError): {
-  canRecover: boolean;
-  suggestion: string;
-  action?: () => void;
-} {
-  switch (error.code) {
-    case ErrorCode.STREAM_ERROR:
-      return {
-        canRecover: true,
-        suggestion: 'Try restarting the stream or switching to a lower quality setting',
-      };
+export class CircuitBreaker {
+  private state: CircuitBreakerState = {
+    failures: 0,
+    lastFailureTime: 0,
+    isOpen: false,
+    successCount: 0,
+  };
+  
+  constructor(
+    private readonly failureThreshold: number = 5,
+    private readonly resetTimeoutMs: number = 30000,
+    private readonly successThreshold: number = 3
+  ) {}
+  
+  /**
+   * Check if circuit is open (should not attempt)
+   */
+  isCircuitOpen(): boolean {
+    if (!this.state.isOpen) return false;
     
-    case ErrorCode.QUALITY_DEGRADATION:
-      return {
-        canRecover: true,
-        suggestion: 'Quality has been automatically reduced. Check device performance.',
-      };
+    // Check if reset timeout has passed
+    const timeSinceLastFailure = Date.now() - this.state.lastFailureTime;
+    if (timeSinceLastFailure >= this.resetTimeoutMs) {
+      // Move to half-open state (allow one attempt)
+      return false;
+    }
     
-    case ErrorCode.INJECTION_FAILED:
-      return {
-        canRecover: true,
-        suggestion: 'Injection failed. Try using a different video source or check permissions.',
-      };
+    return true;
+  }
+  
+  /**
+   * Record a successful operation
+   */
+  recordSuccess(): void {
+    if (this.state.isOpen) {
+      this.state.successCount++;
+      if (this.state.successCount >= this.successThreshold) {
+        this.reset();
+      }
+    } else {
+      this.state.failures = 0;
+    }
+  }
+  
+  /**
+   * Record a failed operation
+   */
+  recordFailure(): void {
+    this.state.failures++;
+    this.state.lastFailureTime = Date.now();
+    this.state.successCount = 0;
     
-    case ErrorCode.NEURAL_ENGINE_ERROR:
-      return {
-        canRecover: true,
-        suggestion: 'Neural engine encountered an error. Falling back to standard processing.',
-      };
+    if (this.state.failures >= this.failureThreshold) {
+      this.state.isOpen = true;
+      console.warn('[CircuitBreaker] Circuit opened after', this.state.failures, 'failures');
+    }
+  }
+  
+  /**
+   * Reset the circuit breaker
+   */
+  reset(): void {
+    this.state = {
+      failures: 0,
+      lastFailureTime: 0,
+      isOpen: false,
+      successCount: 0,
+    };
+    console.log('[CircuitBreaker] Circuit reset');
+  }
+  
+  /**
+   * Get current state
+   */
+  getState(): Readonly<CircuitBreakerState> {
+    return { ...this.state };
+  }
+  
+  /**
+   * Execute a function with circuit breaker protection
+   */
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.isCircuitOpen()) {
+      throw createAppError(
+        ErrorCode.UNKNOWN,
+        'Circuit breaker is open - too many recent failures',
+        undefined,
+        true
+      );
+    }
     
-    case ErrorCode.FINGERPRINT_DETECTION:
-      return {
-        canRecover: false,
-        suggestion: 'Potential fingerprint detection. Consider increasing anti-detection level.',
-      };
-    
-    default:
-      return {
-        canRecover: error.recoverable,
-        suggestion: 'An error occurred. Please try again or contact support.',
-      };
+    try {
+      const result = await fn();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure();
+      throw error;
+    }
   }
 }
 
 /**
- * Log protocol metrics for debugging
+ * Error aggregator for collecting and analyzing errors
  */
-export function logProtocolMetrics(
-  protocolId: string,
-  metrics: Record<string, unknown>
-): void {
-  if (__DEV__) {
-    console.log(`[Protocol Metrics - ${protocolId}]`, JSON.stringify(metrics, null, 2));
+export class ErrorAggregator {
+  private errors: Array<{ error: AppError; timestamp: number }> = [];
+  private readonly maxErrors: number;
+  private readonly windowMs: number;
+  
+  constructor(maxErrors: number = 100, windowMs: number = 60000) {
+    this.maxErrors = maxErrors;
+    this.windowMs = windowMs;
+  }
+  
+  /**
+   * Add an error
+   */
+  add(error: AppError): void {
+    this.errors.push({ error, timestamp: Date.now() });
+    
+    // Trim old errors
+    this.cleanup();
+  }
+  
+  /**
+   * Clean up old errors outside the window
+   */
+  private cleanup(): void {
+    const cutoff = Date.now() - this.windowMs;
+    this.errors = this.errors
+      .filter(e => e.timestamp > cutoff)
+      .slice(-this.maxErrors);
+  }
+  
+  /**
+   * Get error count by code
+   */
+  getCountByCode(code: ErrorCode): number {
+    this.cleanup();
+    return this.errors.filter(e => e.error.code === code).length;
+  }
+  
+  /**
+   * Get total error count
+   */
+  getTotalCount(): number {
+    this.cleanup();
+    return this.errors.length;
+  }
+  
+  /**
+   * Get most common error code
+   */
+  getMostCommonCode(): ErrorCode | null {
+    this.cleanup();
+    if (this.errors.length === 0) return null;
+    
+    const counts = new Map<ErrorCode, number>();
+    for (const { error } of this.errors) {
+      counts.set(error.code, (counts.get(error.code) || 0) + 1);
+    }
+    
+    let maxCode: ErrorCode | null = null;
+    let maxCount = 0;
+    
+    counts.forEach((count, code) => {
+      if (count > maxCount) {
+        maxCount = count;
+        maxCode = code;
+      }
+    });
+    
+    return maxCode;
+  }
+  
+  /**
+   * Get error rate (errors per second)
+   */
+  getErrorRate(): number {
+    this.cleanup();
+    if (this.errors.length < 2) return 0;
+    
+    const oldest = this.errors[0].timestamp;
+    const newest = this.errors[this.errors.length - 1].timestamp;
+    const durationSeconds = (newest - oldest) / 1000;
+    
+    if (durationSeconds === 0) return 0;
+    
+    return this.errors.length / durationSeconds;
+  }
+  
+  /**
+   * Get summary report
+   */
+  getSummary(): {
+    total: number;
+    byCode: Record<string, number>;
+    errorRate: number;
+    mostCommon: ErrorCode | null;
+  } {
+    this.cleanup();
+    
+    const byCode: Record<string, number> = {};
+    for (const { error } of this.errors) {
+      byCode[error.code] = (byCode[error.code] || 0) + 1;
+    }
+    
+    return {
+      total: this.errors.length,
+      byCode,
+      errorRate: this.getErrorRate(),
+      mostCommon: this.getMostCommonCode(),
+    };
+  }
+  
+  /**
+   * Clear all errors
+   */
+  clear(): void {
+    this.errors = [];
   }
 }
 
-// Check if we're in development mode
-const __DEV__ = process.env.NODE_ENV !== 'production';
+/**
+ * Global error aggregator instance
+ */
+export const globalErrorAggregator = new ErrorAggregator();
+
+/**
+ * Enhanced retry with circuit breaker and error aggregation
+ */
+export async function retryWithProtection<T>(
+  fn: () => Promise<T>,
+  options: {
+    errorCode?: ErrorCode;
+    circuitBreaker?: CircuitBreaker;
+    aggregator?: ErrorAggregator;
+    recoveryAction?: RecoveryAction;
+  } = {}
+): Promise<T> {
+  const {
+    errorCode = ErrorCode.UNKNOWN,
+    circuitBreaker,
+    aggregator = globalErrorAggregator,
+    recoveryAction = getRecoveryAction(createAppError(errorCode, '')),
+  } = options;
+  
+  // Check circuit breaker first
+  if (circuitBreaker?.isCircuitOpen()) {
+    const error = createAppError(
+      errorCode,
+      'Operation blocked by circuit breaker',
+      undefined,
+      true
+    );
+    aggregator.add(error);
+    throw error;
+  }
+  
+  const result = await executeWithRecovery(fn, recoveryAction, errorCode);
+  
+  if (result.success && result.result !== undefined) {
+    circuitBreaker?.recordSuccess();
+    return result.result;
+  }
+  
+  const error = result.error || createAppError(errorCode, 'Operation failed');
+  circuitBreaker?.recordFailure();
+  aggregator.add(error);
+  throw error;
+}
