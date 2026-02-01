@@ -494,10 +494,36 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
 
   const addAllowlistDomain = useCallback(async (domain: string) => {
     const normalized = domain.trim().toLowerCase().replace(/^www\./, '');
-    if (!normalized || allowlistSettings.domains.includes(normalized)) return;
+    if (!normalized) return;
     
-    const newDomains = [...allowlistSettings.domains, normalized];
+    // Enhanced validation
+    // Remove protocol if present
+    let cleanDomain = normalized.replace(/^https?:\/\//, '');
+    // Remove path if present
+    cleanDomain = cleanDomain.split('/')[0];
+    // Remove port if present
+    cleanDomain = cleanDomain.split(':')[0];
+    
+    // Validate domain format
+    const domainRegex = /^[a-z0-9]+([\-\.]{1}[a-z0-9]+)*\.[a-z]{2,}$/;
+    if (!domainRegex.test(cleanDomain)) {
+      console.warn('[Protocol] Invalid domain format:', cleanDomain);
+      return;
+    }
+    
+    // Check for duplicates (including subdomains)
+    const isDuplicate = allowlistSettings.domains.some(d => 
+      d === cleanDomain || cleanDomain.endsWith('.' + d) || d.endsWith('.' + cleanDomain)
+    );
+    
+    if (isDuplicate) {
+      console.log('[Protocol] Domain already in allowlist or is a subdomain:', cleanDomain);
+      return;
+    }
+    
+    const newDomains = [...allowlistSettings.domains, cleanDomain];
     await updateAllowlistSettings({ domains: newDomains });
+    console.log('[Protocol] Added domain to allowlist:', cleanDomain);
   }, [allowlistSettings.domains, updateAllowlistSettings]);
 
   const removeAllowlistDomain = useCallback(async (domain: string) => {

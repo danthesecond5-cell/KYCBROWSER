@@ -1072,11 +1072,14 @@ export const createMediaInjectionScript = (
     } catch (e) {}
   }
   
-  // ============ QUALITY ADAPTATION SYSTEM ============
+  // ============ ENHANCED QUALITY ADAPTATION SYSTEM ============
   const QualityAdapter = {
     currentLevel: 0,
     lastAdaptTime: 0,
     fpsHistory: [],
+    memoryHistory: [],
+    cpuHistory: [],
+    adaptiveMode: 'balanced', // conservative, balanced, aggressive, experimental
     
     getCurrentQuality: function() { return CONFIG.QUALITY_LEVELS[this.currentLevel] || CONFIG.QUALITY_LEVELS[0]; },
     
@@ -1086,9 +1089,57 @@ export const createMediaInjectionScript = (
       if (this.fpsHistory.length > CONFIG.PERFORMANCE_SAMPLE_SIZE) this.fpsHistory.shift();
     },
     
+    recordMemory: function() {
+      if (performance.memory) {
+        const memUsage = (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100;
+        this.memoryHistory.push(memUsage);
+        if (this.memoryHistory.length > 20) this.memoryHistory.shift();
+      }
+    },
+    
+    recordCpu: function() {
+      // Estimate CPU usage based on frame timing
+      if (this.fpsHistory.length >= 2) {
+        const recentFps = this.fpsHistory.slice(-5);
+        const variance = this.calculateVariance(recentFps);
+        this.cpuHistory.push(variance);
+        if (this.cpuHistory.length > 20) this.cpuHistory.shift();
+      }
+    },
+    
+    calculateVariance: function(arr) {
+      if (arr.length === 0) return 0;
+      const mean = arr.reduce(function(a, b) { return a + b; }, 0) / arr.length;
+      const squareDiffs = arr.map(function(value) {
+        const diff = value - mean;
+        return diff * diff;
+      });
+      return Math.sqrt(squareDiffs.reduce(function(a, b) { return a + b; }, 0) / arr.length);
+    },
+    
     getAverageFps: function() {
       if (this.fpsHistory.length === 0) return CONFIG.TARGET_FPS;
       return this.fpsHistory.reduce(function(a, b) { return a + b; }, 0) / this.fpsHistory.length;
+    },
+    
+    getAverageMemory: function() {
+      if (this.memoryHistory.length === 0) return 0;
+      return this.memoryHistory.reduce(function(a, b) { return a + b; }, 0) / this.memoryHistory.length;
+    },
+    
+    getAdaptiveThresholds: function() {
+      switch(this.adaptiveMode) {
+        case 'conservative':
+          return { lowFps: 20, mediumFps: 25, highFps: 28, memoryLimit: 70 };
+        case 'balanced':
+          return { lowFps: 15, mediumFps: 22, highFps: 27, memoryLimit: 80 };
+        case 'aggressive':
+          return { lowFps: 12, mediumFps: 18, highFps: 25, memoryLimit: 85 };
+        case 'experimental':
+          return { lowFps: 10, mediumFps: 15, highFps: 22, memoryLimit: 90 };
+        default:
+          return { lowFps: 15, mediumFps: 22, highFps: 27, memoryLimit: 80 };
+      }
     },
     
     adapt: function() {
@@ -1096,8 +1147,8 @@ export const createMediaInjectionScript = (
       var now = Date.now();
       if (now - this.lastAdaptTime < RuntimeConfig.qualityAdaptationInterval || this.fpsHistory.length < 10) return;
       
-      var avgFps = this.getAverageFps();
-      var prevLevel = this.currentLevel;
+      this.recordMemory();
+      this.recordCpu();
       
       var maxLevel = CONFIG.QUALITY_LEVELS.length - 1;
       var midLevel = Math.max(0, maxLevel - 1);
@@ -1122,9 +1173,23 @@ export const createMediaInjectionScript = (
         Logger.log('Quality adapted:', quality.name, '| FPS:', avgFps.toFixed(1));
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'qualityAdapted', payload: { level: this.currentLevel, name: quality.name, avgFps: avgFps }
+            type: 'qualityAdapted', 
+            payload: { 
+              level: this.currentLevel, 
+              name: quality.name, 
+              avgFps: avgFps,
+              avgMemory: avgMemory,
+              mode: this.adaptiveMode
+            }
           }));
         }
+      }
+    },
+    
+    setAdaptiveMode: function(mode) {
+      if (['conservative', 'balanced', 'aggressive', 'experimental'].indexOf(mode) !== -1) {
+        this.adaptiveMode = mode;
+        Logger.log('Adaptive mode set to:', mode);
       }
     },
     
@@ -1182,21 +1247,64 @@ export const createMediaInjectionScript = (
       if (entry && entry.video && !entry.video.error) {
         Logger.log('Cache HIT for:', url.substring(0, 50));
         entry.lastAccessed = Date.now();
+        entry.accessCount = (entry.accessCount || 0) + 1;
+        this.recordAccess(url);
         return entry.video;
       }
+      Logger.log('Cache MISS for:', url.substring(0, 50));
+      this.recordAccess(url);
       return null;
     },
+    
     set: function(url, video) {
       if (this.cache.size >= this.maxSize) {
-        var oldestKey = null, oldestTime = Infinity;
-        this.cache.forEach(function(entry, key) {
-          if (entry.lastAccessed < oldestTime) { oldestTime = entry.lastAccessed; oldestKey = key; }
-        });
-        if (oldestKey) this.evict(oldestKey);
+        this.evictLeastValuable();
       }
-      this.cache.set(url, { video, timestamp: Date.now(), lastAccessed: Date.now() });
+      this.cache.set(url, { 
+        video, 
+        timestamp: Date.now(), 
+        lastAccessed: Date.now(),
+        accessCount: 1,
+        size: this.estimateVideoSize(video)
+      });
       Logger.log('Cache SET for:', url.substring(0, 50));
+      
+      // Trigger predictive preload
+      this.predictNextVideo();
     },
+    
+    estimateVideoSize: function(video) {
+      if (!video) return 0;
+      // Rough estimation based on duration and dimensions
+      const duration = video.duration || 10;
+      const width = video.videoWidth || 1080;
+      const height = video.videoHeight || 1920;
+      return Math.round((width * height * duration * 0.1) / 1024 / 1024); // MB estimate
+    },
+    
+    evictLeastValuable: function() {
+      var leastValuable = null;
+      var lowestScore = Infinity;
+      
+      this.cache.forEach(function(entry, key) {
+        // Calculate value score based on recency, frequency, and size
+        var recencyScore = (Date.now() - entry.lastAccessed) / 1000; // seconds ago
+        var frequencyScore = 100 / (entry.accessCount || 1);
+        var sizeScore = entry.size || 10;
+        var valueScore = recencyScore * frequencyScore * (sizeScore * 0.1);
+        
+        if (valueScore < lowestScore) {
+          lowestScore = valueScore;
+          leastValuable = key;
+        }
+      });
+      
+      if (leastValuable) {
+        Logger.log('Evicting least valuable cache entry');
+        this.evict(leastValuable);
+      }
+    },
+    
     evict: function(url) {
       var entry = this.cache.get(url);
       if (entry && entry.video) {
@@ -1210,6 +1318,67 @@ export const createMediaInjectionScript = (
       this.cache.delete(url);
       Logger.log('Cache evicted:', url?.substring(0, 50));
     },
+    
+    recordAccess: function(url) {
+      this.accessHistory.push({ url: url, timestamp: Date.now() });
+      if (this.accessHistory.length > 50) {
+        this.accessHistory.shift();
+      }
+    },
+    
+    predictNextVideo: function() {
+      if (this.accessHistory.length < 3) return;
+      
+      // Simple pattern detection: look for repeated sequences
+      var recent = this.accessHistory.slice(-10);
+      var urlCounts = {};
+      recent.forEach(function(entry) {
+        urlCounts[entry.url] = (urlCounts[entry.url] || 0) + 1;
+      });
+      
+      // Find most frequently accessed URL not in cache
+      var mostFrequent = null;
+      var maxCount = 0;
+      Object.keys(urlCounts).forEach(function(url) {
+        if (urlCounts[url] > maxCount && !this.cache.has(url)) {
+          mostFrequent = url;
+          maxCount = urlCounts[url];
+        }
+      }, this);
+      
+      if (mostFrequent && this.preloadQueue.indexOf(mostFrequent) === -1) {
+        this.preloadQueue.push(mostFrequent);
+        Logger.log('Predicted next video for preload:', mostFrequent.substring(0, 50));
+      }
+    },
+    
+    getStats: function() {
+      var totalSize = 0;
+      var totalAccesses = 0;
+      this.cache.forEach(function(entry) {
+        totalSize += entry.size || 0;
+        totalAccesses += entry.accessCount || 0;
+      });
+      
+      return {
+        cacheSize: this.cache.size,
+        maxSize: this.maxSize,
+        totalSizeMB: totalSize,
+        totalAccesses: totalAccesses,
+        hitRate: this.calculateHitRate(),
+        preloadQueueSize: this.preloadQueue.length
+      };
+    },
+    
+    calculateHitRate: function() {
+      if (this.accessHistory.length === 0) return 0;
+      var hits = 0;
+      this.accessHistory.forEach(function(entry) {
+        if (this.cache.has(entry.url)) hits++;
+      }, this);
+      return Math.round((hits / this.accessHistory.length) * 100);
+    },
+    
     clear: function() {
       this.cache.forEach(function(entry) {
         if (entry.video) {
@@ -1222,13 +1391,47 @@ export const createMediaInjectionScript = (
         }
       });
       this.cache.clear();
+      this.accessHistory = [];
+      this.preloadQueue = [];
       Logger.log('Cache cleared');
     }
   };
   
-  // ============ ERROR HANDLING ============
+  // ============ ENHANCED ERROR HANDLING ============
   const ErrorHandler = {
+    errorHistory: [],
+    maxHistorySize: 50,
+    
+    recordError: function(error, context, videoUrl) {
+      const errorRecord = {
+        timestamp: Date.now(),
+        error: error,
+        context: context,
+        url: videoUrl ? videoUrl.substring(0, 100) : null,
+        userAgent: navigator.userAgent,
+        memoryUsage: performance.memory ? performance.memory.usedJSHeapSize : null
+      };
+      this.errorHistory.push(errorRecord);
+      if (this.errorHistory.length > this.maxHistorySize) {
+        this.errorHistory.shift();
+      }
+    },
+    
+    getErrorPattern: function() {
+      if (this.errorHistory.length < 3) return null;
+      const recentErrors = this.errorHistory.slice(-5);
+      const errorTypes = recentErrors.map(e => e.context);
+      const uniqueTypes = [...new Set(errorTypes)];
+      if (uniqueTypes.length === 1 && errorTypes.length >= 3) {
+        return { pattern: 'repeating', type: uniqueTypes[0] };
+      }
+      return null;
+    },
+    
     getDetailedErrorMessage: function(error, context, videoUrl) {
+      this.recordError(error, context, videoUrl);
+      const pattern = this.getErrorPattern();
+      
       const errorMap = {
         'MEDIA_ERR_ABORTED': {
           message: 'Video loading was aborted',
@@ -1535,6 +1738,64 @@ export const createMediaInjectionScript = (
       streams: StreamRegistry.getStats(),
       performanceProfile: CONFIG.PERFORMANCE_PROFILE
     };
+  };
+  
+  // ============ SONNET PROTOCOL ADVANCED METRICS ============
+  window.__getSonnetMetrics = function() {
+    return {
+      // Performance
+      fps: Metrics.getAverageFps(),
+      frameCount: Metrics.frameCount,
+      
+      // Quality Adaptation
+      qualityLevel: QualityAdapter.currentLevel,
+      qualityName: QualityAdapter.getCurrentQuality().name,
+      adaptiveMode: QualityAdapter.adaptiveMode,
+      healthScore: QualityAdapter.getHealthScore(),
+      
+      // Cache Intelligence
+      cache: VideoCache.getStats(),
+      
+      // Anomaly Detection
+      anomalies: AnomalyDetector.getAnomalyReport(),
+      
+      // Error Tracking
+      errors: {
+        total: Metrics.errorCount,
+        history: ErrorHandler.errorHistory.slice(-10),
+        pattern: ErrorHandler.getErrorPattern()
+      },
+      
+      // System Health
+      memory: performance.memory ? {
+        used: performance.memory.usedJSHeapSize,
+        limit: performance.memory.jsHeapSizeLimit,
+        percentage: (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100
+      } : null,
+      
+      timestamp: Date.now()
+    };
+  };
+  
+  window.__setSonnetMode = function(mode) {
+    if (['conservative', 'balanced', 'aggressive', 'experimental'].indexOf(mode) !== -1) {
+      QualityAdapter.setAdaptiveMode(mode);
+      Logger.log('[Sonnet] Adaptive mode set to:', mode);
+      return true;
+    }
+    return false;
+  };
+  
+  window.__triggerSelfHeal = function() {
+    Logger.log('[Sonnet] Manual self-heal triggered');
+    const metrics = window.__getSonnetMetrics();
+    if (metrics.healthScore < 70) {
+      AnomalyDetector.triggerSelfHealing([
+        { type: 'manual_trigger', severity: 'medium', value: metrics.healthScore }
+      ]);
+      return { success: true, message: 'Self-healing initiated' };
+    }
+    return { success: false, message: 'System health is acceptable' };
   };
   
   window.__forceQualityLevel = function(level) {
@@ -2500,7 +2761,7 @@ export const createMediaInjectionScript = (
     });
   }
   
-  // ============ STREAM HEALTH MONITORING ============
+  // ============ ENHANCED STREAM HEALTH MONITORING ============
   function setupStreamHealthCheck(stream, video, device) {
     const healthInterval = setInterval(function() {
       if (!stream._isRunning || !stream._isRunning()) {
@@ -2511,10 +2772,26 @@ export const createMediaInjectionScript = (
       const avgFps = Metrics.getAverageFps();
       const isHealthy = avgFps >= RuntimeConfig.minAcceptableFps;
       
-      if (!isHealthy) {
-        Logger.warn('Stream health degraded - FPS:', avgFps.toFixed(1));
+      // Gather comprehensive health metrics
+      const healthMetrics = {
+        fps: avgFps,
+        memory: performance.memory ? (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100 : 0,
+        errorRate: Metrics.errorCount / Math.max(1, Metrics.frameCount) * 100,
+        timestamp: Date.now()
+      };
+      
+      // Check for anomalies
+      const anomalies = AnomalyDetector.checkAnomaly(healthMetrics);
+      
+      // Update baseline if healthy
+      if (isHealthy && anomalies.length === 0) {
+        AnomalyDetector.updateBaseline(healthMetrics);
+      }
+      
+      if (!isHealthy || anomalies.length > 0) {
+        Logger.warn('Stream health degraded - FPS:', avgFps.toFixed(1), '| Anomalies:', anomalies.length);
         
-        // Notify RN about health issue
+        // Notify RN about health issue with anomaly data
         if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'streamHealth',
@@ -2522,7 +2799,10 @@ export const createMediaInjectionScript = (
               deviceId: device.id,
               fps: avgFps,
               healthy: false,
-              metrics: Metrics.getSummary()
+              metrics: Metrics.getSummary(),
+              anomalies: anomalies,
+              qualityLevel: QualityAdapter.currentLevel,
+              cacheStats: VideoCache.getStats()
             }
           }));
         }
