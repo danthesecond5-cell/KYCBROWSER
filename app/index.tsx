@@ -45,7 +45,7 @@ import TemplateModal from '@/components/browser/TemplateModal';
 import TestingWatermark from '@/components/TestingWatermark';
 
 import ControlToolbar, { SiteSettingsModal } from '@/components/browser/ControlToolbar';
-import { ProtocolSettingsModal } from '@/components/browser/modals';
+import { ProtocolSettingsModal, PermissionRequestModal } from '@/components/browser/modals';
 import SetupRequired from '@/components/SetupRequired';
 
 export default function MotionBrowserScreen() {
@@ -148,6 +148,13 @@ export default function MotionBrowserScreen() {
 
   const [showSiteSettingsModal, setShowSiteSettingsModal] = useState(false);
   const [showProtocolSettingsModal, setShowProtocolSettingsModal] = useState(false);
+
+  const [permissionRequest, setPermissionRequest] = useState<{
+    requestId: string;
+    hostname: string;
+    origin: string;
+  } | null>(null);
+  const [permissionSelectedVideo, setPermissionSelectedVideo] = useState<SavedVideo | null>(null);
 
   const isProtocolEnabled = useMemo(
     () => protocols[activeProtocol]?.enabled ?? true,
@@ -598,7 +605,16 @@ export default function MotionBrowserScreen() {
   }, [useRealSensors, realAccelData, realGyroData, realOrientData, injectMotionData]);
 
   useEffect(() => {
-    if (pendingVideoForApply && activeTemplate) {
+    if (pendingVideoForApply) {
+      // If we are handling a permission request, just update the selected video for the modal
+      if (permissionRequest) {
+        console.log('[VideoSim] Pending video selected for permission request:', pendingVideoForApply.name);
+        setPermissionSelectedVideo(pendingVideoForApply);
+        setPendingVideoForApply(null);
+        return;
+      }
+
+      if (activeTemplate) {
       console.log('[VideoSim] ========== PENDING VIDEO EFFECT TRIGGERED ==========');
       console.log('[VideoSim] Timestamp:', new Date().toISOString());
       console.log('[VideoSim] Pending video from my-videos:', {
@@ -835,6 +851,23 @@ export default function MotionBrowserScreen() {
     console.log('[App] Website settings deleted:', id);
   }, [deleteWebsiteSettings]);
 
+  const handlePermissionAction = useCallback((requestId: string, action: 'simulate' | 'allow' | 'deny', config?: any) => {
+    if (webViewRef.current) {
+      console.log('[App] Sending permission response:', action, config);
+      webViewRef.current.injectJavaScript(`
+        window.__handlePermissionResponse && window.__handlePermissionResponse(${JSON.stringify({
+          type: 'permissionResponse',
+          requestId,
+          action,
+          config
+        })});
+        true;
+      `);
+    }
+    setPermissionRequest(null);
+    setPermissionSelectedVideo(null);
+  }, []);
+
   if (requiresSetup) {
     return (
       <SetupRequired
@@ -955,6 +988,13 @@ export default function MotionBrowserScreen() {
                       if (!data.payload?.healthy) {
                         console.warn('[WebView Stream Health] Degraded FPS:', data.payload?.fps);
                       }
+                    } else if (data.type === 'permissionRequest') {
+                      console.log('[App] Permission request received:', data.requestId, data.origin);
+                      setPermissionRequest({
+                        requestId: data.requestId,
+                        hostname: new URL(data.origin).hostname,
+                        origin: data.origin
+                      });
                     }
                   } catch {
                     console.log('[WebView Raw Message]', event.nativeEvent.data);
@@ -1101,6 +1141,18 @@ export default function MotionBrowserScreen() {
         currentHostname={currentHostname}
         onClose={() => setShowProtocolSettingsModal(false)}
       />
+
+      {permissionRequest && (
+        <PermissionRequestModal
+          visible={!!permissionRequest}
+          hostname={permissionRequest.hostname}
+          requestId={permissionRequest.requestId}
+          protocols={protocols}
+          selectedVideo={permissionSelectedVideo || fallbackVideo}
+          onAction={handlePermissionAction}
+          onSelectVideo={() => router.push('/my-videos')}
+        />
+      )}
 
       {/* Testing Watermark Overlay */}
       <TestingWatermark
