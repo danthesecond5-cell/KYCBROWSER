@@ -13,6 +13,14 @@ export enum ErrorCode {
   TEMPLATE_NOT_FOUND = 'TEMPLATE_NOT_FOUND',
   DEVICE_NOT_FOUND = 'DEVICE_NOT_FOUND',
   WEBVIEW_ERROR = 'WEBVIEW_ERROR',
+  // Protocol-specific error codes
+  PROTOCOL_INIT_FAILED = 'PROTOCOL_INIT_FAILED',
+  PROTOCOL_CONFIG_INVALID = 'PROTOCOL_CONFIG_INVALID',
+  PROTOCOL_INJECTION_FAILED = 'PROTOCOL_INJECTION_FAILED',
+  PROTOCOL_STREAM_ERROR = 'PROTOCOL_STREAM_ERROR',
+  PROTOCOL_NOT_FOUND = 'PROTOCOL_NOT_FOUND',
+  PROTOCOL_TIMEOUT = 'PROTOCOL_TIMEOUT',
+  PROTOCOL_RECOVERY_FAILED = 'PROTOCOL_RECOVERY_FAILED',
 }
 
 export interface AppError {
@@ -516,6 +524,48 @@ export const DEFAULT_RECOVERY_ACTIONS: Partial<Record<ErrorCode, RecoveryAction>
     initialDelayMs: 0,
     maxDelayMs: 0,
   },
+  [ErrorCode.PROTOCOL_INIT_FAILED]: {
+    strategy: 'reset',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.PROTOCOL_CONFIG_INVALID]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PROTOCOL_INJECTION_FAILED]: {
+    strategy: 'backoff',
+    maxAttempts: 4,
+    initialDelayMs: 200,
+    maxDelayMs: 3000,
+  },
+  [ErrorCode.PROTOCOL_STREAM_ERROR]: {
+    strategy: 'fallback',
+    maxAttempts: 3,
+    initialDelayMs: 100,
+    maxDelayMs: 1000,
+  },
+  [ErrorCode.PROTOCOL_NOT_FOUND]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PROTOCOL_TIMEOUT]: {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 10000,
+  },
+  [ErrorCode.PROTOCOL_RECOVERY_FAILED]: {
+    strategy: 'fallback',
+    maxAttempts: 2,
+    initialDelayMs: 500,
+    maxDelayMs: 3000,
+  },
 };
 
 /**
@@ -921,6 +971,34 @@ export function getProtocolErrorRecovery(error: ProtocolError): {
     [ErrorCode.DEVICE_NOT_FOUND]: {
       suggestion: 'Device not found',
       actions: ['Refresh device list', 'Check device connection', 'Reconnect device'],
+    },
+    [ErrorCode.PROTOCOL_INIT_FAILED]: {
+      suggestion: 'Protocol initialization failed',
+      actions: ['Restart protocol', 'Check configuration', 'Try a different protocol'],
+    },
+    [ErrorCode.PROTOCOL_CONFIG_INVALID]: {
+      suggestion: 'Protocol configuration is invalid',
+      actions: ['Reset to default settings', 'Review configuration values', 'Validate settings'],
+    },
+    [ErrorCode.PROTOCOL_INJECTION_FAILED]: {
+      suggestion: 'Video injection failed',
+      actions: ['Retry injection', 'Check video compatibility', 'Try a different video'],
+    },
+    [ErrorCode.PROTOCOL_STREAM_ERROR]: {
+      suggestion: 'Stream error occurred',
+      actions: ['Restart stream', 'Check network connection', 'Reduce video quality'],
+    },
+    [ErrorCode.PROTOCOL_NOT_FOUND]: {
+      suggestion: 'Protocol not available',
+      actions: ['Select a different protocol', 'Check protocol availability', 'Update app'],
+    },
+    [ErrorCode.PROTOCOL_TIMEOUT]: {
+      suggestion: 'Protocol operation timed out',
+      actions: ['Retry operation', 'Check network connection', 'Increase timeout settings'],
+    },
+    [ErrorCode.PROTOCOL_RECOVERY_FAILED]: {
+      suggestion: 'Protocol recovery failed',
+      actions: ['Restart protocol manually', 'Reset to defaults', 'Contact support'],
     },
   };
 
