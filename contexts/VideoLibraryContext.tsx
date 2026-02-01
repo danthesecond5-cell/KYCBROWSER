@@ -369,7 +369,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
 
     let nextVideos: SavedVideo[] = [];
     setSavedVideos(prev => {
-      nextVideos = [videoWithMetadata, ...prev];
+      nextVideos = [videoWithMetadata, ...prev.filter(video => video.id !== videoWithMetadata.id)];
       return nextVideos;
     });
     await enqueueSaveVideosMetadata(nextVideos);
@@ -456,7 +456,7 @@ export const [VideoLibraryProvider, useVideoLibrary] = createContextHook<VideoLi
 
     let nextVideos: SavedVideo[] = [];
     setSavedVideos(prev => {
-      nextVideos = [videoWithMetadata, ...prev];
+      nextVideos = [videoWithMetadata, ...prev.filter(video => video.id !== videoWithMetadata.id)];
       return nextVideos;
     });
     await enqueueSaveVideosMetadata(nextVideos);

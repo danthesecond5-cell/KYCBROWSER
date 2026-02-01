@@ -36,6 +36,41 @@ const DEFAULT_ACCEL: AccelerometerData = { x: 0, y: 0, z: 0 };
 const DEFAULT_GYRO: GyroscopeData = { x: 0, y: 0, z: 0 };
 const DEFAULT_ORIENT: OrientationData = { alpha: 0, beta: 0, gamma: 0 };
 
+type WebPermissionRequester = () => Promise<'granted' | 'denied'>;
+
+const getWebPermissionRequester = (eventType: 'motion' | 'orientation'): WebPermissionRequester | null => {
+  const eventClass = eventType === 'orientation'
+    ? (globalThis as { DeviceOrientationEvent?: { requestPermission?: WebPermissionRequester } }).DeviceOrientationEvent
+    : (globalThis as { DeviceMotionEvent?: { requestPermission?: WebPermissionRequester } }).DeviceMotionEvent;
+
+  if (eventClass && typeof eventClass.requestPermission === 'function') {
+    return eventClass.requestPermission.bind(eventClass);
+  }
+
+  return null;
+};
+
+const requestWebSensorPermission = async (eventType: 'motion' | 'orientation'): Promise<boolean> => {
+  const requester = getWebPermissionRequester(eventType);
+  if (!requester) return true;
+  try {
+    const result = await requester();
+    return result === 'granted';
+  } catch {
+    return false;
+  }
+};
+
+const attachPermissionGestureListener = (handler: () => void): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+  window.addEventListener('touchend', handler, { once: true });
+  window.addEventListener('click', handler, { once: true });
+  return () => {
+    window.removeEventListener('touchend', handler);
+    window.removeEventListener('click', handler);
+  };
+};
+
 export function useAccelerometer(updateInterval = 100): SensorState<AccelerometerData> {
   const [data, setData] = useState<AccelerometerData>(DEFAULT_ACCEL);
   const [isAvailable, setIsAvailable] = useState<boolean>(false);
@@ -43,6 +78,7 @@ export function useAccelerometer(updateInterval = 100): SensorState<Acceleromete
 
   useEffect(() => {
     let subscription: { remove: () => void } | null = null;
+    let permissionCleanup: (() => void) | null = null;
     let mounted = true;
 
     const init = async () => {
@@ -95,27 +131,57 @@ export function useAccelerometer(updateInterval = 100): SensorState<Acceleromete
         } else {
           if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
             console.log('[Accelerometer] Using web DeviceMotion API');
-            if (mounted) setIsAvailable(true);
-            
-            const handleMotion = (event: DeviceMotionEvent) => {
+
+            const startWebListener = async () => {
+              const granted = await requestWebSensorPermission('motion');
               if (!mounted) return;
-              try {
-                if (event.accelerationIncludingGravity) {
-                  setData({
-                    x: event.accelerationIncludingGravity.x || 0,
-                    y: event.accelerationIncludingGravity.y || 0,
-                    z: event.accelerationIncludingGravity.z || 0,
+
+              if (!granted) {
+                setIsAvailable(false);
+                setError({
+                  type: 'accelerometer',
+                  message: 'Motion permission required. Tap to enable.',
+                  recoverable: true,
+                });
+
+                if (!permissionCleanup) {
+                  permissionCleanup = attachPermissionGestureListener(() => {
+                    permissionCleanup?.();
+                    permissionCleanup = null;
+                    void startWebListener();
                   });
                 }
-              } catch (err) {
-                console.error('[Accelerometer] Web motion event error:', err);
+                return;
               }
+
+              setError(null);
+              setIsAvailable(true);
+
+              const handleMotion = (event: DeviceMotionEvent) => {
+                if (!mounted) return;
+                try {
+                  if (event.accelerationIncludingGravity) {
+                    setData({
+                      x: event.accelerationIncludingGravity.x || 0,
+                      y: event.accelerationIncludingGravity.y || 0,
+                      z: event.accelerationIncludingGravity.z || 0,
+                    });
+                  }
+                } catch (err) {
+                  console.error('[Accelerometer] Web motion event error:', err);
+                }
+              };
+
+              if (subscription) {
+                subscription.remove();
+              }
+              window.addEventListener('devicemotion', handleMotion as EventListener);
+              subscription = {
+                remove: () => window.removeEventListener('devicemotion', handleMotion as EventListener),
+              };
             };
-            
-            window.addEventListener('devicemotion', handleMotion as EventListener);
-            subscription = {
-              remove: () => window.removeEventListener('devicemotion', handleMotion as EventListener),
-            };
+
+            void startWebListener();
           } else {
             console.warn('[Accelerometer] DeviceMotion not supported in web');
             if (mounted) {
@@ -152,6 +218,10 @@ export function useAccelerometer(updateInterval = 100): SensorState<Acceleromete
           console.error('[Accelerometer] Error removing listener:', err);
         }
       }
+      if (permissionCleanup) {
+        permissionCleanup();
+        permissionCleanup = null;
+      }
     };
   }, [updateInterval]);
 
@@ -165,6 +235,7 @@ export function useGyroscope(updateInterval = 100): SensorState<GyroscopeData> {
 
   useEffect(() => {
     let subscription: { remove: () => void } | null = null;
+    let permissionCleanup: (() => void) | null = null;
     let mounted = true;
 
     const init = async () => {
@@ -217,27 +288,57 @@ export function useGyroscope(updateInterval = 100): SensorState<GyroscopeData> {
         } else {
           if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
             console.log('[Gyroscope] Using web DeviceMotion API');
-            if (mounted) setIsAvailable(true);
-            
-            const handleMotion = (event: DeviceMotionEvent) => {
+
+            const startWebListener = async () => {
+              const granted = await requestWebSensorPermission('motion');
               if (!mounted) return;
-              try {
-                if (event.rotationRate) {
-                  setData({
-                    x: event.rotationRate.alpha || 0,
-                    y: event.rotationRate.beta || 0,
-                    z: event.rotationRate.gamma || 0,
+
+              if (!granted) {
+                setIsAvailable(false);
+                setError({
+                  type: 'gyroscope',
+                  message: 'Motion permission required. Tap to enable.',
+                  recoverable: true,
+                });
+
+                if (!permissionCleanup) {
+                  permissionCleanup = attachPermissionGestureListener(() => {
+                    permissionCleanup?.();
+                    permissionCleanup = null;
+                    void startWebListener();
                   });
                 }
-              } catch (err) {
-                console.error('[Gyroscope] Web motion event error:', err);
+                return;
               }
+
+              setError(null);
+              setIsAvailable(true);
+
+              const handleMotion = (event: DeviceMotionEvent) => {
+                if (!mounted) return;
+                try {
+                  if (event.rotationRate) {
+                    setData({
+                      x: event.rotationRate.alpha || 0,
+                      y: event.rotationRate.beta || 0,
+                      z: event.rotationRate.gamma || 0,
+                    });
+                  }
+                } catch (err) {
+                  console.error('[Gyroscope] Web motion event error:', err);
+                }
+              };
+
+              if (subscription) {
+                subscription.remove();
+              }
+              window.addEventListener('devicemotion', handleMotion as EventListener);
+              subscription = {
+                remove: () => window.removeEventListener('devicemotion', handleMotion as EventListener),
+              };
             };
-            
-            window.addEventListener('devicemotion', handleMotion as EventListener);
-            subscription = {
-              remove: () => window.removeEventListener('devicemotion', handleMotion as EventListener),
-            };
+
+            void startWebListener();
           } else {
             console.warn('[Gyroscope] DeviceMotion not supported in web');
             if (mounted) {
@@ -274,6 +375,10 @@ export function useGyroscope(updateInterval = 100): SensorState<GyroscopeData> {
           console.error('[Gyroscope] Error removing listener:', err);
         }
       }
+      if (permissionCleanup) {
+        permissionCleanup();
+        permissionCleanup = null;
+      }
     };
   }, [updateInterval]);
 
@@ -287,6 +392,7 @@ export function useOrientation(updateInterval = 100): SensorState<OrientationDat
 
   useEffect(() => {
     let subscription: { remove: () => void } | null = null;
+    let permissionCleanup: (() => void) | null = null;
     let mounted = true;
 
     const init = async () => {
@@ -344,25 +450,55 @@ export function useOrientation(updateInterval = 100): SensorState<OrientationDat
         } else {
           if (typeof window !== 'undefined' && 'DeviceOrientationEvent' in window) {
             console.log('[Orientation] Using web DeviceOrientation API');
-            if (mounted) setIsAvailable(true);
-            
-            const handleOrientation = (event: DeviceOrientationEvent) => {
+
+            const startWebListener = async () => {
+              const granted = await requestWebSensorPermission('orientation');
               if (!mounted) return;
-              try {
-                setData({
-                  alpha: event.alpha || 0,
-                  beta: event.beta || 0,
-                  gamma: event.gamma || 0,
+
+              if (!granted) {
+                setIsAvailable(false);
+                setError({
+                  type: 'orientation',
+                  message: 'Orientation permission required. Tap to enable.',
+                  recoverable: true,
                 });
-              } catch (err) {
-                console.error('[Orientation] Web orientation event error:', err);
+
+                if (!permissionCleanup) {
+                  permissionCleanup = attachPermissionGestureListener(() => {
+                    permissionCleanup?.();
+                    permissionCleanup = null;
+                    void startWebListener();
+                  });
+                }
+                return;
               }
+
+              setError(null);
+              setIsAvailable(true);
+
+              const handleOrientation = (event: DeviceOrientationEvent) => {
+                if (!mounted) return;
+                try {
+                  setData({
+                    alpha: event.alpha || 0,
+                    beta: event.beta || 0,
+                    gamma: event.gamma || 0,
+                  });
+                } catch (err) {
+                  console.error('[Orientation] Web orientation event error:', err);
+                }
+              };
+
+              if (subscription) {
+                subscription.remove();
+              }
+              window.addEventListener('deviceorientation', handleOrientation as EventListener);
+              subscription = {
+                remove: () => window.removeEventListener('deviceorientation', handleOrientation as EventListener),
+              };
             };
-            
-            window.addEventListener('deviceorientation', handleOrientation as EventListener);
-            subscription = {
-              remove: () => window.removeEventListener('deviceorientation', handleOrientation as EventListener),
-            };
+
+            void startWebListener();
           } else {
             console.warn('[Orientation] DeviceOrientation not supported in web');
             if (mounted) {
@@ -398,6 +534,10 @@ export function useOrientation(updateInterval = 100): SensorState<OrientationDat
         } catch (err) {
           console.error('[Orientation] Error removing listener:', err);
         }
+      }
+      if (permissionCleanup) {
+        permissionCleanup();
+        permissionCleanup = null;
       }
     };
   }, [updateInterval]);
