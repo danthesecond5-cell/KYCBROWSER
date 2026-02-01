@@ -112,7 +112,7 @@ export default function PermissionRequestModal({
                   <Camera size={20} color={!useSimulation ? "#00ff88" : "#ffffff"} />
                   <View style={styles.optionTextContainer}>
                     <Text style={[styles.optionTitle, !useSimulation && styles.optionTitleActive]}>
-                      Don't Simulate
+                      Don&apos;t Simulate
                     </Text>
                     <Text style={styles.optionDesc}>Use real camera</Text>
                   </View>

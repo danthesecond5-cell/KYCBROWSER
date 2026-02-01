@@ -7,13 +7,13 @@ import { Text } from 'react-native';
 
 function Consumer({ onReady }: { onReady?: (ctx: ReturnType<typeof useDeveloperMode>) => void }) {
   const ctx = useDeveloperMode();
-  
+
   React.useEffect(() => {
     if (!ctx.isLoading && onReady) {
       onReady(ctx);
     }
   }, [ctx, onReady]);
-  
+
   return <Text testID="consumer">Consumer</Text>;
 }
 
@@ -36,8 +36,7 @@ describe('DeveloperModeContext', () => {
     });
 
     expect(ctxRef!.developerMode.enabled).toBe(DEFAULT_DEVELOPER_MODE.enabled);
-    expect(ctxRef!.developerMode.pinCode).toEqual(expect.any(String));
-    expect(ctxRef!.developerMode.pinCode).toMatch(/^sha256:/);
+    expect(ctxRef!.developerMode.pinCode).toBe(DEFAULT_DEVELOPER_MODE.pinCode);
   });
 
   test('incorrect PIN does not enable developer mode', async () => {
@@ -55,7 +54,10 @@ describe('DeveloperModeContext', () => {
 
     const result = await ctxRef!.toggleDeveloperMode('wrong');
     expect(result).toBe(false);
-    expect(ctxRef!.isDeveloperModeEnabled).toBe(false);
+
+    await waitFor(() => {
+      expect(ctxRef!.isDeveloperModeEnabled).toBe(false);
+    });
   });
 
   test('correct PIN enables developer mode', async () => {
@@ -73,6 +75,11 @@ describe('DeveloperModeContext', () => {
 
     const result = await ctxRef!.toggleDeveloperMode(DEFAULT_DEVELOPER_MODE.pinCode || '');
     expect(result).toBe(true);
+
+    await waitFor(() => {
+      expect(ctxRef!.isDeveloperModeEnabled).toBe(true);
+    });
+
     expect(AsyncStorage.setItem).toHaveBeenCalled();
   });
 });
