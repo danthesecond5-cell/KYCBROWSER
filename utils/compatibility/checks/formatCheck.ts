@@ -1,9 +1,64 @@
 import type { CompatibilityCheckItem } from '../types';
 import { IDEAL_WEBCAM_SPECS, ACCEPTABLE_SPECS } from '../specs';
+import {
+  getFormatFromMimeType,
+  getMimeTypeFromDataUri,
+  isBase64VideoUri,
+  isBlobUri,
+} from '../../base64VideoHandler';
+
+const getExtensionFromName = (name: string): string | null => {
+  if (!name) return null;
+  const trimmed = name.trim();
+  const lastDot = trimmed.lastIndexOf('.');
+  if (lastDot <= 0 || lastDot === trimmed.length - 1) {
+    return null;
+  }
+  return trimmed.slice(lastDot + 1).toLowerCase();
+};
+
+const getExtensionFromUri = (uri: string): string | null => {
+  if (!uri) return null;
+  const trimmed = uri.trim();
+  if (!trimmed) return null;
+  const extractFromPath = (path: string): string | null => {
+    const cleanPath = path.split('?')[0].split('#')[0];
+    const lastDot = cleanPath.lastIndexOf('.');
+    if (lastDot <= 0 || lastDot === cleanPath.length - 1) {
+      return null;
+    }
+    return cleanPath.slice(lastDot + 1).toLowerCase();
+  };
+  const stripToPath = (value: string): string => {
+    const schemeIndex = value.indexOf('://');
+    if (schemeIndex === -1) return value;
+    const afterScheme = value.slice(schemeIndex + 3);
+    const slashIndex = afterScheme.indexOf('/');
+    if (slashIndex === -1) return '';
+    return afterScheme.slice(slashIndex);
+  };
+
+  try {
+    const parsed = new URL(trimmed);
+    return extractFromPath(parsed.pathname);
+  } catch {
+    return extractFromPath(stripToPath(trimmed));
+  }
+};
 
 export const checkFormat = (uri: string, name: string): CompatibilityCheckItem => {
-  const extension = name.split('.').pop()?.toLowerCase() || 
-                    uri.split('.').pop()?.toLowerCase()?.split('?')[0] || '';
+  let extension = getExtensionFromName(name);
+  
+  if (!extension) {
+    if (isBase64VideoUri(uri)) {
+      const mimeType = getMimeTypeFromDataUri(uri);
+      extension = getFormatFromMimeType(mimeType);
+    } else if (isBlobUri(uri)) {
+      extension = 'mp4';
+    } else {
+      extension = getExtensionFromUri(uri) || '';
+    }
+  }
   
   if (!extension) {
     return {

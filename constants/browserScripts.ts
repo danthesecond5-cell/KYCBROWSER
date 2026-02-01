@@ -1615,6 +1615,7 @@ export const createMediaInjectionScript = (
       'data:video/quicktime;base64,',
       'data:video/x-m4v;base64,',
       'data:video/avi;base64,',
+      'data:video/x-msvideo;base64,',
       'data:video/mov;base64,',
       'data:video/3gpp;base64,',
       'data:application/octet-stream;base64,'
