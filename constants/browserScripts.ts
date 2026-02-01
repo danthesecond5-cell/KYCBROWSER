@@ -661,6 +661,7 @@ export interface MediaInjectionOptions {
   showOverlayLabel?: boolean;
   loopVideo?: boolean;
   mirrorVideo?: boolean;
+  aggressiveRetries?: boolean;
   debugEnabled?: boolean;
   videoLoadTimeoutMs?: number;
   maxRetryAttempts?: number;
@@ -682,6 +683,7 @@ export const createMediaInjectionScript = (
     showOverlayLabel = false,
     loopVideo = true,
     mirrorVideo = false,
+    aggressiveRetries = false,
     debugEnabled,
     videoLoadTimeoutMs,
     maxRetryAttempts,
@@ -733,6 +735,7 @@ export const createMediaInjectionScript = (
     SHOW_OVERLAY_LABEL: ${showOverlayLabel ? 'true' : 'false'},
     LOOP_VIDEO: ${loopVideo ? 'true' : 'false'},
     MIRROR_VIDEO: ${mirrorVideo ? 'true' : 'false'},
+    AGGRESSIVE_RETRIES: ${aggressiveRetries ? 'true' : 'false'},
     PORTRAIT_WIDTH: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width},
     PORTRAIT_HEIGHT: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height},
     TARGET_FPS: ${targetFps ?? IPHONE_DEFAULT_PORTRAIT_RESOLUTION.fps},
@@ -755,6 +758,35 @@ export const createMediaInjectionScript = (
     MAX_ACTIVE_STREAMS: ${maxActiveStreams ?? 3},
     CLEANUP_DELAY: 100,
   };
+
+  const RETRY_BASELINE = {
+    MAX_RETRY_ATTEMPTS: CONFIG.MAX_RETRY_ATTEMPTS,
+    VIDEO_LOAD_TIMEOUT: CONFIG.VIDEO_LOAD_TIMEOUT,
+    INITIAL_RETRY_DELAY: CONFIG.INITIAL_RETRY_DELAY,
+    HEALTH_CHECK_INTERVAL: CONFIG.HEALTH_CHECK_INTERVAL,
+    PERFORMANCE_SAMPLE_SIZE: CONFIG.PERFORMANCE_SAMPLE_SIZE,
+    QUALITY_ADAPTATION_INTERVAL: CONFIG.QUALITY_ADAPTATION_INTERVAL,
+  };
+
+  function applyRetryProfile(isAggressive) {
+    if (!isAggressive) {
+      CONFIG.MAX_RETRY_ATTEMPTS = RETRY_BASELINE.MAX_RETRY_ATTEMPTS;
+      CONFIG.VIDEO_LOAD_TIMEOUT = RETRY_BASELINE.VIDEO_LOAD_TIMEOUT;
+      CONFIG.INITIAL_RETRY_DELAY = RETRY_BASELINE.INITIAL_RETRY_DELAY;
+      CONFIG.HEALTH_CHECK_INTERVAL = RETRY_BASELINE.HEALTH_CHECK_INTERVAL;
+      CONFIG.PERFORMANCE_SAMPLE_SIZE = RETRY_BASELINE.PERFORMANCE_SAMPLE_SIZE;
+      CONFIG.QUALITY_ADAPTATION_INTERVAL = RETRY_BASELINE.QUALITY_ADAPTATION_INTERVAL;
+      return;
+    }
+    CONFIG.MAX_RETRY_ATTEMPTS = Math.max(CONFIG.MAX_RETRY_ATTEMPTS, 6);
+    CONFIG.VIDEO_LOAD_TIMEOUT = Math.max(CONFIG.VIDEO_LOAD_TIMEOUT, 20000);
+    CONFIG.INITIAL_RETRY_DELAY = Math.max(CONFIG.INITIAL_RETRY_DELAY, 400);
+    CONFIG.HEALTH_CHECK_INTERVAL = Math.min(CONFIG.HEALTH_CHECK_INTERVAL, 4000);
+    CONFIG.PERFORMANCE_SAMPLE_SIZE = Math.max(CONFIG.PERFORMANCE_SAMPLE_SIZE, 90);
+    CONFIG.QUALITY_ADAPTATION_INTERVAL = Math.min(CONFIG.QUALITY_ADAPTATION_INTERVAL, 2000);
+  }
+
+  applyRetryProfile(CONFIG.AGGRESSIVE_RETRIES);
   
   // ============ EXPO/WEBVIEW COMPATIBILITY ============
   if (!window.performance) {
@@ -837,7 +869,7 @@ export const createMediaInjectionScript = (
   }
   
   Logger.log('======== WEBCAM SIMULATION INIT ========');
-  Logger.log('Protocol:', CONFIG.PROTOCOL_ID, '| Devices:', ${devices.length}, '| Stealth:', ${stealthMode}, '| ForceSim:', CONFIG.FORCE_SIMULATION);
+  Logger.log('Protocol:', CONFIG.PROTOCOL_ID, '| Devices:', ${devices.length}, '| Stealth:', ${stealthMode}, '| ForceSim:', CONFIG.FORCE_SIMULATION, '| AggressiveRetries:', CONFIG.AGGRESSIVE_RETRIES);
   
   // ============ METRICS TRACKING ============
   const Metrics = {
@@ -938,6 +970,23 @@ export const createMediaInjectionScript = (
       return { activeCount: this.activeStreams.size, streams: Array.from(this.activeStreams.keys()) };
     }
   };
+
+  function registerStream(stream, device, source) {
+    if (!stream) return;
+    if (stream._streamId) return;
+    const baseId = device?.id || device?.nativeDeviceId || device?.deviceId || 'stream';
+    const streamId = baseId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+    stream._streamId = streamId;
+    stream._source = source || 'simulated';
+    StreamRegistry.register(streamId, stream, stream._cleanup);
+    try {
+      const stopHandler = function() { StreamRegistry.unregister(streamId); };
+      stream.getTracks().forEach(function(track) {
+        track.addEventListener('ended', stopHandler);
+        track.addEventListener('inactive', stopHandler);
+      });
+    } catch (e) {}
+  }
   
   // ============ QUALITY ADAPTATION SYSTEM ============
   const QualityAdapter = {
@@ -1247,6 +1296,7 @@ export const createMediaInjectionScript = (
     forceSimulation: CONFIG.FORCE_SIMULATION,
     loopVideo: CONFIG.LOOP_VIDEO,
     mirrorVideo: CONFIG.MIRROR_VIDEO,
+    aggressiveRetries: CONFIG.AGGRESSIVE_RETRIES,
     protocolId: CONFIG.PROTOCOL_ID,
     overlayLabelText: CONFIG.PROTOCOL_LABEL,
     showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL
@@ -1561,6 +1611,7 @@ export const createMediaInjectionScript = (
               simulationEnabled: true
             };
             const stream = await createVideoStream(deviceForSim, !!wantsAudio);
+            registerStream(stream, deviceForSim, 'video');
             Logger.log('SUCCESS - tracks:', stream.getTracks().length);
             return stream;
           } catch (err) {
@@ -1570,7 +1621,9 @@ export const createMediaInjectionScript = (
         }
         
         Logger.log('Returning canvas test pattern');
-        return await createCanvasStream(device, !!wantsAudio, 'default');
+        const stream = await createCanvasStream(device, !!wantsAudio, 'default');
+        registerStream(stream, device, 'canvas');
+        return stream;
       }
       
       if (_origGetUserMedia && !cfg.stealthMode && !forceSimulation) {
@@ -1579,7 +1632,9 @@ export const createMediaInjectionScript = (
       }
       
       Logger.log('No simulation, returning canvas pattern');
-      return await createCanvasStream(device, !!wantsAudio, 'default');
+      const stream = await createCanvasStream(device, !!wantsAudio, 'default');
+      registerStream(stream, device, 'canvas');
+      return stream;
     };
 
     const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
