@@ -15,6 +15,11 @@ export interface VideoServingConfig {
   isBase64?: boolean;
   isBlob?: boolean;
   warningMessage?: string;
+  // New optimization fields
+  estimatedLoadTime?: 'fast' | 'medium' | 'slow';
+  cacheable?: boolean;
+  priority?: 'high' | 'normal' | 'low';
+  compressionLevel?: 'none' | 'light' | 'heavy';
 }
 
 /**
@@ -29,6 +34,19 @@ export const isBuiltInVideoUri = (uri: string): boolean => {
  */
 export const isCanvasPatternUri = (uri: string): boolean => {
   return uri.startsWith('canvas:');
+};
+
+// Video serving optimization constants
+export const VIDEO_SERVING_CONSTANTS = {
+  // Size thresholds for load time estimation
+  FAST_LOAD_THRESHOLD: 5 * 1024 * 1024, // 5MB
+  MEDIUM_LOAD_THRESHOLD: 20 * 1024 * 1024, // 20MB
+  // Cache hints
+  LOCAL_CACHE_PRIORITY: 'high' as const,
+  EXTERNAL_CACHE_PRIORITY: 'normal' as const,
+  // Compression detection patterns
+  COMPRESSED_FORMATS: ['mp4', 'webm', 'm4v'],
+  UNCOMPRESSED_FORMATS: ['avi', 'mov'],
 };
 
 const VIDEO_MIME_TYPES: Record<string, string> = {
@@ -431,4 +449,187 @@ export const getRecommendedAction = (uri: string): 'use_directly' | 'download_fi
  */
 export const isVideoGuaranteedToWork = (uri: string): boolean => {
   return isBuiltInVideoUri(uri) || isCanvasPatternUri(uri) || isLocalFileUri(uri);
+};
+
+// ============ OPTIMIZATION UTILITIES ============
+
+/**
+ * Estimate video load time based on URI type and size hints
+ */
+export const estimateLoadTime = (uri: string, fileSizeBytes?: number): 'fast' | 'medium' | 'slow' => {
+  // Local and base64 are fast
+  if (isLocalFileUri(uri) || isBase64VideoUri(uri) || isBlobUri(uri)) {
+    if (fileSizeBytes && fileSizeBytes > VIDEO_SERVING_CONSTANTS.MEDIUM_LOAD_THRESHOLD) {
+      return 'medium';
+    }
+    return 'fast';
+  }
+  
+  // External URLs are slower
+  if (isExternalUrl(uri)) {
+    if (isKnownCorsBlockingSite(uri)) {
+      return 'slow';
+    }
+    return 'medium';
+  }
+  
+  return 'medium';
+};
+
+/**
+ * Determine if video should be cached
+ */
+export const shouldCache = (uri: string): boolean => {
+  // Don't cache blob URLs (they have their own lifecycle)
+  if (isBlobUri(uri)) {
+    return false;
+  }
+  
+  // Cache base64 if not too large
+  if (isBase64VideoUri(uri)) {
+    return uri.length < VIDEO_SERVING_CONSTANTS.MEDIUM_LOAD_THRESHOLD;
+  }
+  
+  // Cache local files
+  if (isLocalFileUri(uri)) {
+    return true;
+  }
+  
+  // Cache external URLs that we've verified work
+  return true;
+};
+
+/**
+ * Get priority for loading a video
+ */
+export const getLoadPriority = (uri: string, isActive: boolean = false): 'high' | 'normal' | 'low' => {
+  if (isActive) {
+    return 'high';
+  }
+  
+  if (isLocalFileUri(uri) || isBlobUri(uri)) {
+    return VIDEO_SERVING_CONSTANTS.LOCAL_CACHE_PRIORITY;
+  }
+  
+  return VIDEO_SERVING_CONSTANTS.EXTERNAL_CACHE_PRIORITY;
+};
+
+/**
+ * Detect compression level from format
+ */
+export const detectCompressionLevel = (uri: string): 'none' | 'light' | 'heavy' => {
+  const extension = uri.split('.').pop()?.toLowerCase()?.split('?')[0] || '';
+  
+  if (VIDEO_SERVING_CONSTANTS.COMPRESSED_FORMATS.includes(extension)) {
+    return 'heavy';
+  }
+  
+  if (VIDEO_SERVING_CONSTANTS.UNCOMPRESSED_FORMATS.includes(extension)) {
+    return 'none';
+  }
+  
+  return 'light';
+};
+
+/**
+ * Enhanced video preparation with full optimization metadata
+ */
+export const prepareVideoForSimulationOptimized = (
+  video: SavedVideo,
+  isActive: boolean = false
+): VideoServingConfig => {
+  const baseConfig = prepareVideoForSimulation(video);
+  
+  return {
+    ...baseConfig,
+    estimatedLoadTime: estimateLoadTime(video.uri, video.fileSize),
+    cacheable: shouldCache(video.uri),
+    priority: getLoadPriority(video.uri, isActive),
+    compressionLevel: detectCompressionLevel(video.uri),
+  };
+};
+
+/**
+ * Batch prepare multiple videos with optimization
+ */
+export const batchPrepareVideos = (
+  videos: SavedVideo[],
+  activeVideoId?: string
+): VideoServingConfig[] => {
+  return videos.map(video => 
+    prepareVideoForSimulationOptimized(video, video.id === activeVideoId)
+  );
+};
+
+/**
+ * Get optimal video loading order based on priority and load time
+ */
+export const getOptimalLoadingOrder = (configs: VideoServingConfig[]): VideoServingConfig[] => {
+  const priorityOrder = { high: 0, normal: 1, low: 2 };
+  const loadTimeOrder = { fast: 0, medium: 1, slow: 2 };
+  
+  return [...configs].sort((a, b) => {
+    // First sort by priority
+    const priorityDiff = priorityOrder[a.priority || 'normal'] - priorityOrder[b.priority || 'normal'];
+    if (priorityDiff !== 0) return priorityDiff;
+    
+    // Then by estimated load time
+    return loadTimeOrder[a.estimatedLoadTime || 'medium'] - loadTimeOrder[b.estimatedLoadTime || 'medium'];
+  });
+};
+
+/**
+ * Check if a video URI is ready for immediate use
+ */
+export const isReadyForImmediateUse = (uri: string): boolean => {
+  // Base64, blob, and local files are immediately ready
+  return isBase64VideoUri(uri) || isBlobUri(uri) || isLocalFileUri(uri);
+};
+
+/**
+ * Get video serving strategy recommendation
+ */
+export const getServingStrategy = (uri: string): {
+  strategy: 'direct' | 'stream' | 'preload' | 'download';
+  reason: string;
+} => {
+  if (isBase64VideoUri(uri)) {
+    return {
+      strategy: 'direct',
+      reason: 'Base64 data is embedded and ready for immediate use'
+    };
+  }
+  
+  if (isBlobUri(uri)) {
+    return {
+      strategy: 'direct',
+      reason: 'Blob URL points to already-loaded data'
+    };
+  }
+  
+  if (isLocalFileUri(uri)) {
+    return {
+      strategy: 'preload',
+      reason: 'Local file should be preloaded for best performance'
+    };
+  }
+  
+  if (isKnownCorsBlockingSite(uri)) {
+    return {
+      strategy: 'download',
+      reason: 'Source site blocks streaming, download required'
+    };
+  }
+  
+  if (isExternalUrl(uri)) {
+    return {
+      strategy: 'stream',
+      reason: 'External URL will be streamed with potential CORS issues'
+    };
+  }
+  
+  return {
+    strategy: 'download',
+    reason: 'Unknown source type, download recommended'
+  };
 };
