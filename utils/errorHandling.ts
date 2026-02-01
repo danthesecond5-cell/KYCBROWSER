@@ -13,6 +13,14 @@ export enum ErrorCode {
   TEMPLATE_NOT_FOUND = 'TEMPLATE_NOT_FOUND',
   DEVICE_NOT_FOUND = 'DEVICE_NOT_FOUND',
   WEBVIEW_ERROR = 'WEBVIEW_ERROR',
+  // Protocol-specific error codes
+  PROTOCOL_INIT_FAILED = 'PROTOCOL_INIT_FAILED',
+  PROTOCOL_CONFIG_INVALID = 'PROTOCOL_CONFIG_INVALID',
+  PROTOCOL_INJECTION_FAILED = 'PROTOCOL_INJECTION_FAILED',
+  PROTOCOL_STREAM_ERROR = 'PROTOCOL_STREAM_ERROR',
+  PROTOCOL_NOT_FOUND = 'PROTOCOL_NOT_FOUND',
+  PROTOCOL_TIMEOUT = 'PROTOCOL_TIMEOUT',
+  PROTOCOL_RECOVERY_FAILED = 'PROTOCOL_RECOVERY_FAILED',
 }
 
 export interface AppError {
@@ -447,4 +455,735 @@ export function getPlatformSpecificError(error: unknown): string {
   }
   
   return baseMessage;
+}
+
+// ============ ADVANCED RECOVERY MECHANISMS ============
+
+/**
+ * Recovery strategy types
+ */
+export type RecoveryStrategy = 
+  | 'retry'           // Simple retry
+  | 'backoff'         // Exponential backoff
+  | 'fallback'        // Use alternative
+  | 'reset'           // Reset state and retry
+  | 'skip'            // Skip and continue
+  | 'abort';          // Give up
+
+/**
+ * Recovery action configuration
+ */
+export interface RecoveryAction {
+  strategy: RecoveryStrategy;
+  maxAttempts: number;
+  initialDelayMs: number;
+  maxDelayMs: number;
+  fallbackValue?: unknown;
+  onRecoveryAttempt?: (attempt: number, error: AppError) => void;
+  onRecoverySuccess?: (attempt: number) => void;
+  onRecoveryFailed?: (error: AppError) => void;
+}
+
+/**
+ * Default recovery actions for different error codes
+ */
+export const DEFAULT_RECOVERY_ACTIONS: Partial<Record<ErrorCode, RecoveryAction>> = {
+  [ErrorCode.NETWORK]: {
+    strategy: 'backoff',
+    maxAttempts: 4,
+    initialDelayMs: 1000,
+    maxDelayMs: 16000,
+  },
+  [ErrorCode.VIDEO_LOAD_ERROR]: {
+    strategy: 'fallback',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.CAMERA_ERROR]: {
+    strategy: 'reset',
+    maxAttempts: 2,
+    initialDelayMs: 1000,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.WEBVIEW_ERROR]: {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 3000,
+  },
+  [ErrorCode.STORAGE]: {
+    strategy: 'skip',
+    maxAttempts: 1,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PERMISSION_DENIED]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PROTOCOL_INIT_FAILED]: {
+    strategy: 'reset',
+    maxAttempts: 3,
+    initialDelayMs: 500,
+    maxDelayMs: 5000,
+  },
+  [ErrorCode.PROTOCOL_CONFIG_INVALID]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PROTOCOL_INJECTION_FAILED]: {
+    strategy: 'backoff',
+    maxAttempts: 4,
+    initialDelayMs: 200,
+    maxDelayMs: 3000,
+  },
+  [ErrorCode.PROTOCOL_STREAM_ERROR]: {
+    strategy: 'fallback',
+    maxAttempts: 3,
+    initialDelayMs: 100,
+    maxDelayMs: 1000,
+  },
+  [ErrorCode.PROTOCOL_NOT_FOUND]: {
+    strategy: 'abort',
+    maxAttempts: 0,
+    initialDelayMs: 0,
+    maxDelayMs: 0,
+  },
+  [ErrorCode.PROTOCOL_TIMEOUT]: {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 10000,
+  },
+  [ErrorCode.PROTOCOL_RECOVERY_FAILED]: {
+    strategy: 'fallback',
+    maxAttempts: 2,
+    initialDelayMs: 500,
+    maxDelayMs: 3000,
+  },
+};
+
+/**
+ * Get recommended recovery action for an error
+ */
+export function getRecoveryAction(error: AppError): RecoveryAction {
+  const defaultAction: RecoveryAction = {
+    strategy: 'retry',
+    maxAttempts: 3,
+    initialDelayMs: 1000,
+    maxDelayMs: 10000,
+  };
+  
+  return DEFAULT_RECOVERY_ACTIONS[error.code] || defaultAction;
+}
+
+/**
+ * Execute a function with automatic recovery
+ */
+export async function executeWithRecovery<T>(
+  fn: () => Promise<T>,
+  action: RecoveryAction,
+  errorCode: ErrorCode = ErrorCode.UNKNOWN
+): Promise<{ success: boolean; result?: T; error?: AppError; attempts: number }> {
+  let lastError: AppError | null = null;
+  
+  for (let attempt = 1; attempt <= action.maxAttempts; attempt++) {
+    try {
+      const result = await fn();
+      action.onRecoverySuccess?.(attempt);
+      return { success: true, result, attempts: attempt };
+    } catch (error) {
+      lastError = isAppError(error) 
+        ? error 
+        : createAppError(errorCode, getErrorMessage(error), error);
+      
+      action.onRecoveryAttempt?.(attempt, lastError);
+      
+      if (attempt >= action.maxAttempts) {
+        break;
+      }
+      
+      // Calculate delay based on strategy
+      let delay = action.initialDelayMs;
+      
+      switch (action.strategy) {
+        case 'backoff':
+          delay = Math.min(
+            action.initialDelayMs * Math.pow(2, attempt - 1),
+            action.maxDelayMs
+          );
+          break;
+        case 'abort':
+          break;
+        case 'skip':
+          break;
+        default:
+          // Linear delay
+          delay = action.initialDelayMs;
+      }
+      
+      if (action.strategy !== 'abort' && action.strategy !== 'skip') {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+  }
+  
+  if (lastError) {
+    action.onRecoveryFailed?.(lastError);
+  }
+  
+  return { 
+    success: false, 
+    error: lastError || createAppError(errorCode, 'Recovery failed'),
+    attempts: action.maxAttempts 
+  };
+}
+
+/**
+ * Circuit breaker state
+ */
+interface CircuitBreakerState {
+  failures: number;
+  lastFailureTime: number;
+  isOpen: boolean;
+  successCount: number;
+}
+
+/**
+ * Circuit breaker for preventing repeated failures
+ */
+export class CircuitBreaker {
+  private state: CircuitBreakerState = {
+    failures: 0,
+    lastFailureTime: 0,
+    isOpen: false,
+    successCount: 0,
+  };
+  
+  constructor(
+    private readonly failureThreshold: number = 5,
+    private readonly resetTimeoutMs: number = 30000,
+    private readonly successThreshold: number = 3
+  ) {}
+  
+  /**
+   * Check if circuit is open (should not attempt)
+   */
+  isCircuitOpen(): boolean {
+    if (!this.state.isOpen) return false;
+    
+    // Check if reset timeout has passed
+    const timeSinceLastFailure = Date.now() - this.state.lastFailureTime;
+    if (timeSinceLastFailure >= this.resetTimeoutMs) {
+      // Move to half-open state (allow one attempt)
+      return false;
+    }
+    
+    return true;
+  }
+  
+  /**
+   * Record a successful operation
+   */
+  recordSuccess(): void {
+    if (this.state.isOpen) {
+      this.state.successCount++;
+      if (this.state.successCount >= this.successThreshold) {
+        this.reset();
+      }
+    } else {
+      this.state.failures = 0;
+    }
+  }
+  
+  /**
+   * Record a failed operation
+   */
+  recordFailure(): void {
+    this.state.failures++;
+    this.state.lastFailureTime = Date.now();
+    this.state.successCount = 0;
+    
+    if (this.state.failures >= this.failureThreshold) {
+      this.state.isOpen = true;
+      console.warn('[CircuitBreaker] Circuit opened after', this.state.failures, 'failures');
+    }
+  }
+  
+  /**
+   * Reset the circuit breaker
+   */
+  reset(): void {
+    this.state = {
+      failures: 0,
+      lastFailureTime: 0,
+      isOpen: false,
+      successCount: 0,
+    };
+    console.log('[CircuitBreaker] Circuit reset');
+  }
+  
+  /**
+   * Get current state
+   */
+  getState(): Readonly<CircuitBreakerState> {
+    return { ...this.state };
+  }
+  
+  /**
+   * Execute a function with circuit breaker protection
+   */
+  async execute<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.isCircuitOpen()) {
+      throw createAppError(
+        ErrorCode.UNKNOWN,
+        'Circuit breaker is open - too many recent failures',
+        undefined,
+        true
+      );
+    }
+    
+    try {
+      const result = await fn();
+      this.recordSuccess();
+      return result;
+    } catch (error) {
+      this.recordFailure();
+      throw error;
+    }
+  }
+}
+
+/**
+ * Error aggregator for collecting and analyzing errors
+ */
+export class ErrorAggregator {
+  private errors: Array<{ error: AppError; timestamp: number }> = [];
+  private readonly maxErrors: number;
+  private readonly windowMs: number;
+  
+  constructor(maxErrors: number = 100, windowMs: number = 60000) {
+    this.maxErrors = maxErrors;
+    this.windowMs = windowMs;
+  }
+  
+  /**
+   * Add an error
+   */
+  add(error: AppError): void {
+    this.errors.push({ error, timestamp: Date.now() });
+    
+    // Trim old errors
+    this.cleanup();
+  }
+  
+  /**
+   * Clean up old errors outside the window
+   */
+  private cleanup(): void {
+    const cutoff = Date.now() - this.windowMs;
+    this.errors = this.errors
+      .filter(e => e.timestamp > cutoff)
+      .slice(-this.maxErrors);
+  }
+  
+  /**
+   * Get error count by code
+   */
+  getCountByCode(code: ErrorCode): number {
+    this.cleanup();
+    return this.errors.filter(e => e.error.code === code).length;
+  }
+  
+  /**
+   * Get total error count
+   */
+  getTotalCount(): number {
+    this.cleanup();
+    return this.errors.length;
+  }
+  
+  /**
+   * Get most common error code
+   */
+  getMostCommonCode(): ErrorCode | null {
+    this.cleanup();
+    if (this.errors.length === 0) return null;
+    
+    const counts = new Map<ErrorCode, number>();
+    for (const { error } of this.errors) {
+      counts.set(error.code, (counts.get(error.code) || 0) + 1);
+    }
+    
+    let maxCode: ErrorCode | null = null;
+    let maxCount = 0;
+    
+    counts.forEach((count, code) => {
+      if (count > maxCount) {
+        maxCount = count;
+        maxCode = code;
+      }
+    });
+    
+    return maxCode;
+  }
+  
+  /**
+   * Get error rate (errors per second)
+   */
+  getErrorRate(): number {
+    this.cleanup();
+    if (this.errors.length < 2) return 0;
+    
+    const oldest = this.errors[0].timestamp;
+    const newest = this.errors[this.errors.length - 1].timestamp;
+    const durationSeconds = (newest - oldest) / 1000;
+    
+    if (durationSeconds === 0) return 0;
+    
+    return this.errors.length / durationSeconds;
+  }
+  
+  /**
+   * Get summary report
+   */
+  getSummary(): {
+    total: number;
+    byCode: Record<string, number>;
+    errorRate: number;
+    mostCommon: ErrorCode | null;
+  } {
+    this.cleanup();
+    
+    const byCode: Record<string, number> = {};
+    for (const { error } of this.errors) {
+      byCode[error.code] = (byCode[error.code] || 0) + 1;
+    }
+    
+    return {
+      total: this.errors.length,
+      byCode,
+      errorRate: this.getErrorRate(),
+      mostCommon: this.getMostCommonCode(),
+    };
+  }
+  
+  /**
+   * Clear all errors
+   */
+  clear(): void {
+    this.errors = [];
+  }
+}
+
+/**
+ * Global error aggregator instance
+ */
+export const globalErrorAggregator = new ErrorAggregator();
+
+// ============ CLAUDE PROTOCOL VALIDATION ============
+
+import type { ClaudeProtocolSettings } from '@/types/protocols';
+
+/**
+ * Protocol-specific error with additional context
+ */
+export interface ProtocolError extends AppError {
+  protocolId: string;
+  context?: Record<string, unknown>;
+}
+
+/**
+ * Create a protocol-specific error
+ */
+export function createProtocolError(
+  protocolId: string,
+  code: ErrorCode,
+  message: string,
+  context?: Record<string, unknown>,
+  originalError?: Error | unknown
+): ProtocolError {
+  const baseError = createAppError(code, message, originalError);
+  return {
+    ...baseError,
+    protocolId,
+    context,
+  };
+}
+
+/**
+ * Get recovery suggestions for protocol errors
+ */
+export function getProtocolErrorRecovery(error: ProtocolError): {
+  suggestion: string;
+  actions: string[];
+} {
+  const suggestions: Record<ErrorCode, { suggestion: string; actions: string[] }> = {
+    [ErrorCode.NETWORK]: {
+      suggestion: 'Network connection issue detected',
+      actions: ['Check internet connection', 'Retry the operation', 'Switch to offline mode'],
+    },
+    [ErrorCode.PERMISSION_DENIED]: {
+      suggestion: 'Permission was denied',
+      actions: ['Grant camera/microphone permissions', 'Check app settings', 'Restart the app'],
+    },
+    [ErrorCode.VIDEO_LOAD_ERROR]: {
+      suggestion: 'Video could not be loaded',
+      actions: ['Try a different video', 'Check video format compatibility', 'Reduce video quality'],
+    },
+    [ErrorCode.CAMERA_ERROR]: {
+      suggestion: 'Camera access issue',
+      actions: ['Check camera permissions', 'Close other apps using camera', 'Restart device'],
+    },
+    [ErrorCode.WEBVIEW_ERROR]: {
+      suggestion: 'WebView encountered an error',
+      actions: ['Refresh the page', 'Clear browser cache', 'Try a different URL'],
+    },
+    [ErrorCode.INVALID_INPUT]: {
+      suggestion: 'Invalid input provided',
+      actions: ['Check input values', 'Review configuration settings'],
+    },
+    [ErrorCode.UNKNOWN]: {
+      suggestion: 'An unexpected error occurred',
+      actions: ['Restart the operation', 'Check logs for details', 'Contact support if issue persists'],
+    },
+    [ErrorCode.STORAGE]: {
+      suggestion: 'Storage operation failed',
+      actions: ['Free up device storage', 'Clear app cache', 'Check storage permissions'],
+    },
+    [ErrorCode.SENSOR_UNAVAILABLE]: {
+      suggestion: 'Required sensors are not available',
+      actions: ['Check device capabilities', 'Enable sensor permissions', 'Use a different device'],
+    },
+    [ErrorCode.MICROPHONE_ERROR]: {
+      suggestion: 'Microphone access issue',
+      actions: ['Grant microphone permission', 'Close other apps using microphone', 'Restart device'],
+    },
+    [ErrorCode.TEMPLATE_NOT_FOUND]: {
+      suggestion: 'Template not found',
+      actions: ['Create a new template', 'Select a different template', 'Reset to default'],
+    },
+    [ErrorCode.DEVICE_NOT_FOUND]: {
+      suggestion: 'Device not found',
+      actions: ['Refresh device list', 'Check device connection', 'Reconnect device'],
+    },
+    [ErrorCode.PROTOCOL_INIT_FAILED]: {
+      suggestion: 'Protocol initialization failed',
+      actions: ['Restart protocol', 'Check configuration', 'Try a different protocol'],
+    },
+    [ErrorCode.PROTOCOL_CONFIG_INVALID]: {
+      suggestion: 'Protocol configuration is invalid',
+      actions: ['Reset to default settings', 'Review configuration values', 'Validate settings'],
+    },
+    [ErrorCode.PROTOCOL_INJECTION_FAILED]: {
+      suggestion: 'Video injection failed',
+      actions: ['Retry injection', 'Check video compatibility', 'Try a different video'],
+    },
+    [ErrorCode.PROTOCOL_STREAM_ERROR]: {
+      suggestion: 'Stream error occurred',
+      actions: ['Restart stream', 'Check network connection', 'Reduce video quality'],
+    },
+    [ErrorCode.PROTOCOL_NOT_FOUND]: {
+      suggestion: 'Protocol not available',
+      actions: ['Select a different protocol', 'Check protocol availability', 'Update app'],
+    },
+    [ErrorCode.PROTOCOL_TIMEOUT]: {
+      suggestion: 'Protocol operation timed out',
+      actions: ['Retry operation', 'Check network connection', 'Increase timeout settings'],
+    },
+    [ErrorCode.PROTOCOL_RECOVERY_FAILED]: {
+      suggestion: 'Protocol recovery failed',
+      actions: ['Restart protocol manually', 'Reset to defaults', 'Contact support'],
+    },
+  };
+
+  return suggestions[error.code] || suggestions[ErrorCode.UNKNOWN];
+}
+
+/**
+ * Validate Claude protocol settings
+ */
+export function validateClaudeSettings(settings: ClaudeProtocolSettings): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  if (typeof settings !== 'object' || settings === null) {
+    return { valid: false, errors: ['Settings must be an object'] };
+  }
+
+  // Validate enabled flag
+  if (typeof settings.enabled !== 'boolean') {
+    errors.push('enabled must be a boolean');
+  }
+
+  // Validate anti-detection level
+  const validAntiDetectionLevels = ['standard', 'enhanced', 'maximum', 'paranoid'];
+  if (!validAntiDetectionLevels.includes(settings.antiDetectionLevel)) {
+    errors.push(`antiDetectionLevel must be one of: ${validAntiDetectionLevels.join(', ')}`);
+  }
+
+  // Validate noise reduction level
+  const validNoiseReductionLevels = ['off', 'light', 'moderate', 'aggressive'];
+  if (!validNoiseReductionLevels.includes(settings.noiseReductionLevel)) {
+    errors.push(`noiseReductionLevel must be one of: ${validNoiseReductionLevels.join(', ')}`);
+  }
+
+  // Validate error recovery mode
+  const validErrorRecoveryModes = ['graceful', 'aggressive', 'silent'];
+  if (!validErrorRecoveryModes.includes(settings.errorRecoveryMode)) {
+    errors.push(`errorRecoveryMode must be one of: ${validErrorRecoveryModes.join(', ')}`);
+  }
+
+  // Validate priority level
+  const validPriorityLevels = ['background', 'normal', 'high', 'realtime'];
+  if (!validPriorityLevels.includes(settings.priorityLevel)) {
+    errors.push(`priorityLevel must be one of: ${validPriorityLevels.join(', ')}`);
+  }
+
+  // Validate injection mode
+  const validInjectionModes = ['aggressive', 'balanced', 'conservative'];
+  if (!validInjectionModes.includes(settings.injectionMode)) {
+    errors.push(`injectionMode must be one of: ${validInjectionModes.join(', ')}`);
+  }
+
+  // Validate quality preset
+  const validQualityPresets = ['minimum', 'low', 'medium', 'high', 'maximum'];
+  if (!validQualityPresets.includes(settings.qualityPreset)) {
+    errors.push(`qualityPreset must be one of: ${validQualityPresets.join(', ')}`);
+  }
+
+  // Validate boolean flags
+  const booleanFlags = [
+    'neuralOptimizationEnabled',
+    'quantumFingerprintEvasion',
+    'behavioralMimicryEnabled',
+    'adaptiveInjection',
+    'contextAwareness',
+    'predictivePreloading',
+    'deepStealthMode',
+    'behavioralMimicry',
+    'timingRandomization',
+    'aiQualityOptimization',
+    'dynamicResolutionScaling',
+    'frameRateStabilization',
+    'fingerprintMorphing',
+    'canvasNoiseAdaptation',
+    'webrtcLeakPrevention',
+    'memoryOptimization',
+    'gpuAcceleration',
+    'workerThreads',
+    'autoRecovery',
+    'redundantStreams',
+    'healthMonitoring',
+    'advancedMetrics',
+    'performanceLogging',
+    'anomalyDetection',
+  ];
+
+  for (const flag of booleanFlags) {
+    if (typeof (settings as Record<string, unknown>)[flag] !== 'boolean') {
+      errors.push(`${flag} must be a boolean`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a video URI for injection
+ */
+export function validateInjectionVideoUri(uri: string): {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+} {
+  const warnings: string[] = [];
+
+  if (!uri || typeof uri !== 'string') {
+    return { valid: false, error: 'Video URI is required' };
+  }
+
+  const trimmedUri = uri.trim();
+  if (trimmedUri.length === 0) {
+    return { valid: false, error: 'Video URI cannot be empty' };
+  }
+
+  // Check for supported protocols
+  const supportedProtocols = ['http://', 'https://', 'file://', 'blob:', 'data:', 'content://'];
+  const hasValidProtocol = supportedProtocols.some(protocol => 
+    trimmedUri.toLowerCase().startsWith(protocol)
+  );
+
+  if (!hasValidProtocol) {
+    return { valid: false, error: 'Video URI must use a supported protocol (http, https, file, blob, data, content)' };
+  }
+
+  // Check for valid video extensions
+  const videoExtensions = ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv'];
+  const hasVideoExtension = videoExtensions.some(ext => 
+    trimmedUri.toLowerCase().includes(ext)
+  );
+
+  // Data URLs and blobs don't need extensions
+  if (!hasVideoExtension && !trimmedUri.startsWith('data:') && !trimmedUri.startsWith('blob:')) {
+    warnings.push('URI does not have a recognized video extension');
+  }
+
+  // Check for potential issues
+  if (trimmedUri.length > 10000) {
+    warnings.push('Video URI is very long, which may cause performance issues');
+  }
+
+  return { valid: true, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
+/**
+ * Enhanced retry with circuit breaker and error aggregation
+ */
+export async function retryWithProtection<T>(
+  fn: () => Promise<T>,
+  options: {
+    errorCode?: ErrorCode;
+    circuitBreaker?: CircuitBreaker;
+    aggregator?: ErrorAggregator;
+    recoveryAction?: RecoveryAction;
+  } = {}
+): Promise<T> {
+  const {
+    errorCode = ErrorCode.UNKNOWN,
+    circuitBreaker,
+    aggregator = globalErrorAggregator,
+    recoveryAction = getRecoveryAction(createAppError(errorCode, '')),
+  } = options;
+  
+  // Check circuit breaker first
+  if (circuitBreaker?.isCircuitOpen()) {
+    const error = createAppError(
+      errorCode,
+      'Operation blocked by circuit breaker',
+      undefined,
+      true
+    );
+    aggregator.add(error);
+    throw error;
+  }
+  
+  const result = await executeWithRecovery(fn, recoveryAction, errorCode);
+  
+  if (result.success && result.result !== undefined) {
+    circuitBreaker?.recordSuccess();
+    return result.result;
+  }
+  
+  const error = result.error || createAppError(errorCode, 'Operation failed');
+  circuitBreaker?.recordFailure();
+  aggregator.add(error);
+  throw error;
 }

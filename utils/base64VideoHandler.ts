@@ -450,3 +450,268 @@ export function normalizeVideoUri(uri: string | null | undefined): {
 
   return { uri: trimmed, type: 'unknown', requiresProcessing: false };
 }
+
+// ============ OPTIMIZATION UTILITIES ============
+
+/**
+ * Optimized base64 validator that only checks a sample of the data
+ * Much faster for large base64 strings
+ */
+export function quickValidateBase64(dataUri: string): boolean {
+  if (!dataUri || typeof dataUri !== 'string') return false;
+  if (!isBase64VideoUri(dataUri)) return false;
+  
+  const commaIndex = dataUri.indexOf(',');
+  if (commaIndex === -1) return false;
+  
+  const base64Part = dataUri.slice(commaIndex + 1);
+  if (base64Part.length < BASE64_VIDEO_CONSTANTS.MIN_BASE64_LENGTH) return false;
+  
+  // Only validate first and last 100 chars for speed
+  const sampleSize = 100;
+  const startSample = base64Part.slice(0, sampleSize);
+  const endSample = base64Part.slice(-sampleSize);
+  
+  const base64Regex = /^[A-Za-z0-9+/=]+$/;
+  return base64Regex.test(startSample) && base64Regex.test(endSample);
+}
+
+/**
+ * Streaming base64 processor for very large files
+ * Processes data in chunks without loading entire content into memory
+ */
+export interface StreamingProcessorCallbacks {
+  onChunkProcessed?: (chunkIndex: number, totalChunks: number) => void;
+  onComplete?: (objectUrl: string, sizeBytes: number) => void;
+  onError?: (error: Error) => void;
+}
+
+export async function processBase64VideoStreaming(
+  dataUri: string,
+  callbacks: StreamingProcessorCallbacks = {}
+): Promise<Base64ProcessingResult> {
+  if (Platform.OS !== 'web') {
+    return {
+      success: false,
+      error: 'Streaming processing is only available on web platform'
+    };
+  }
+
+  try {
+    // Quick validation first
+    if (!quickValidateBase64(dataUri)) {
+      throw new Error('Invalid base64 video data');
+    }
+
+    const commaIndex = dataUri.indexOf(',');
+    const mimeType = getMimeTypeFromDataUri(dataUri) || 'video/mp4';
+    const base64Content = dataUri.slice(commaIndex + 1);
+    
+    // Calculate chunk count
+    const chunkSize = BASE64_VIDEO_CONSTANTS.CHUNK_SIZE;
+    const totalChunks = Math.ceil(base64Content.length / chunkSize);
+    
+    // Process in chunks
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+    
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * chunkSize;
+      let end = Math.min(start + chunkSize, base64Content.length);
+      
+      // Align to base64 boundary (multiple of 4) except for last chunk
+      if (i < totalChunks - 1) {
+        end = start + Math.floor((end - start) / 4) * 4;
+      }
+      
+      const chunk = base64Content.slice(start, end);
+      
+      try {
+        const binaryString = atob(chunk);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let j = 0; j < binaryString.length; j++) {
+          bytes[j] = binaryString.charCodeAt(j);
+        }
+        chunks.push(bytes);
+        totalBytes += bytes.length;
+        
+        callbacks.onChunkProcessed?.(i + 1, totalChunks);
+        
+        // Yield to event loop every 10 chunks to prevent blocking
+        if (i % 10 === 0) {
+          await new Promise(resolve => setTimeout(resolve, 0));
+        }
+      } catch (decodeError) {
+        throw new Error(`Base64 decode failed at chunk ${i}: ${decodeError instanceof Error ? decodeError.message : 'Unknown error'}`);
+      }
+    }
+    
+    // Merge chunks
+    const result = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    
+    // Create blob and object URL
+    const blob = new Blob([result], { type: mimeType });
+    const objectUrl = URL.createObjectURL(blob);
+    
+    callbacks.onComplete?.(objectUrl, blob.size);
+    
+    return {
+      success: true,
+      blob,
+      objectUrl,
+      sizeBytes: blob.size
+    };
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error('Unknown error');
+    callbacks.onError?.(err);
+    return {
+      success: false,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Create a video element from base64 with optimized loading
+ */
+export async function createOptimizedVideoElement(
+  dataUri: string,
+  onProgress?: (progress: number) => void
+): Promise<HTMLVideoElement | null> {
+  if (Platform.OS !== 'web') {
+    console.warn('[Base64VideoHandler] createOptimizedVideoElement only works on web');
+    return null;
+  }
+
+  const result = await processBase64VideoStreaming(dataUri, {
+    onChunkProcessed: (current, total) => {
+      onProgress?.(current / total);
+    }
+  });
+
+  if (!result.success || !result.objectUrl) {
+    console.error('[Base64VideoHandler] Failed to process base64:', result.error);
+    return null;
+  }
+
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    
+    video.onloadeddata = () => resolve(video);
+    video.onerror = () => {
+      revokeBlobUrl(result.objectUrl);
+      reject(new Error('Video element failed to load'));
+    };
+    
+    video.src = result.objectUrl;
+  });
+}
+
+/**
+ * Memory-efficient base64 size calculator
+ * Calculates final binary size without decoding
+ */
+export function calculateDecodedSize(base64Length: number): number {
+  // Base64 encoding uses 4 characters to represent 3 bytes
+  // Account for padding characters
+  return Math.floor((base64Length * 3) / 4);
+}
+
+/**
+ * Check if base64 video can be processed with available memory
+ */
+export function canProcessSafely(dataUri: string): {
+  canProcess: boolean;
+  estimatedMemoryMB: number;
+  recommendation: string;
+} {
+  const validation = validateBase64Video(dataUri);
+  
+  if (!validation.isValid) {
+    return {
+      canProcess: false,
+      estimatedMemoryMB: 0,
+      recommendation: validation.error || 'Invalid base64 data'
+    };
+  }
+  
+  const memoryEstimate = estimateMemoryUsage(validation.base64Length);
+  
+  if (memoryEstimate.isHighMemory) {
+    return {
+      canProcess: true,
+      estimatedMemoryMB: memoryEstimate.peakMemoryMB,
+      recommendation: 'Large video - use streaming processor for better memory management'
+    };
+  }
+  
+  return {
+    canProcess: true,
+    estimatedMemoryMB: memoryEstimate.peakMemoryMB,
+    recommendation: 'Video can be processed normally'
+  };
+}
+
+/**
+ * Cleanup multiple blob URLs at once
+ */
+export function revokeMultipleBlobUrls(urls: (string | null | undefined)[]): void {
+  urls.forEach(url => {
+    if (url) revokeBlobUrl(url);
+  });
+}
+
+/**
+ * Create a thumbnail from base64 video (web only)
+ */
+export async function createThumbnailFromBase64(
+  dataUri: string,
+  timeSeconds: number = 1,
+  quality: number = 0.7
+): Promise<string | null> {
+  if (Platform.OS !== 'web') {
+    return null;
+  }
+
+  try {
+    const video = await createOptimizedVideoElement(dataUri);
+    if (!video) return null;
+
+    return new Promise((resolve) => {
+      video.currentTime = timeSeconds;
+      
+      video.onseeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(null);
+          return;
+        }
+        
+        ctx.drawImage(video, 0, 0);
+        const thumbnailDataUrl = canvas.toDataURL('image/jpeg', quality);
+        
+        // Cleanup
+        video.pause();
+        video.src = '';
+        
+        resolve(thumbnailDataUrl);
+      };
+      
+      video.onerror = () => resolve(null);
+    });
+  } catch {
+    return null;
+  }
+}
