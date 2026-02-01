@@ -20,11 +20,9 @@ import {
 } from '@/utils/errorHandling';
 
 jest.mock('react-native', () => {
-  const actual = jest.requireActual('react-native');
   return {
-    ...actual,
     Alert: { alert: jest.fn() },
-    Platform: { ...actual.Platform, OS: 'ios' },
+    Platform: { OS: 'ios', select: (obj: Record<string, unknown>) => obj.ios },
   };
 });
 

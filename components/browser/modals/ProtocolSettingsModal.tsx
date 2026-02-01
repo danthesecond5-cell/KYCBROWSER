@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,29 +9,11 @@ import {
   Switch,
   TextInput,
   Alert,
-  Platform,
 } from 'react-native';
-import {
-  X,
-  Shield,
-  ShieldOff,
-  Lock,
-  Unlock,
-  Settings,
-  Trash2,
-  ChevronRight,
-  Eye,
-  EyeOff,
-  Zap,
-  Monitor,
-  FlaskConical,
-  Check,
-  AlertTriangle,
-  Globe,
-  Cpu,
-} from 'lucide-react-native';
+import { Check, ChevronRight, FlaskConical, Globe, Lock, Shield, Wand2, X } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { useProtocol, ProtocolType } from '@/contexts/ProtocolContext';
+import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
+import { useProtocol, type ProtocolType } from '@/contexts/ProtocolContext';
 
 interface ProtocolSettingsModalProps {
   visible: boolean;
@@ -39,32 +21,31 @@ interface ProtocolSettingsModalProps {
   onClose: () => void;
 }
 
-export default function ProtocolSettingsModal({
-  visible,
-  currentHostname,
-  onClose,
-}: ProtocolSettingsModalProps) {
+const PROTOCOL_ORDER: ProtocolType[] = ['standard', 'allowlist', 'protected', 'harness', 'gpt52'];
+
+export default function ProtocolSettingsModal({ visible, currentHostname, onClose }: ProtocolSettingsModalProps) {
+  const [domainInput, setDomainInput] = useState('');
+  const [expanded, setExpanded] = useState<ProtocolType | null>(null);
+  const [pinInput, setPinInput] = useState('');
+  const [showPinEntry, setShowPinEntry] = useState(false);
+
+  const { isDeveloperModeEnabled, isAllowlistEditable, isProtocolEditable, toggleDeveloperMode } = useDeveloperMode();
+
   const {
-    developerModeEnabled,
-    toggleDeveloperMode,
-    setDeveloperModeWithPin,
-    developerPin,
-    setDeveloperPin,
-    presentationMode,
-    togglePresentationMode,
-    showTestingWatermark,
-    setShowTestingWatermark,
     activeProtocol,
     setActiveProtocol,
     protocols,
+    updateProtocolConfig,
     standardSettings,
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    gpt52Settings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
+    updateGpt52Settings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
@@ -72,392 +53,54 @@ export default function ProtocolSettingsModal({
     setHttpsEnforced,
     mlSafetyEnabled,
     setMlSafetyEnabled,
+    presentationMode,
+    togglePresentationMode,
+    showTestingWatermark,
+    setShowTestingWatermark,
   } = useProtocol();
 
-  const [pinInput, setPinInput] = useState('');
-  const [showPinEntry, setShowPinEntry] = useState(false);
-  const [domainInput, setDomainInput] = useState('');
-  const [expandedProtocol, setExpandedProtocol] = useState<ProtocolType | null>(activeProtocol);
+  const orderedProtocols = useMemo(() => {
+    const available = new Set(Object.keys(protocols) as ProtocolType[]);
+    return PROTOCOL_ORDER.filter((id) => available.has(id));
+  }, [protocols]);
 
   const currentAllowlisted = useMemo(() => {
+    if (!currentHostname) return false;
     return isAllowlisted(currentHostname);
-  }, [isAllowlisted, currentHostname]);
+  }, [currentHostname, isAllowlisted]);
 
-  const handlePinSubmit = async () => {
-    if (pinInput.length < 4) {
-      Alert.alert('Invalid PIN', 'PIN must be at least 4 characters.');
+  const handleAddDomain = useCallback(() => {
+    const raw = domainInput.trim();
+    if (!raw) return;
+    if (!isAllowlistEditable) {
+      Alert.alert('Locked', 'Enable Developer Mode to edit the allowlist.');
       return;
     }
-    
-    const success = await setDeveloperModeWithPin(pinInput);
-    if (success) {
-      setShowPinEntry(false);
-      setPinInput('');
-      Alert.alert('Developer Mode', developerPin ? 'Developer mode enabled.' : 'PIN set. Developer mode enabled.');
-    } else {
-      Alert.alert('Invalid PIN', 'The PIN you entered is incorrect.');
-      setPinInput('');
-    }
-  };
-
-  const handleToggleDeveloperMode = () => {
-    if (developerModeEnabled) {
-      Alert.alert(
-        'Disable Developer Mode',
-        'This will lock all protocol settings and the allowlist. Continue?',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Disable', style: 'destructive', onPress: toggleDeveloperMode },
-        ]
-      );
-    } else {
-      if (developerPin) {
-        setShowPinEntry(true);
-      } else {
-        Alert.alert(
-          'Set Developer PIN',
-          'You need to set a PIN to enable developer mode.',
-          [{ text: 'OK', onPress: () => setShowPinEntry(true) }]
-        );
-      }
-    }
-  };
-
-  const handleAddDomain = () => {
-    if (!domainInput.trim()) return;
-    addAllowlistDomain(domainInput);
+    addAllowlistDomain(raw);
     setDomainInput('');
-  };
+  }, [addAllowlistDomain, domainInput, isAllowlistEditable]);
 
-  const handleAddCurrentSite = () => {
-    if (!currentHostname) return;
-    addAllowlistDomain(currentHostname);
-  };
-
-  const toggleProtocol = (protocol: ProtocolType) => {
-    setExpandedProtocol(expandedProtocol === protocol ? null : protocol);
-  };
-
-  const handleOpenProtectedPreview = () => {
-    onClose();
-    router.push('/protected-preview');
-  };
-
-  const handleOpenTestHarness = () => {
-    onClose();
-    router.push('/test-harness');
-  };
-
-  const renderProtocolSettings = (protocol: ProtocolType) => {
-    if (!developerModeEnabled) {
-      return (
-        <View style={styles.lockedNotice}>
-          <Lock size={14} color="rgba(255,255,255,0.4)" />
-          <Text style={styles.lockedNoticeText}>
-            Enable developer mode to customize settings
-          </Text>
-        </View>
-      );
+  const handleRemoveDomain = useCallback((domain: string) => {
+    if (!isAllowlistEditable) {
+      Alert.alert('Locked', 'Enable Developer Mode to edit the allowlist.');
+      return;
     }
+    removeAllowlistDomain(domain);
+  }, [isAllowlistEditable, removeAllowlistDomain]);
 
-    switch (protocol) {
-      case 'standard':
-        return (
-          <View style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Auto Inject</Text>
-                <Text style={styles.settingHint}>Automatically inject media on page load</Text>
-              </View>
-              <Switch
-                value={standardSettings.autoInject}
-                onValueChange={(v) => updateStandardSettings({ autoInject: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={standardSettings.autoInject ? '#ffffff' : '#888'}
-              />
-            </View>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Stealth by Default</Text>
-                <Text style={styles.settingHint}>Hide injection from site detection</Text>
-              </View>
-              <Switch
-                value={standardSettings.stealthByDefault}
-                onValueChange={(v) => updateStandardSettings({ stealthByDefault: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
-                thumbColor={standardSettings.stealthByDefault ? '#ffffff' : '#888'}
-              />
-            </View>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Inject Motion Data</Text>
-                <Text style={styles.settingHint}>Include accelerometer/gyroscope simulation</Text>
-              </View>
-              <Switch
-                value={standardSettings.injectMotionData}
-                onValueChange={(v) => updateStandardSettings({ injectMotionData: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                thumbColor={standardSettings.injectMotionData ? '#ffffff' : '#888'}
-              />
-            </View>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Loop Video</Text>
-                <Text style={styles.settingHint}>Loop video when it ends</Text>
-              </View>
-              <Switch
-                value={standardSettings.loopVideo}
-                onValueChange={(v) => updateStandardSettings({ loopVideo: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={standardSettings.loopVideo ? '#ffffff' : '#888'}
-              />
-            </View>
-          </View>
-        );
+  const openProtectedPreview = useCallback(() => {
+    onClose();
+    requestAnimationFrame(() => setTimeout(() => router.push('/protected-preview'), 0));
+  }, [onClose]);
 
-      case 'allowlist':
-        return (
-          <View style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Enable Allowlist</Text>
-                <Text style={styles.settingHint}>Only inject on allowed domains</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.enabled}
-                onValueChange={(v) => updateAllowlistSettings({ enabled: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={allowlistSettings.enabled ? '#ffffff' : '#888'}
-              />
-            </View>
+  const openTestHarness = useCallback(() => {
+    onClose();
+    requestAnimationFrame(() => setTimeout(() => router.push('/test-harness'), 0));
+  }, [onClose]);
 
-            {currentHostname && (
-              <View style={styles.currentSiteRow}>
-                <Globe size={14} color="#00aaff" />
-                <Text style={styles.currentSiteText}>{currentHostname}</Text>
-                <View style={[
-                  styles.statusBadge,
-                  currentAllowlisted ? styles.statusAllowed : styles.statusBlocked,
-                ]}>
-                  <Text style={styles.statusBadgeText}>
-                    {currentAllowlisted ? 'Allowed' : 'Blocked'}
-                  </Text>
-                </View>
-                {!currentAllowlisted && (
-                  <TouchableOpacity style={styles.addCurrentBtn} onPress={handleAddCurrentSite}>
-                    <Text style={styles.addCurrentBtnText}>Add</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Block Unlisted</Text>
-                <Text style={styles.settingHint}>Block injection on unlisted domains</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.blockUnlisted}
-                onValueChange={(v) => updateAllowlistSettings({ blockUnlisted: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff4757' }}
-                thumbColor={allowlistSettings.blockUnlisted ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Show Blocked Indicator</Text>
-                <Text style={styles.settingHint}>Display indicator when blocked</Text>
-              </View>
-              <Switch
-                value={allowlistSettings.showBlockedIndicator}
-                onValueChange={(v) => updateAllowlistSettings({ showBlockedIndicator: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                thumbColor={allowlistSettings.showBlockedIndicator ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.domainInputRow}>
-              <TextInput
-                style={styles.domainInput}
-                value={domainInput}
-                onChangeText={setDomainInput}
-                placeholder="Add domain (e.g., example.com)"
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              <TouchableOpacity style={styles.addButton} onPress={handleAddDomain}>
-                <Text style={styles.addButtonText}>Add</Text>
-              </TouchableOpacity>
-            </View>
-
-            {allowlistSettings.domains.length > 0 ? (
-              <View style={styles.domainList}>
-                {allowlistSettings.domains.map((domain) => (
-                  <View key={domain} style={styles.domainItem}>
-                    <Text style={styles.domainText}>{domain}</Text>
-                    <TouchableOpacity onPress={() => removeAllowlistDomain(domain)}>
-                      <Trash2 size={14} color="#ff4757" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <Text style={styles.emptyText}>No domains in allowlist</Text>
-            )}
-          </View>
-        );
-
-      case 'protected':
-        return (
-          <View style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Body Detection</Text>
-                <Text style={styles.settingHint}>Enable ML-based body detection</Text>
-              </View>
-              <Switch
-                value={protectedSettings.bodyDetectionEnabled}
-                onValueChange={(v) => updateProtectedSettings({ bodyDetectionEnabled: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={protectedSettings.bodyDetectionEnabled ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Sensitivity</Text>
-              </View>
-              <View style={styles.sensitivityButtons}>
-                {(['low', 'medium', 'high'] as const).map((level) => (
-                  <TouchableOpacity
-                    key={level}
-                    style={[
-                      styles.sensitivityBtn,
-                      protectedSettings.sensitivityLevel === level && styles.sensitivityBtnActive,
-                    ]}
-                    onPress={() => updateProtectedSettings({ sensitivityLevel: level })}
-                  >
-                    <Text style={[
-                      styles.sensitivityBtnText,
-                      protectedSettings.sensitivityLevel === level && styles.sensitivityBtnTextActive,
-                    ]}>
-                      {level.charAt(0).toUpperCase() + level.slice(1)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Show Protected Badge</Text>
-                <Text style={styles.settingHint}>Display protection status overlay</Text>
-              </View>
-              <Switch
-                value={protectedSettings.showProtectedBadge}
-                onValueChange={(v) => updateProtectedSettings({ showProtectedBadge: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                thumbColor={protectedSettings.showProtectedBadge ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Blur Fallback</Text>
-                <Text style={styles.settingHint}>Blur if no replacement video</Text>
-              </View>
-              <Switch
-                value={protectedSettings.blurFallback}
-                onValueChange={(v) => updateProtectedSettings({ blurFallback: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
-                thumbColor={protectedSettings.blurFallback ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <TouchableOpacity style={styles.actionButton} onPress={handleOpenProtectedPreview}>
-              <Shield size={16} color="#00ff88" />
-              <Text style={styles.actionButtonText}>Open Protected Preview</Text>
-              <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
-          </View>
-        );
-
-      case 'harness':
-        return (
-          <View style={styles.settingsGroup}>
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Overlay Enabled</Text>
-                <Text style={styles.settingHint}>Enable video overlay on camera</Text>
-              </View>
-              <Switch
-                value={harnessSettings.overlayEnabled}
-                onValueChange={(v) => updateHarnessSettings({ overlayEnabled: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={harnessSettings.overlayEnabled ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Show Debug Info</Text>
-                <Text style={styles.settingHint}>Display FPS, latency, and status</Text>
-              </View>
-              <Switch
-                value={harnessSettings.showDebugInfo}
-                onValueChange={(v) => updateHarnessSettings({ showDebugInfo: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                thumbColor={harnessSettings.showDebugInfo ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Mirror Video</Text>
-                <Text style={styles.settingHint}>Flip video horizontally</Text>
-              </View>
-              <Switch
-                value={harnessSettings.mirrorVideo}
-                onValueChange={(v) => updateHarnessSettings({ mirrorVideo: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
-                thumbColor={harnessSettings.mirrorVideo ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <View style={styles.settingRow}>
-              <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Test Pattern</Text>
-                <Text style={styles.settingHint}>Show test pattern when no video</Text>
-              </View>
-              <Switch
-                value={harnessSettings.testPatternOnNoVideo}
-                onValueChange={(v) => updateHarnessSettings({ testPatternOnNoVideo: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
-                thumbColor={harnessSettings.testPatternOnNoVideo ? '#ffffff' : '#888'}
-              />
-            </View>
-
-            <TouchableOpacity style={styles.actionButton} onPress={handleOpenTestHarness}>
-              <Monitor size={16} color="#00aaff" />
-              <Text style={styles.actionButtonText}>Open Test Harness</Text>
-              <ChevronRight size={16} color="rgba(255,255,255,0.4)" />
-            </TouchableOpacity>
-          </View>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  const protocolIcons: Record<ProtocolType, React.ReactNode> = {
-    standard: <Zap size={18} color="#00ff88" />,
-    allowlist: <Shield size={18} color="#00aaff" />,
-    protected: <EyeOff size={18} color="#ff6b35" />,
-    harness: <Monitor size={18} color="#b388ff" />,
-  };
+  const toggleExpanded = useCallback((id: ProtocolType) => {
+    setExpanded((prev) => (prev === id ? null : id));
+  }, []);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -465,214 +108,319 @@ export default function ProtocolSettingsModal({
         <View style={styles.content}>
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <FlaskConical size={20} color="#ffcc00" />
-              <Text style={styles.title}>Testing Protocols</Text>
+              <FlaskConical size={20} color="#00ff88" />
+              <Text style={styles.title}>Protocols</Text>
             </View>
             <TouchableOpacity onPress={onClose}>
               <X size={24} color="#ffffff" />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
-            {/* Developer Mode Section */}
-            <View style={styles.developerSection}>
-              <View style={styles.developerHeader}>
-                <View style={styles.developerHeaderLeft}>
-                  {developerModeEnabled ? (
-                    <Unlock size={20} color="#00ff88" />
-                  ) : (
-                    <Lock size={20} color="#ff4757" />
-                  )}
-                  <Text style={styles.developerTitle}>Developer Mode</Text>
-                </View>
-                <TouchableOpacity
-                  style={[
-                    styles.developerToggle,
-                    developerModeEnabled && styles.developerToggleActive,
-                  ]}
-                  onPress={handleToggleDeveloperMode}
-                >
-                  <Text style={[
-                    styles.developerToggleText,
-                    developerModeEnabled && styles.developerToggleTextActive,
-                  ]}>
-                    {developerModeEnabled ? 'Enabled' : 'Locked'}
-                  </Text>
-                </TouchableOpacity>
+          <View style={styles.devBar}>
+            <View style={styles.devBarLeft}>
+              <View style={[styles.devIcon, isDeveloperModeEnabled && styles.devIconActive]}>
+                <Lock size={14} color={isDeveloperModeEnabled ? '#0a0a0a' : '#ff6b35'} />
               </View>
-              <Text style={styles.developerHint}>
-                {developerModeEnabled
-                  ? 'All settings are unlocked. Changes will affect injection behavior.'
-                  : 'Enable developer mode with PIN to modify protocol settings and allowlist.'}
-              </Text>
+              <View>
+                <Text style={styles.devTitle}>{isDeveloperModeEnabled ? 'Developer Mode' : 'Parent Mode'}</Text>
+                <Text style={styles.devHint}>{isDeveloperModeEnabled ? 'Settings unlocked' : 'Settings locked for safety'}</Text>
+              </View>
+            </View>
+            <Switch
+              value={isDeveloperModeEnabled}
+              onValueChange={() => {
+                if (isDeveloperModeEnabled) {
+                  toggleDeveloperMode();
+                } else {
+                  setShowPinEntry(true);
+                }
+              }}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+              thumbColor={isDeveloperModeEnabled ? '#ffffff' : '#888888'}
+            />
+          </View>
 
-              {showPinEntry && (
-                <View style={styles.pinEntry}>
+          <ScrollView style={styles.body} showsVerticalScrollIndicator={false}>
+            {showPinEntry && !isDeveloperModeEnabled && (
+              <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Enter PIN</Text>
+                <Text style={styles.sectionHint}>Required to enable Developer Mode.</Text>
+                <View style={styles.domainRow}>
                   <TextInput
-                    style={styles.pinInput}
+                    style={styles.domainInput}
                     value={pinInput}
                     onChangeText={setPinInput}
-                    placeholder={developerPin ? 'Enter PIN' : 'Set a new PIN'}
+                    placeholder="PIN"
                     placeholderTextColor="rgba(255,255,255,0.3)"
+                    autoCapitalize="none"
+                    autoCorrect={false}
                     secureTextEntry
-                    autoFocus
+                    keyboardType="number-pad"
                   />
-                  <TouchableOpacity style={styles.pinButton} onPress={handlePinSubmit}>
-                    <Check size={18} color="#0a0a0a" />
-                  </TouchableOpacity>
                   <TouchableOpacity
-                    style={styles.pinCancelButton}
-                    onPress={() => {
-                      setShowPinEntry(false);
+                    style={styles.addBtn}
+                    onPress={async () => {
+                      const ok = await toggleDeveloperMode(pinInput);
+                      if (!ok) {
+                        Alert.alert('Incorrect PIN', 'The PIN you entered is incorrect.');
+                        return;
+                      }
                       setPinInput('');
+                      setShowPinEntry(false);
                     }}
                   >
-                    <X size={18} color="#ff4757" />
+                    <Text style={styles.addBtnText}>Unlock</Text>
                   </TouchableOpacity>
                 </View>
-              )}
-            </View>
+                <TouchableOpacity
+                  style={[styles.domainItem, { justifyContent: 'center' }]}
+                  onPress={() => {
+                    setPinInput('');
+                    setShowPinEntry(false);
+                  }}
+                >
+                  <Text style={[styles.domainText, { textAlign: 'center', width: '100%' }]}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-            {/* Presentation Mode Section */}
-            <View style={styles.presentationSection}>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Presentation Mode</Text>
-                  <Text style={styles.settingHint}>Optimize UI for demonstrations</Text>
-                </View>
-                <Switch
-                  value={presentationMode}
-                  onValueChange={togglePresentationMode}
-                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ffcc00' }}
-                  thumbColor={presentationMode ? '#ffffff' : '#888'}
-                />
-              </View>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <Text style={styles.settingLabel}>Testing Watermark</Text>
-                  <Text style={styles.settingHint}>Show &quot;Testing Prototype&quot; overlay</Text>
-                </View>
-                <Switch
-                  value={showTestingWatermark}
-                  onValueChange={setShowTestingWatermark}
-                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ffcc00' }}
-                  thumbColor={showTestingWatermark ? '#ffffff' : '#888'}
-                />
-              </View>
-            </View>
+            <Text style={styles.sectionTitle}>Active Protocol</Text>
+            <Text style={styles.sectionHint}>Select which protocol is driving injection behavior.</Text>
 
-            {/* Safety Features */}
-            <View style={styles.safetySection}>
-              <Text style={styles.sectionTitle}>Safety Features</Text>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <View style={styles.settingLabelRow}>
-                    <Lock size={12} color="#00ff88" />
-                    <Text style={styles.settingLabel}>HTTPS Enforced</Text>
-                  </View>
-                  <Text style={styles.settingHint}>Only allow HTTPS connections</Text>
-                </View>
-                <Switch
-                  value={httpsEnforced}
-                  onValueChange={setHttpsEnforced}
-                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                  thumbColor={httpsEnforced ? '#ffffff' : '#888'}
-                  disabled={!developerModeEnabled}
-                />
-              </View>
-              <View style={styles.settingRow}>
-                <View style={styles.settingInfo}>
-                  <View style={styles.settingLabelRow}>
-                    <Cpu size={12} color="#00aaff" />
-                    <Text style={styles.settingLabel}>ML Safety Mode</Text>
-                  </View>
-                  <Text style={styles.settingHint}>Enable ML-based content protection</Text>
-                </View>
-                <Switch
-                  value={mlSafetyEnabled}
-                  onValueChange={setMlSafetyEnabled}
-                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
-                  thumbColor={mlSafetyEnabled ? '#ffffff' : '#888'}
-                  disabled={!developerModeEnabled}
-                />
-              </View>
-              <View style={styles.mlNotice}>
-                <AlertTriangle size={14} color="#ffcc00" />
-                <Text style={styles.mlNoticeText}>
-                  In production, ML models will prevent malicious use automatically.
-                </Text>
-              </View>
-            </View>
-
-            {/* Protocol List */}
-            <View style={styles.protocolsSection}>
-              <Text style={styles.sectionTitle}>Available Protocols</Text>
-              
-              {(Object.keys(protocols) as ProtocolType[]).map((protocolId) => {
-                const protocol = protocols[protocolId];
-                const isExpanded = expandedProtocol === protocolId;
-                const isActive = activeProtocol === protocolId;
-
+            <View style={styles.card}>
+              {orderedProtocols.map((id) => {
+                const cfg = protocols[id];
+                const enabled = cfg?.enabled ?? true;
+                const isActive = id === activeProtocol;
                 return (
-                  <View
-                    key={protocolId}
-                    style={[
-                      styles.protocolCard,
-                      isActive && styles.protocolCardActive,
-                    ]}
+                  <TouchableOpacity
+                    key={id}
+                    style={styles.protocolRow}
+                    onPress={() => setActiveProtocol(id)}
+                    disabled={!enabled}
                   >
-                    <TouchableOpacity
-                      style={styles.protocolHeader}
-                      onPress={() => toggleProtocol(protocolId)}
-                    >
-                      <View style={styles.protocolHeaderLeft}>
-                        {protocolIcons[protocolId]}
-                        <View style={styles.protocolInfo}>
-                          <Text style={styles.protocolName}>{protocol.name}</Text>
-                          <Text style={styles.protocolDescription} numberOfLines={1}>
-                            {protocol.description}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.protocolHeaderRight}>
-                        {isActive && (
-                          <View style={styles.activeBadge}>
-                            <Text style={styles.activeBadgeText}>ACTIVE</Text>
-                          </View>
-                        )}
-                        <ChevronRight
-                          size={18}
-                          color="rgba(255,255,255,0.4)"
-                          style={{
-                            transform: [{ rotate: isExpanded ? '90deg' : '0deg' }],
-                          }}
-                        />
-                      </View>
-                    </TouchableOpacity>
-
-                    {isExpanded && (
-                      <View style={styles.protocolContent}>
-                        <Text style={styles.protocolFullDescription}>
-                          {protocol.description}
-                        </Text>
-
-                        {!isActive && (
-                          <TouchableOpacity
-                            style={styles.setActiveButton}
-                            onPress={() => setActiveProtocol(protocolId)}
-                          >
-                            <Check size={14} color="#0a0a0a" />
-                            <Text style={styles.setActiveButtonText}>Set as Active</Text>
-                          </TouchableOpacity>
-                        )}
-
-                        {renderProtocolSettings(protocolId)}
-                      </View>
-                    )}
-                  </View>
+                    <View style={styles.protocolRowLeft}>
+                      <Text style={styles.protocolName}>{cfg?.name || id}</Text>
+                      {!enabled && <Text style={styles.protocolOff}>OFF</Text>}
+                    </View>
+                    <View style={styles.protocolRowRight}>
+                      {isActive && <Check size={16} color="#00ff88" />}
+                      <Switch
+                        value={enabled}
+                        onValueChange={(v) => updateProtocolConfig(id, { enabled: v })}
+                        disabled={!isProtocolEditable}
+                        trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                        thumbColor={enabled ? '#ffffff' : '#888888'}
+                      />
+                    </View>
+                  </TouchableOpacity>
                 );
               })}
             </View>
+
+            <Text style={[styles.sectionTitle, { marginTop: 16 }]}>App Safeguards</Text>
+            <View style={styles.card}>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>HTTPS Enforced</Text>
+                <Switch
+                  value={httpsEnforced}
+                  onValueChange={(v) => setHttpsEnforced(v)}
+                  disabled={!isProtocolEditable}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                  thumbColor={httpsEnforced ? '#ffffff' : '#888888'}
+                />
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>ML Safety Mode</Text>
+                <Switch
+                  value={mlSafetyEnabled}
+                  onValueChange={(v) => setMlSafetyEnabled(v)}
+                  disabled={!isProtocolEditable}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                  thumbColor={mlSafetyEnabled ? '#ffffff' : '#888888'}
+                />
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Presentation Mode</Text>
+                <Switch
+                  value={presentationMode}
+                  onValueChange={togglePresentationMode}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                  thumbColor={presentationMode ? '#ffffff' : '#888888'}
+                />
+              </View>
+              <View style={styles.settingRow}>
+                <Text style={styles.settingLabel}>Overlay Watermark</Text>
+                <Switch
+                  value={showTestingWatermark}
+                  onValueChange={(v) => setShowTestingWatermark(v)}
+                  trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                  thumbColor={showTestingWatermark ? '#ffffff' : '#888888'}
+                />
+              </View>
+            </View>
+
+            {/* Standard */}
+            <TouchableOpacity style={styles.expandHeader} onPress={() => toggleExpanded('standard')}>
+              <Text style={styles.expandTitle}>Standard</Text>
+              <ChevronRight size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: expanded === 'standard' ? '90deg' : '0deg' }] }} />
+            </TouchableOpacity>
+            {expanded === 'standard' && (
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Auto Inject</Text>
+                  <Switch value={standardSettings.autoInject} onValueChange={(v) => updateStandardSettings({ autoInject: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={standardSettings.autoInject ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Stealth by Default</Text>
+                  <Switch value={standardSettings.stealthByDefault} onValueChange={(v) => updateStandardSettings({ stealthByDefault: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={standardSettings.stealthByDefault ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Respect Site Settings</Text>
+                  <Switch value={standardSettings.respectSiteSettings} onValueChange={(v) => updateStandardSettings({ respectSiteSettings: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={standardSettings.respectSiteSettings ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Inject Motion Data</Text>
+                  <Switch value={standardSettings.injectMotionData} onValueChange={(v) => updateStandardSettings({ injectMotionData: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={standardSettings.injectMotionData ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Loop Video</Text>
+                  <Switch value={standardSettings.loopVideo} onValueChange={(v) => updateStandardSettings({ loopVideo: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={standardSettings.loopVideo ? '#ffffff' : '#888888'} />
+                </View>
+              </View>
+            )}
+
+            {/* Allowlist */}
+            <TouchableOpacity style={styles.expandHeader} onPress={() => toggleExpanded('allowlist')}>
+              <Text style={styles.expandTitle}>Allowlist</Text>
+              <ChevronRight size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: expanded === 'allowlist' ? '90deg' : '0deg' }] }} />
+            </TouchableOpacity>
+            {expanded === 'allowlist' && (
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Enable Allowlist</Text>
+                  <Switch value={allowlistSettings.enabled} onValueChange={(v) => updateAllowlistSettings({ enabled: v })} disabled={!isAllowlistEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={allowlistSettings.enabled ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Block Unlisted</Text>
+                  <Switch value={allowlistSettings.blockUnlisted} onValueChange={(v) => updateAllowlistSettings({ blockUnlisted: v })} disabled={!isAllowlistEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={allowlistSettings.blockUnlisted ? '#ffffff' : '#888888'} />
+                </View>
+
+                <View style={styles.currentSiteRow}>
+                  <Globe size={14} color="#00aaff" />
+                  <Text style={styles.currentSiteText}>{currentHostname || 'No site loaded'}</Text>
+                  {currentHostname ? (
+                    <View style={[styles.siteBadge, currentAllowlisted ? styles.siteBadgeAllowed : styles.siteBadgeBlocked]}>
+                      <Text style={styles.siteBadgeText}>{currentAllowlisted ? 'Allowed' : 'Blocked'}</Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                <View style={styles.domainRow}>
+                  <TextInput
+                    style={[styles.domainInput, !isAllowlistEditable && styles.domainInputDisabled]}
+                    value={domainInput}
+                    onChangeText={setDomainInput}
+                    placeholder={isAllowlistEditable ? 'Add domain (example.com)' : 'Unlock to edit'}
+                    placeholderTextColor="rgba(255,255,255,0.3)"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={isAllowlistEditable}
+                  />
+                  <TouchableOpacity style={[styles.addBtn, !isAllowlistEditable && styles.addBtnDisabled]} onPress={handleAddDomain} disabled={!isAllowlistEditable}>
+                    <Text style={styles.addBtnText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {allowlistSettings.domains.map((domain) => (
+                  <TouchableOpacity key={domain} style={styles.domainItem} onPress={() => handleRemoveDomain(domain)} disabled={!isAllowlistEditable}>
+                    <Text style={styles.domainText}>{domain}</Text>
+                    <Text style={styles.removeText}>{isAllowlistEditable ? 'Remove' : ''}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* Protected */}
+            <TouchableOpacity style={styles.expandHeader} onPress={() => toggleExpanded('protected')}>
+              <Text style={styles.expandTitle}>Protected Preview</Text>
+              <ChevronRight size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: expanded === 'protected' ? '90deg' : '0deg' }] }} />
+            </TouchableOpacity>
+            {expanded === 'protected' && (
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Body Detection Enabled</Text>
+                  <Switch value={protectedSettings.bodyDetectionEnabled} onValueChange={(v) => updateProtectedSettings({ bodyDetectionEnabled: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={protectedSettings.bodyDetectionEnabled ? '#ffffff' : '#888888'} />
+                </View>
+                <TouchableOpacity style={styles.linkBtn} onPress={openProtectedPreview}>
+                  <Shield size={14} color="#0a0a0a" />
+                  <Text style={styles.linkBtnText}>Open Protected Preview</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* Harness */}
+            <TouchableOpacity style={styles.expandHeader} onPress={() => toggleExpanded('harness')}>
+              <Text style={styles.expandTitle}>Local Test Harness</Text>
+              <ChevronRight size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: expanded === 'harness' ? '90deg' : '0deg' }] }} />
+            </TouchableOpacity>
+            {expanded === 'harness' && (
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Overlay Enabled</Text>
+                  <Switch value={harnessSettings.overlayEnabled} onValueChange={(v) => updateHarnessSettings({ overlayEnabled: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={harnessSettings.overlayEnabled ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Mirror Video</Text>
+                  <Switch value={harnessSettings.mirrorVideo} onValueChange={(v) => updateHarnessSettings({ mirrorVideo: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={harnessSettings.mirrorVideo ? '#ffffff' : '#888888'} />
+                </View>
+                <TouchableOpacity style={styles.linkBtn} onPress={openTestHarness}>
+                  <Shield size={14} color="#0a0a0a" />
+                  <Text style={styles.linkBtnText}>Open Test Harness</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* GPT-5.2 */}
+            <TouchableOpacity style={styles.expandHeader} onPress={() => toggleExpanded('gpt52')}>
+              <Text style={styles.expandTitle}>GPT-5.2 Advanced</Text>
+              <ChevronRight size={18} color="rgba(255,255,255,0.5)" style={{ transform: [{ rotate: expanded === 'gpt52' ? '90deg' : '0deg' }] }} />
+            </TouchableOpacity>
+            {expanded === 'gpt52' && (
+              <View style={styles.card}>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Auto Inject</Text>
+                  <Switch value={gpt52Settings.autoInject} onValueChange={(v) => updateGpt52Settings({ autoInject: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.autoInject ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Force Simulation</Text>
+                  <Switch value={gpt52Settings.forceSimulation} onValueChange={(v) => updateGpt52Settings({ forceSimulation: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.forceSimulation ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Inject Motion Data</Text>
+                  <Switch value={gpt52Settings.injectMotionData} onValueChange={(v) => updateGpt52Settings({ injectMotionData: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.injectMotionData ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Loop Video</Text>
+                  <Switch value={gpt52Settings.loopVideo} onValueChange={(v) => updateGpt52Settings({ loopVideo: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.loopVideo ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <Text style={styles.settingLabel}>Mirror Video</Text>
+                  <Switch value={gpt52Settings.mirrorVideo} onValueChange={(v) => updateGpt52Settings({ mirrorVideo: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.mirrorVideo ? '#ffffff' : '#888888'} />
+                </View>
+                <View style={styles.settingRow}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Wand2 size={14} color="rgba(255,255,255,0.7)" />
+                    <Text style={styles.settingLabel}>Aggressive Retry</Text>
+                  </View>
+                  <Switch value={gpt52Settings.aggressiveRetry} onValueChange={(v) => updateGpt52Settings({ aggressiveRetry: v })} disabled={!isProtocolEditable} trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }} thumbColor={gpt52Settings.aggressiveRetry ? '#ffffff' : '#888888'} />
+                </View>
+              </View>
+            )}
+
+            <Text style={styles.footerText}>
+              Protocol changes affect injection behavior immediately. Use only in controlled environments you own/operate.
+            </Text>
           </ScrollView>
         </View>
       </View>
@@ -683,14 +431,14 @@ export default function ProtocolSettingsModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.9)',
+    backgroundColor: 'rgba(0,0,0,0.85)',
     justifyContent: 'flex-end',
   },
   content: {
     backgroundColor: '#1a1a1a',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    maxHeight: '92%',
+    maxHeight: '90%',
   },
   header: {
     flexDirection: 'row',
@@ -698,7 +446,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
   headerLeft: {
     flexDirection: 'row',
@@ -706,110 +454,68 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   title: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '700' as const,
     color: '#ffffff',
   },
   body: {
     padding: 16,
   },
-  developerSection: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  developerHeader: {
+  devBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
   },
-  developerHeaderLeft: {
+  devBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
   },
-  developerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  developerToggle: {
-    backgroundColor: 'rgba(255, 71, 87, 0.2)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.4)',
-  },
-  developerToggleActive: {
-    backgroundColor: 'rgba(0, 255, 136, 0.2)',
-    borderColor: 'rgba(0, 255, 136, 0.4)',
-  },
-  developerToggleText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ff4757',
-  },
-  developerToggleTextActive: {
-    color: '#00ff88',
-  },
-  developerHint: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-    lineHeight: 18,
-  },
-  pinEntry: {
-    flexDirection: 'row',
+  devIcon: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255, 107, 53, 0.15)',
     alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
+    justifyContent: 'center',
   },
-  pinInput: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+  devIconActive: {
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
+  },
+  devTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
     color: '#ffffff',
-    fontSize: 14,
   },
-  pinButton: {
-    backgroundColor: '#00ff88',
-    borderRadius: 10,
-    padding: 10,
-  },
-  pinCancelButton: {
-    backgroundColor: 'rgba(255,71,87,0.2)',
-    borderRadius: 10,
-    padding: 10,
-  },
-  presentationSection: {
-    backgroundColor: 'rgba(255, 204, 0, 0.08)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 204, 0, 0.2)',
-  },
-  safetySection: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
+  devHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.55)',
+    marginTop: 2,
   },
   sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 4,
   },
-  settingRow: {
+  sectionHint: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.5)',
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  card: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  protocolRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -817,263 +523,141 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.06)',
   },
-  settingInfo: {
+  protocolRowLeft: {
     flex: 1,
-    marginRight: 12,
+    paddingRight: 12,
   },
-  settingLabelRow: {
+  protocolRowRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-  },
-  settingLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  settingHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
-  mlNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: 'rgba(255, 204, 0, 0.1)',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 10,
-  },
-  mlNoticeText: {
-    flex: 1,
-    fontSize: 11,
-    color: 'rgba(255, 204, 0, 0.9)',
-    lineHeight: 16,
-  },
-  protocolsSection: {
-    marginBottom: 32,
-  },
-  protocolCard: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 14,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-    overflow: 'hidden',
-  },
-  protocolCardActive: {
-    borderColor: 'rgba(0, 255, 136, 0.4)',
-    backgroundColor: 'rgba(0, 255, 136, 0.05)',
-  },
-  protocolHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 14,
-  },
-  protocolHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flex: 1,
-  },
-  protocolInfo: {
-    flex: 1,
+    gap: 10,
   },
   protocolName: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '600' as const,
     color: '#ffffff',
   },
-  protocolDescription: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
+  protocolOff: {
+    fontSize: 10,
+    marginTop: 3,
+    color: '#ff6b35',
+    fontWeight: '700' as const,
   },
-  protocolHeaderRight: {
+  settingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  activeBadge: {
-    backgroundColor: 'rgba(0, 255, 136, 0.2)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  activeBadgeText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#00ff88',
-    letterSpacing: 0.5,
-  },
-  protocolContent: {
-    padding: 14,
-    paddingTop: 0,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-  },
-  protocolFullDescription: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  setActiveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#00ff88',
-    borderRadius: 10,
+    justifyContent: 'space-between',
     paddingVertical: 10,
-    marginBottom: 12,
   },
-  setActiveButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0a0a0a',
+  settingLabel: {
+    fontSize: 12,
+    color: '#ffffff',
+    fontWeight: '600' as const,
   },
-  settingsGroup: {
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 10,
-    padding: 10,
-  },
-  lockedNotice: {
+  expandHeader: {
+    marginTop: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
   },
-  lockedNoticeText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.4)',
+  expandTitle: {
+    fontSize: 13,
+    fontWeight: '700' as const,
+    color: '#ffffff',
   },
   currentSiteRow: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(0, 170, 255, 0.1)',
-    borderRadius: 10,
-    padding: 10,
-    marginVertical: 8,
   },
   currentSiteText: {
     flex: 1,
     fontSize: 12,
-    color: '#ffffff',
+    color: 'rgba(255,255,255,0.7)',
   },
-  statusBadge: {
+  siteBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusAllowed: {
-    backgroundColor: 'rgba(0, 255, 136, 0.2)',
-  },
-  statusBlocked: {
-    backgroundColor: 'rgba(255, 71, 87, 0.2)',
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  addCurrentBtn: {
-    backgroundColor: '#00ff88',
-    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 999,
   },
-  addCurrentBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#0a0a0a',
-  },
-  sensitivityButtons: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  sensitivityBtn: {
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  sensitivityBtnActive: {
-    backgroundColor: '#ff6b35',
-  },
-  sensitivityBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: 'rgba(255,255,255,0.6)',
-  },
-  sensitivityBtnTextActive: {
-    color: '#ffffff',
-  },
-  domainInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  siteBadgeAllowed: { backgroundColor: 'rgba(0, 255, 136, 0.2)' },
+  siteBadgeBlocked: { backgroundColor: 'rgba(255, 71, 87, 0.2)' },
+  siteBadgeText: { fontSize: 10, fontWeight: '700' as const, color: '#ffffff' },
+  domainRow: {
     marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
   },
   domainInput: {
     flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     color: '#ffffff',
-    fontSize: 13,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  addButton: {
-    backgroundColor: '#00ff88',
+  domainInputDisabled: {
+    opacity: 0.6,
+  },
+  addBtn: {
+    paddingHorizontal: 12,
     borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    backgroundColor: '#00ff88',
+    justifyContent: 'center',
   },
-  addButtonText: {
+  addBtnDisabled: {
+    opacity: 0.5,
+  },
+  addBtnText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '800' as const,
     color: '#0a0a0a',
   },
-  domainList: {
-    marginTop: 10,
-    gap: 6,
-  },
   domainItem: {
+    marginTop: 8,
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(0,0,0,0.2)',
   },
   domainText: {
-    fontSize: 12,
     color: '#ffffff',
-  },
-  emptyText: {
     fontSize: 12,
-    color: 'rgba(255,255,255,0.4)',
-    marginTop: 10,
-    textAlign: 'center',
+    fontWeight: '600' as const,
   },
-  actionButton: {
+  removeText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 11,
+  },
+  linkBtn: {
+    marginTop: 10,
+    backgroundColor: '#00aaff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    backgroundColor: 'rgba(0, 170, 255, 0.1)',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 10,
+    justifyContent: 'center',
+    gap: 8,
   },
-  actionButtonText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#00aaff',
+  linkBtnText: {
+    color: '#0a0a0a',
+    fontWeight: '800' as const,
+    fontSize: 12,
+  },
+  footerText: {
+    marginTop: 16,
+    marginBottom: 22,
+    fontSize: 11,
+    lineHeight: 16,
+    color: 'rgba(255,255,255,0.45)',
   },
 });
+
