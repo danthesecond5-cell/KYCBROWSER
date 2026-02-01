@@ -9,6 +9,7 @@ import {
   Platform,
   Modal,
   Switch,
+  TextInput,
 } from 'react-native';
 import {
   ChevronUp,
@@ -65,6 +66,14 @@ interface ControlToolbarProps {
   onApplyVideoToDevice: (deviceId: string, video: SavedVideo) => void;
   onApplyVideoToAll: (video: SavedVideo) => void;
 }
+
+const getHostnameFromUrl = (url: string): string => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+};
 
 const ControlToolbar = memo(function ControlToolbar({
   isExpanded,
@@ -301,7 +310,7 @@ const ControlToolbar = memo(function ControlToolbar({
             <View style={styles.siteSettingsInfo}>
               <Text style={styles.siteSettingsLabel}>Site Settings</Text>
               <Text style={styles.siteSettingsUrl} numberOfLines={1}>
-                {currentUrl ? new URL(currentUrl).hostname : 'No site loaded'}
+                {currentUrl ? getHostnameFromUrl(currentUrl) : 'No site loaded'}
               </Text>
             </View>
             {currentWebsiteSettings && (
@@ -562,13 +571,7 @@ export function SiteSettingsModal({
     }
   }, [currentSettings]);
 
-  const hostname = useMemo(() => {
-    try {
-      return new URL(currentUrl).hostname;
-    } catch {
-      return currentUrl;
-    }
-  }, [currentUrl]);
+  const hostname = useMemo(() => getHostnameFromUrl(currentUrl), [currentUrl]);
 
   const handleSave = () => {
     onSave(currentUrl, { useStealthByDefault, applyToSubdomains });

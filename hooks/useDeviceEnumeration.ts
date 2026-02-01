@@ -355,12 +355,10 @@ export function useDeviceEnumeration() {
       });
     }
 
-    if (!isMountedRef.current) {
-      return devices;
+    if (isMountedRef.current) {
+      setEnumerationDetails(details);
+      setCaptureDevices(devices);
     }
-
-    setEnumerationDetails(details);
-    setCaptureDevices(devices);
     console.log('[DeviceCheck] Total cameras found:', devices.length);
     return devices;
   }, [enumerateNativeDevices, getDefaultCameraDevices]);

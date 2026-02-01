@@ -4,18 +4,10 @@ import createContextHook from '@nkzw/create-context-hook';
 import * as Crypto from 'expo-crypto';
 import {
   DeveloperModeSettings,
-  ProtocolSettings,
-  StandardInjectionSettings,
-  AllowlistSettings,
-  ProtectedPreviewSettings,
-  TestHarnessSettings,
   DEFAULT_DEVELOPER_MODE,
-  DEFAULT_PROTOCOL_SETTINGS,
-  ProtocolId,
 } from '@/types/protocols';
 
 const DEVELOPER_MODE_KEY = '@developer_mode_settings';
-const PROTOCOL_SETTINGS_KEY = '@protocol_settings';
 const PIN_HASH_PREFIX = 'sha256:';
 
 const normalizePin = (pin: string): string => pin.trim();
@@ -43,33 +35,19 @@ interface DeveloperModeContextValue {
   verifyPinCode: (pin: string) => Promise<boolean>;
   setPinCode: (pin: string | null) => Promise<void>;
   
-  // Protocol Settings
-  protocolSettings: ProtocolSettings;
-  updateStandardSettings: (updates: Partial<StandardInjectionSettings>) => Promise<void>;
-  updateAllowlistSettings: (updates: Partial<AllowlistSettings>) => Promise<void>;
-  updateProtectedSettings: (updates: Partial<ProtectedPreviewSettings>) => Promise<void>;
-  updateHarnessSettings: (updates: Partial<TestHarnessSettings>) => Promise<void>;
-  toggleProtocolEnabled: (protocolId: ProtocolId) => Promise<void>;
-  resetProtocolSettings: (protocolId?: ProtocolId) => Promise<void>;
-  
   // Loading state
   isLoading: boolean;
 }
 
 export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<DeveloperModeContextValue>(() => {
   const [developerMode, setDeveloperMode] = useState<DeveloperModeSettings>(DEFAULT_DEVELOPER_MODE);
-  const [protocolSettings, setProtocolSettings] = useState<ProtocolSettings>(DEFAULT_PROTOCOL_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
 
   // Load settings on mount
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const [devModeData, protocolData] = await Promise.all([
-          AsyncStorage.getItem(DEVELOPER_MODE_KEY),
-          AsyncStorage.getItem(PROTOCOL_SETTINGS_KEY),
-        ]);
-
+        const devModeData = await AsyncStorage.getItem(DEVELOPER_MODE_KEY);
         let loadedDeveloperMode = DEFAULT_DEVELOPER_MODE;
 
         if (devModeData) {
@@ -86,17 +64,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
 
         setDeveloperMode(loadedDeveloperMode);
         console.log('[DeveloperMode] Loaded developer mode settings');
-
-        if (protocolData) {
-          const parsed = JSON.parse(protocolData);
-          setProtocolSettings({
-            standard: { ...DEFAULT_PROTOCOL_SETTINGS.standard, ...parsed.standard },
-            allowlist: { ...DEFAULT_PROTOCOL_SETTINGS.allowlist, ...parsed.allowlist },
-            protected: { ...DEFAULT_PROTOCOL_SETTINGS.protected, ...parsed.protected },
-            harness: { ...DEFAULT_PROTOCOL_SETTINGS.harness, ...parsed.harness },
-          });
-          console.log('[DeveloperMode] Loaded protocol settings');
-        }
       } catch (error) {
         console.error('[DeveloperMode] Failed to load settings:', error);
       } finally {
@@ -114,16 +81,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
       console.log('[DeveloperMode] Saved developer mode settings');
     } catch (error) {
       console.error('[DeveloperMode] Failed to save developer mode:', error);
-    }
-  }, []);
-
-  // Save protocol settings
-  const saveProtocolSettings = useCallback(async (settings: ProtocolSettings) => {
-    try {
-      await AsyncStorage.setItem(PROTOCOL_SETTINGS_KEY, JSON.stringify(settings));
-      console.log('[DeveloperMode] Saved protocol settings');
-    } catch (error) {
-      console.error('[DeveloperMode] Failed to save protocol settings:', error);
     }
   }, []);
 
@@ -178,97 +135,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     await saveDeveloperMode(updated);
   }, [developerMode, saveDeveloperMode]);
 
-  // Protocol settings updates
-  const updateStandardSettings = useCallback(async (updates: Partial<StandardInjectionSettings>) => {
-    const updated = {
-      ...protocolSettings,
-      standard: { ...protocolSettings.standard, ...updates },
-    };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-  }, [protocolSettings, saveProtocolSettings]);
-
-  const updateAllowlistSettings = useCallback(async (updates: Partial<AllowlistSettings>) => {
-    const updated = {
-      ...protocolSettings,
-      allowlist: { ...protocolSettings.allowlist, ...updates },
-    };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-  }, [protocolSettings, saveProtocolSettings]);
-
-  const updateProtectedSettings = useCallback(async (updates: Partial<ProtectedPreviewSettings>) => {
-    const updated = {
-      ...protocolSettings,
-      protected: { ...protocolSettings.protected, ...updates },
-    };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-  }, [protocolSettings, saveProtocolSettings]);
-
-  const updateHarnessSettings = useCallback(async (updates: Partial<TestHarnessSettings>) => {
-    const updated = {
-      ...protocolSettings,
-      harness: { ...protocolSettings.harness, ...updates },
-    };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-  }, [protocolSettings, saveProtocolSettings]);
-
-  // Toggle protocol enabled status
-  const toggleProtocolEnabled = useCallback(async (protocolId: ProtocolId) => {
-    const updates: Partial<ProtocolSettings> = {};
-    
-    switch (protocolId) {
-      case 'standard':
-        updates.standard = { ...protocolSettings.standard, enabled: !protocolSettings.standard.enabled };
-        break;
-      case 'allowlist':
-        updates.allowlist = { ...protocolSettings.allowlist, enabled: !protocolSettings.allowlist.enabled };
-        break;
-      case 'protected':
-        updates.protected = { ...protocolSettings.protected, enabled: !protocolSettings.protected.enabled };
-        break;
-      case 'harness':
-        updates.harness = { ...protocolSettings.harness, enabled: !protocolSettings.harness.enabled };
-        break;
-    }
-
-    const updated = { ...protocolSettings, ...updates };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-    console.log('[DeveloperMode] Protocol', protocolId, 'toggled');
-  }, [protocolSettings, saveProtocolSettings]);
-
-  // Reset protocol settings
-  const resetProtocolSettings = useCallback(async (protocolId?: ProtocolId) => {
-    let updated: ProtocolSettings;
-    
-    if (protocolId) {
-      updated = { ...protocolSettings };
-      switch (protocolId) {
-        case 'standard':
-          updated.standard = DEFAULT_PROTOCOL_SETTINGS.standard;
-          break;
-        case 'allowlist':
-          updated.allowlist = DEFAULT_PROTOCOL_SETTINGS.allowlist;
-          break;
-        case 'protected':
-          updated.protected = DEFAULT_PROTOCOL_SETTINGS.protected;
-          break;
-        case 'harness':
-          updated.harness = DEFAULT_PROTOCOL_SETTINGS.harness;
-          break;
-      }
-    } else {
-      updated = DEFAULT_PROTOCOL_SETTINGS;
-    }
-
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-    console.log('[DeveloperMode] Protocol settings reset:', protocolId || 'all');
-  }, [protocolSettings, saveProtocolSettings]);
-
   // Computed values
   const isDeveloperModeEnabled = developerMode.enabled;
   const isAllowlistEditable = developerMode.enabled && developerMode.allowAllowlistEditing;
@@ -283,13 +149,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     updateDeveloperSettings,
     verifyPinCode,
     setPinCode,
-    protocolSettings,
-    updateStandardSettings,
-    updateAllowlistSettings,
-    updateProtectedSettings,
-    updateHarnessSettings,
-    toggleProtocolEnabled,
-    resetProtocolSettings,
     isLoading,
   };
 });

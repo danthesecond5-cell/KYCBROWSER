@@ -303,6 +303,10 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   },
 };
 
+const isProtocolType = (value: string): value is ProtocolType => {
+  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness';
+};
+
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {
   const [isLoading, setIsLoading] = useState(true);
   const [developerModeEnabled, setDeveloperModeEnabled] = useState(false);
@@ -366,7 +370,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
         }
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
+        if (activeProto) {
+          if (isProtocolType(activeProto)) {
+            setActiveProtocolState(activeProto);
+          } else {
+            console.warn('[Protocol] Unknown active protocol in storage:', activeProto);
+          }
+        }
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);

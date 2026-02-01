@@ -26,6 +26,7 @@ export function useVideoSelection() {
   const [checkingVideoName, setCheckingVideoName] = useState<string>('');
   
   const isProcessingRef = useRef(false);
+  const processingTokenRef = useRef(0);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -58,6 +59,7 @@ export function useVideoSelection() {
     }
     
     console.log('[useVideoSelection] User wants to use video:', video.name);
+    const operationToken = ++processingTokenRef.current;
     isProcessingRef.current = true;
     
     // Track timeout state at function scope so it's accessible throughout
@@ -172,7 +174,9 @@ export function useVideoSelection() {
       }
       // Reset processing flag after a short delay
       setTimeout(() => {
-        isProcessingRef.current = false;
+        if (processingTokenRef.current === operationToken) {
+          isProcessingRef.current = false;
+        }
       }, 300);
     }
   }, [checkCompatibility, isVideoReady, setPendingVideoForApply]);
@@ -219,6 +223,7 @@ export function useVideoSelection() {
       return;
     }
     
+    const operationToken = ++processingTokenRef.current;
     isProcessingRef.current = true;
     
     // Track timeout state at function scope
@@ -275,7 +280,9 @@ export function useVideoSelection() {
         clearTimeout(timeoutId);
       }
       setTimeout(() => {
-        isProcessingRef.current = false;
+        if (processingTokenRef.current === operationToken) {
+          isProcessingRef.current = false;
+        }
       }, 300);
     }
   }, [checkCompatibility]);

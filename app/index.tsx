@@ -94,7 +94,7 @@ export default function MotionBrowserScreen() {
     setPendingVideoForApply,
   } = useVideoLibrary();
 
-  const { developerMode, isAllowlistEditable } = useDeveloperMode();
+  const { developerMode } = useDeveloperMode();
 
   
 
