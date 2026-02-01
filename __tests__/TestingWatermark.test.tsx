@@ -21,4 +21,18 @@ describe('TestingWatermark', () => {
     const { toJSON } = render(<TestingWatermark visible={false} />);
     expect(toJSON()).toBeNull();
   });
+
+  it('renders fullscreen position with all elements', () => {
+    const { toJSON } = render(
+      <TestingWatermark
+        visible={true}
+        position="fullscreen"
+        showPulse={false}
+        mlSafetyEnabled={true}
+        httpsEnforced={true}
+        protocolName="TEST-PROTOCOL"
+      />
+    );
+    expect(toJSON()).toMatchSnapshot();
+  });
 });

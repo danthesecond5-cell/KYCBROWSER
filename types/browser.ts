@@ -21,7 +21,7 @@ export interface PatternPreset {
   freq: number;
 }
 
-export type CheckStep = 'info' | 'permissions' | 'devices' | 'test' | 'complete';
+export type CheckStep = 'info' | 'permissions' | 'devices' | 'test' | 'injection-test' | 'complete';
 
 export interface WebsiteSettings {
   id: string;

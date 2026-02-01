@@ -135,6 +135,298 @@ exports[`TestingWatermark renders full variant 1`] = `
 </View>
 `;
 
+exports[`TestingWatermark renders fullscreen position with all elements 1`] = `
+<View
+  collapsable={false}
+  pointerEvents="none"
+  style={
+    {
+      "bottom": 0,
+      "justifyContent": "space-between",
+      "left": 0,
+      "opacity": 0,
+      "position": "absolute",
+      "right": 0,
+      "top": 0,
+      "zIndex": 9999,
+    }
+  }
+>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "rgba(255, 204, 0, 0.15)",
+        "borderBottomColor": "rgba(255, 204, 0, 0.3)",
+        "borderBottomWidth": 1,
+        "paddingVertical": 6,
+      }
+    }
+  >
+    <View
+      collapsable={false}
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "gap": 8,
+          "opacity": 1,
+        }
+      }
+    >
+      <View
+        color="#ffcc00"
+        size={14}
+      />
+      <Text
+        style={
+          {
+            "color": "#ffcc00",
+            "fontSize": 11,
+            "fontWeight": "800",
+            "letterSpacing": 2,
+          }
+        }
+      >
+        TESTING PROTOTYPE
+      </Text>
+      <View
+        color="#ffcc00"
+        size={14}
+      />
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "flexDirection": "column",
+        "gap": 4,
+        "position": "absolute",
+        "right": 8,
+        "top": 40,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "backgroundColor": "rgba(0, 255, 136, 0.15)",
+          "borderColor": "rgba(0, 255, 136, 0.3)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "flexDirection": "row",
+          "gap": 4,
+          "paddingHorizontal": 8,
+          "paddingVertical": 4,
+        }
+      }
+    >
+      <View
+        color="#00ff88"
+        size={10}
+      />
+      <Text
+        style={
+          {
+            "color": "#00ff88",
+            "fontSize": 8,
+            "fontWeight": "700",
+            "letterSpacing": 0.5,
+          }
+        }
+      >
+        HTTPS
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "backgroundColor": "rgba(0, 170, 255, 0.15)",
+          "borderColor": "rgba(0, 170, 255, 0.3)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "flexDirection": "row",
+          "gap": 4,
+          "paddingHorizontal": 8,
+          "paddingVertical": 4,
+        }
+      }
+    >
+      <View
+        color="#00aaff"
+        size={10}
+      />
+      <Text
+        style={
+          {
+            "color": "#00aaff",
+            "fontSize": 8,
+            "fontWeight": "700",
+            "letterSpacing": 0.5,
+          }
+        }
+      >
+        ML SAFETY
+      </Text>
+    </View>
+  </View>
+  <View
+    style={
+      {
+        "backgroundColor": "rgba(138, 43, 226, 0.2)",
+        "borderColor": "rgba(138, 43, 226, 0.4)",
+        "borderRadius": 12,
+        "borderWidth": 1,
+        "left": 8,
+        "paddingHorizontal": 10,
+        "paddingVertical": 4,
+        "position": "absolute",
+        "top": 40,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "#b388ff",
+          "fontSize": 9,
+          "fontWeight": "700",
+          "letterSpacing": 0.5,
+        }
+      }
+    >
+      TEST-PROTOCOL
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "left": 8,
+        "position": "absolute",
+        "top": 70,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "rgba(255, 255, 255, 0.15)",
+          "fontSize": 10,
+          "fontWeight": "900",
+          "letterSpacing": 2,
+        }
+      }
+    >
+      BETA
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "position": "absolute",
+        "right": 8,
+        "top": 70,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "rgba(255, 255, 255, 0.15)",
+          "fontSize": 10,
+          "fontWeight": "900",
+          "letterSpacing": 2,
+        }
+      }
+    >
+      BETA
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 60,
+        "left": 8,
+        "position": "absolute",
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "rgba(255, 255, 255, 0.15)",
+          "fontSize": 10,
+          "fontWeight": "900",
+          "letterSpacing": 2,
+        }
+      }
+    >
+      DEV
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "bottom": 60,
+        "position": "absolute",
+        "right": 8,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "rgba(255, 255, 255, 0.15)",
+          "fontSize": 10,
+          "fontWeight": "900",
+          "letterSpacing": 2,
+        }
+      }
+    >
+      DEV
+    </Text>
+  </View>
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "backgroundColor": "rgba(0, 0, 0, 0.7)",
+        "paddingHorizontal": 16,
+        "paddingVertical": 8,
+      }
+    }
+  >
+    <Text
+      style={
+        {
+          "color": "rgba(255, 255, 255, 0.7)",
+          "fontSize": 10,
+          "fontWeight": "600",
+          "textAlign": "center",
+        }
+      }
+    >
+      For demonstration purposes only. Not for production use.
+    </Text>
+    <Text
+      style={
+        {
+          "color": "rgba(0, 255, 136, 0.8)",
+          "fontSize": 9,
+          "fontWeight": "500",
+          "marginTop": 2,
+          "textAlign": "center",
+        }
+      }
+    >
+      ML safety protocols prevent malicious use in production builds.
+    </Text>
+  </View>
+</View>
+`;
+
 exports[`TestingWatermark renders minimal variant 1`] = `
 <View
   collapsable={false}

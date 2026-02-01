@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
+import * as Crypto from 'expo-crypto';
 
 // Protocol Types
-export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness';
+export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
 
 export interface ProtocolConfig {
   id: ProtocolType;
@@ -21,12 +22,77 @@ export interface StandardProtocolSettings {
   loopVideo: boolean;
 }
 
+// Advanced Relay Protocol Settings (Protocol 2)
+// The most technically advanced video injection system
 export interface AllowlistProtocolSettings {
   enabled: boolean;
   domains: string[];
   blockUnlisted: boolean;
   showBlockedIndicator: boolean;
   autoAddCurrentSite: boolean;
+  
+  // Advanced Protocol 2 Settings
+  advancedRelay: {
+    // Video Pipeline
+    pipeline: {
+      hotSwitchThresholdMs: number;
+      minAcceptableFps: number;
+      enableParallelDecoding: boolean;
+    };
+    
+    // WebRTC Relay
+    webrtc: {
+      enabled: boolean;
+      virtualTurnEnabled: boolean;
+      sdpManipulationEnabled: boolean;
+      stealthMode: boolean;
+    };
+    
+    // GPU Processing
+    gpu: {
+      enabled: boolean;
+      qualityPreset: 'ultra' | 'high' | 'medium' | 'low' | 'potato';
+      noiseInjection: boolean;
+      noiseIntensity: number;
+    };
+    
+    // Adaptive Stream Intelligence
+    asi: {
+      enabled: boolean;
+      siteFingerprinting: boolean;
+      autoResolutionMatching: boolean;
+      antiDetectionMeasures: boolean;
+      storeHistory: boolean;
+    };
+    
+    // Cross-Device Streaming
+    crossDevice: {
+      enabled: boolean;
+      discoveryMethod: 'manual' | 'mdns' | 'qr';
+      targetLatencyMs: number;
+      autoReconnect: boolean;
+      connectedDeviceId: string | null;
+    };
+    
+    // Cryptographic Validation
+    crypto: {
+      enabled: boolean;
+      frameSigning: boolean;
+      tamperDetection: boolean;
+    };
+  };
+}
+
+export interface HolographicProtocolSettings {
+  enabled: boolean;
+  useWebSocketBridge: boolean;
+  bridgePort: number;
+  latencyMode: 'ultra-low' | 'balanced' | 'quality';
+  canvasResolution: '720p' | '1080p' | '4k';
+  frameRate: 30 | 60;
+  noiseInjectionLevel: number;
+  sdpMasquerade: boolean;
+  emulatedDevice: 'iphone-front' | 'webcam-c920' | 'obs-virtual';
 }
 
 export interface ProtectedProtocolSettings {
@@ -77,12 +143,14 @@ export interface ProtocolContextValue {
   allowlistSettings: AllowlistProtocolSettings;
   protectedSettings: ProtectedProtocolSettings;
   harnessSettings: HarnessProtocolSettings;
-  
+  holographicSettings: HolographicProtocolSettings;
+
   // Settings Updaters
   updateStandardSettings: (settings: Partial<StandardProtocolSettings>) => Promise<void>;
   updateAllowlistSettings: (settings: Partial<AllowlistProtocolSettings>) => Promise<void>;
   updateProtectedSettings: (settings: Partial<ProtectedProtocolSettings>) => Promise<void>;
   updateHarnessSettings: (settings: Partial<HarnessProtocolSettings>) => Promise<void>;
+  updateHolographicSettings: (settings: Partial<HolographicProtocolSettings>) => Promise<void>;
   
   // Allowlist helpers
   addAllowlistDomain: (domain: string) => Promise<void>;
@@ -112,9 +180,25 @@ const STORAGE_KEYS = {
   ALLOWLIST_SETTINGS: '@protocol_allowlist_settings',
   PROTECTED_SETTINGS: '@protocol_protected_settings',
   HARNESS_SETTINGS: '@protocol_harness_settings',
+  HOLOGRAPHIC_SETTINGS: '@protocol_holographic_settings',
   HTTPS_ENFORCED: '@protocol_https_enforced',
   ML_SAFETY: '@protocol_ml_safety',
   TESTING_WATERMARK: '@protocol_testing_watermark',
+};
+
+const PIN_HASH_PREFIX = 'sha256:';
+
+const normalizePin = (pin: string): string => pin.trim();
+
+const isHashedPin = (pin?: string | null): boolean =>
+  Boolean(pin && pin.startsWith(PIN_HASH_PREFIX) && pin.length > PIN_HASH_PREFIX.length);
+
+const hashPin = async (pin: string): Promise<string> => {
+  const digest = await Crypto.digestStringAsync(
+    Crypto.CryptoDigestAlgorithm.SHA256,
+    normalizePin(pin)
+  );
+  return `${PIN_HASH_PREFIX}${digest}`;
 };
 
 // Default Settings
@@ -127,11 +211,74 @@ const DEFAULT_STANDARD_SETTINGS: StandardProtocolSettings = {
 };
 
 const DEFAULT_ALLOWLIST_SETTINGS: AllowlistProtocolSettings = {
-  enabled: false,
+  enabled: true, // Now enabled by default with Advanced Relay
   domains: [],
-  blockUnlisted: true,
-  showBlockedIndicator: true,
+  blockUnlisted: false, // Less restrictive with Advanced Relay
+  showBlockedIndicator: false,
   autoAddCurrentSite: false,
+  
+  // Advanced Protocol 2 Settings
+  advancedRelay: {
+    // Video Pipeline - optimized for quality
+    pipeline: {
+      hotSwitchThresholdMs: 50,
+      minAcceptableFps: 15,
+      enableParallelDecoding: true,
+    },
+    
+    // WebRTC Relay - maximum stealth
+    webrtc: {
+      enabled: true,
+      virtualTurnEnabled: true,
+      sdpManipulationEnabled: true,
+      stealthMode: true,
+    },
+    
+    // GPU Processing - balanced quality
+    gpu: {
+      enabled: true,
+      qualityPreset: 'high',
+      noiseInjection: true,
+      noiseIntensity: 0.02,
+    },
+    
+    // ASI - intelligent adaptation
+    asi: {
+      enabled: true,
+      siteFingerprinting: true,
+      autoResolutionMatching: true,
+      antiDetectionMeasures: true,
+      storeHistory: true,
+    },
+    
+    // Cross-Device - ready for pairing
+    crossDevice: {
+      enabled: true,
+      discoveryMethod: 'qr',
+      targetLatencyMs: 100,
+      autoReconnect: true,
+      connectedDeviceId: null,
+    },
+    
+    // Crypto - secure by default
+    crypto: {
+      enabled: true,
+      frameSigning: true,
+      tamperDetection: true,
+    },
+  },
+};
+
+const DEFAULT_HOLOGRAPHIC_SETTINGS: HolographicProtocolSettings = {
+  enabled: true,
+  useWebSocketBridge: true,
+  bridgePort: 8080,
+  latencyMode: 'balanced',
+  canvasResolution: '1080p',
+  frameRate: 30,
+  noiseInjectionLevel: 0.1,
+  sdpMasquerade: true,
+  emulatedDevice: 'iphone-front',
 };
 
 const DEFAULT_PROTECTED_SETTINGS: ProtectedProtocolSettings = {
@@ -162,8 +309,8 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   },
   allowlist: {
     id: 'allowlist',
-    name: 'Protocol 2: Allowlist Test Mode',
-    description: 'Limits injection to explicitly allowed domains. Recommended for safe testing.',
+    name: 'Protocol 2: Advanced Relay',
+    description: 'The most technically advanced video injection system with WebRTC relay, GPU processing, AI-powered site adaptation, cross-device streaming, and cryptographic validation.',
     enabled: true,
     settings: {},
   },
@@ -181,6 +328,17 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
     enabled: true,
     settings: {},
   },
+  holographic: {
+    id: 'holographic',
+    name: 'Protocol 5: Holographic Stream Injection',
+    description: 'Advanced WebSocket bridge with SDP mutation and canvas-based stream synthesis.',
+    enabled: true,
+    settings: {},
+  },
+};
+
+const isProtocolType = (value: string): value is ProtocolType => {
+  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness';
 };
 
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {
@@ -199,6 +357,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   const [allowlistSettings, setAllowlistSettings] = useState<AllowlistProtocolSettings>(DEFAULT_ALLOWLIST_SETTINGS);
   const [protectedSettings, setProtectedSettings] = useState<ProtectedProtocolSettings>(DEFAULT_PROTECTED_SETTINGS);
   const [harnessSettings, setHarnessSettings] = useState<HarnessProtocolSettings>(DEFAULT_HARNESS_SETTINGS);
+  const [holographicSettings, setHolographicSettings] = useState<HolographicProtocolSettings>(DEFAULT_HOLOGRAPHIC_SETTINGS);
 
   // Load all settings on mount
   useEffect(() => {
@@ -215,6 +374,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           allowlist,
           protected_,
           harness,
+          holographic,
           https,
           mlSafety,
         ] = await Promise.all([
@@ -228,15 +388,34 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           AsyncStorage.getItem(STORAGE_KEYS.ALLOWLIST_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.PROTECTED_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HARNESS_SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.HOLOGRAPHIC_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HTTPS_ENFORCED),
           AsyncStorage.getItem(STORAGE_KEYS.ML_SAFETY),
         ]);
 
         if (devMode !== null) setDeveloperModeEnabled(devMode === 'true');
-        if (pin) setDeveloperPinState(pin);
+        if (pin) {
+          const normalizedPin = normalizePin(pin);
+          if (!isHashedPin(normalizedPin)) {
+            const hashedPin = await hashPin(normalizedPin);
+            setDeveloperPinState(hashedPin);
+            await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
+            console.log('[Protocol] Migrated developer PIN to hashed storage');
+          } else {
+            setDeveloperPinState(normalizedPin);
+          }
+        }
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
+        if (activeProto) {
+          if (isProtocolType(activeProto)) {
+            setActiveProtocolState(activeProto);
+          } else {
+            console.warn('[Protocol] Unknown active protocol in storage:', activeProto);
+            setActiveProtocolState('standard');
+            await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROTOCOL, 'standard');
+          }
+        }
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);
@@ -273,6 +452,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
             console.warn('[Protocol] Failed to parse harness settings:', e);
           }
         }
+        if (holographic) {
+          try {
+            setHolographicSettings({ ...DEFAULT_HOLOGRAPHIC_SETTINGS, ...JSON.parse(holographic) });
+          } catch (e) {
+            console.warn('[Protocol] Failed to parse holographic settings:', e);
+          }
+        }
         if (https !== null) setHttpsEnforcedState(https === 'true');
         if (mlSafety !== null) setMlSafetyEnabledState(mlSafety === 'true');
 
@@ -295,27 +481,42 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   }, [developerModeEnabled]);
 
   const setDeveloperModeWithPin = useCallback(async (pin: string): Promise<boolean> => {
+    const normalizedPin = normalizePin(pin);
+    if (!normalizedPin) {
+      return false;
+    }
+
     if (!developerPin) {
       // First time setup - set the pin
-      setDeveloperPinState(pin);
-      await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, pin);
+      const hashedPin = await hashPin(normalizedPin);
+      setDeveloperPinState(hashedPin);
+      await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
       setDeveloperModeEnabled(true);
       await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
       return true;
     }
-    
-    if (pin === developerPin) {
+
+    if (isHashedPin(developerPin)) {
+      const hashedAttempt = await hashPin(normalizedPin);
+      if (hashedAttempt === developerPin) {
+        setDeveloperModeEnabled(true);
+        await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
+        return true;
+      }
+    } else if (normalizedPin === developerPin) {
       setDeveloperModeEnabled(true);
       await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, 'true');
       return true;
     }
-    
+
     return false;
   }, [developerPin]);
 
   const setDeveloperPin = useCallback(async (pin: string) => {
-    setDeveloperPinState(pin);
-    await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, pin);
+    const normalizedPin = normalizePin(pin);
+    const hashedPin = await hashPin(normalizedPin);
+    setDeveloperPinState(hashedPin);
+    await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_PIN, hashedPin);
   }, []);
 
   const togglePresentationMode = useCallback(() => {
@@ -374,6 +575,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.HARNESS_SETTINGS, JSON.stringify(newSettings));
   }, [harnessSettings]);
 
+  const updateHolographicSettings = useCallback(async (settings: Partial<HolographicProtocolSettings>) => {
+    const newSettings = { ...holographicSettings, ...settings };
+    setHolographicSettings(newSettings);
+    await AsyncStorage.setItem(STORAGE_KEYS.HOLOGRAPHIC_SETTINGS, JSON.stringify(newSettings));
+  }, [holographicSettings]);
+
+  // Allowlist helpers
   const addAllowlistDomain = useCallback(async (domain: string) => {
     const normalized = domain.trim().toLowerCase().replace(/^www\./, '');
     if (!normalized || allowlistSettings.domains.includes(normalized)) return;
@@ -423,10 +631,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    holographicSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
+    updateHolographicSettings,
+    // allowlist helpers
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,

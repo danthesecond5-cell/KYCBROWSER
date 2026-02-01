@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,33 +7,392 @@ import {
   Switch,
   Platform,
   ScrollView,
+  Animated,
+  Easing,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Video, ResizeMode } from 'expo-av';
-import { ChevronLeft, Shield, Film, FlaskConical, Settings, Lock } from 'lucide-react-native';
+import { Video, ResizeMode, AVPlaybackStatus } from 'expo-av';
+import { ChevronLeft, Shield, Film, FlaskConical, Settings, Lock, Play, CheckCircle } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
+import { BUILT_IN_TEST_VIDEO, BUILT_IN_TEST_PATTERNS } from '@/constants/builtInTestVideo';
 import TestingWatermark from '@/components/TestingWatermark';
+
+// Built-in animated fallback pattern component
+const AnimatedFallbackPattern = ({ isActive }: { isActive: boolean }) => {
+  const animation = useRef(new Animated.Value(0)).current;
+  const pulseAnimation = useRef(new Animated.Value(1)).current;
+  const frameCount = useRef(0);
+  const [displayFrame, setDisplayFrame] = useState(0);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    // Continuous rotation animation
+    const rotateAnim = Animated.loop(
+      Animated.timing(animation, {
+        toValue: 1,
+        duration: 4000,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    );
+
+    // Pulse animation
+    const pulseAnim = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnimation, {
+          toValue: 1.15,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnimation, {
+          toValue: 1,
+          duration: 600,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    rotateAnim.start();
+    pulseAnim.start();
+
+    // Frame counter update
+    const interval = setInterval(() => {
+      frameCount.current += 1;
+      setDisplayFrame(frameCount.current % 10000);
+    }, 33); // ~30fps
+
+    return () => {
+      rotateAnim.stop();
+      pulseAnim.stop();
+      clearInterval(interval);
+    };
+  }, [isActive, animation, pulseAnimation]);
+
+  const rotate = animation.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  if (!isActive) return null;
+
+  return (
+    <View style={fallbackStyles.container}>
+      {/* Animated gradient background simulation with circles */}
+      <View style={fallbackStyles.background}>
+        {[0, 1, 2, 3, 4].map((i) => (
+          <Animated.View
+            key={i}
+            style={[
+              fallbackStyles.circle,
+              {
+                top: 100 + i * 120,
+                transform: [
+                  { rotate },
+                  { translateX: 80 + i * 20 },
+                ],
+                backgroundColor: `hsla(${(i * 60 + displayFrame) % 360}, 60%, 50%, 0.7)`,
+              },
+            ]}
+          />
+        ))}
+      </View>
+
+      {/* Center pulsing play icon */}
+      <Animated.View style={[fallbackStyles.centerIcon, { transform: [{ scale: pulseAnimation }] }]}>
+        <Play size={50} color="#ffffff" fill="#ffffff" />
+      </Animated.View>
+
+      {/* Status bar */}
+      <View style={fallbackStyles.statusBar}>
+        <View style={fallbackStyles.statusRow}>
+          <CheckCircle size={16} color="#00ff88" />
+          <Text style={fallbackStyles.statusTitle}>PROTECTION ACTIVE</Text>
+        </View>
+        <Text style={fallbackStyles.statusInfo}>
+          Frame: {String(displayFrame).padStart(5, '0')} | 1080x1920 @30fps
+        </Text>
+        <Text style={fallbackStyles.statusHint}>Using built-in test pattern</Text>
+      </View>
+
+      {/* Scanning line effect */}
+      <Animated.View
+        style={[
+          fallbackStyles.scanLine,
+          {
+            top: `${(displayFrame * 0.5) % 100}%`,
+          },
+        ]}
+      />
+
+      {/* Corner markers */}
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerTL]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerTR]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerBL]} />
+      <View style={[fallbackStyles.corner, fallbackStyles.cornerBR]} />
+    </View>
+  );
+};
+
+const fallbackStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a2e',
+    overflow: 'hidden',
+  },
+  background: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  circle: {
+    position: 'absolute',
+    left: '30%',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  centerIcon: {
+    position: 'absolute',
+    top: '55%',
+    left: '50%',
+    marginLeft: -30,
+    marginTop: -30,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusBar: {
+    position: 'absolute',
+    bottom: 20,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    borderRadius: 12,
+    padding: 14,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+  },
+  statusTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#00ff88',
+  },
+  statusInfo: {
+    fontSize: 12,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    color: '#ffffff',
+    marginBottom: 4,
+  },
+  statusHint: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.6)',
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: 'rgba(0, 255, 136, 0.4)',
+  },
+  corner: {
+    position: 'absolute',
+    width: 40,
+    height: 40,
+    borderColor: '#00ff88',
+    borderWidth: 4,
+  },
+  cornerTL: {
+    top: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderBottomWidth: 0,
+  },
+  cornerTR: {
+    top: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderBottomWidth: 0,
+  },
+  cornerBL: {
+    bottom: 0,
+    left: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+  },
+  cornerBR: {
+    bottom: 0,
+    right: 0,
+    borderLeftWidth: 0,
+    borderTopWidth: 0,
+/**
+ * Built-in Video Overlay Component
+ * Renders an animated canvas-based video directly in React Native
+ * This serves as a reliable fallback when no video is uploaded
+ */
+function BuiltInVideoOverlay({ onStatusChange }: { onStatusChange: (status: 'loading' | 'playing' | 'error') => void }) {
+  const canvasRef = useRef<View>(null);
+  
+  useEffect(() => {
+    // Notify parent that the built-in video is "playing"
+    onStatusChange('playing');
+  }, [onStatusChange]);
+  
+  return (
+    <View style={builtInStyles.container}>
+      <Animated.View style={builtInStyles.animatedBackground}>
+        {/* Animated balls */}
+        <AnimatedBall color="#ff6b6b" delay={0} />
+        <AnimatedBall color="#4ecdc4" delay={200} />
+        <AnimatedBall color="#ffe66d" delay={400} />
+      </Animated.View>
+      
+      <View style={builtInStyles.labelContainer}>
+        <Text style={builtInStyles.title}>BUILT-IN TEST VIDEO</Text>
+        <Text style={builtInStyles.subtitle}>1080x1920 @ 30fps | Looping</Text>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Animated Ball Component for the built-in video effect
+ */
+function AnimatedBall({ color, delay }: { color: string; delay: number }) {
+  const bounceAnim = useRef(new Animated.Value(0)).current;
+  const horizontalAnim = useRef(new Animated.Value(0)).current;
+  
+  useEffect(() => {
+    const startAnimation = () => {
+      Animated.loop(
+        Animated.parallel([
+          Animated.sequence([
+            Animated.timing(bounceAnim, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(bounceAnim, {
+              toValue: 0,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ]),
+          Animated.sequence([
+            Animated.timing(horizontalAnim, {
+              toValue: 1,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+            Animated.timing(horizontalAnim, {
+              toValue: 0,
+              duration: 2000,
+              useNativeDriver: true,
+            }),
+          ]),
+        ])
+      ).start();
+    };
+    
+    const timer = setTimeout(startAnimation, delay);
+    return () => clearTimeout(timer);
+  }, [bounceAnim, horizontalAnim, delay]);
+  
+  const translateY = bounceAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -150],
+  });
+  
+  const translateX = horizontalAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-50, 50],
+  });
+  
+  return (
+    <Animated.View
+      style={[
+        builtInStyles.ball,
+        { 
+          backgroundColor: color,
+          transform: [{ translateY }, { translateX }],
+        },
+      ]}
+    />
+  );
+}
+
+const builtInStyles = StyleSheet.create({
+  container: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#1a1a2e',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  animatedBackground: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 100,
+    flexDirection: 'row',
+    gap: 30,
+  },
+  ball: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  labelContainer: {
+    position: 'absolute',
+    top: 40,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+});
 
 export default function ProtectedPreviewScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [useBuiltInVideo, setUseBuiltInVideo] = useState(true);
+  const [videoStatus, setVideoStatus] = useState<'loading' | 'playing' | 'error'>('loading');
+  const videoRef = useRef<Video>(null);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
-  const { developerMode } = useDeveloperMode();
   const {
     protectedSettings,
     updateProtectedSettings,
     developerModeEnabled,
+    showTestingWatermark,
+    protocols,
     presentationMode,
     mlSafetyEnabled,
-    protocols,
   } = useProtocol();
 
   const protocolEnabled = protocols.protected?.enabled ?? true;
-
   const simulateBodyDetected = protectedSettings.bodyDetectionEnabled;
 
   const compatibleVideos = useMemo(() => {
@@ -58,13 +417,36 @@ export default function ProtectedPreviewScreen() {
     }
   }, [selectedVideoId, protectedSettings.replacementVideoId, updateProtectedSettings]);
 
+  // Fade in/out animation for overlay
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: simulateBodyDetected ? 1 : 0,
+      duration: protectedSettings.blurFallback ? 300 : 150,
+      useNativeDriver: true,
+    }).start();
+  }, [simulateBodyDetected, fadeAnim, protectedSettings.blurFallback]);
+
   const selectedVideo = compatibleVideos.find(video => video.id === selectedVideoId) || null;
   const showCamera = permission?.granted && Platform.OS !== 'web';
+  
+  // Determine which video source to use
+  const hasVideoSource = useBuiltInVideo || selectedVideo;
+  
+  const handleVideoStatusUpdate = (status: AVPlaybackStatus) => {
+    if (status.isLoaded) {
+      if (status.isPlaying) {
+        setVideoStatus('playing');
+      }
+    } else if ('error' in status) {
+      setVideoStatus('error');
+      console.error('[ProtectedPreview] Video error:', status.error);
+    }
+  };
 
   return (
     <View style={styles.container}>
       <TestingWatermark 
-        visible={developerMode.showWatermark}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
       />
@@ -102,6 +484,13 @@ export default function ProtectedPreviewScreen() {
             </View>
           )}
         </View>
+        
+        {developerModeEnabled && (
+          <View style={styles.protocolBadge}>
+            <FlaskConical size={14} color="#ffcc00" />
+            <Text style={styles.protocolBadgeText}>Developer Mode Active</Text>
+          </View>
+        )}
 
         <View style={styles.previewCard}>
           <View style={styles.previewHeader}>
@@ -132,29 +521,45 @@ export default function ProtectedPreviewScreen() {
             )}
 
             {simulateBodyDetected && (
-              <View style={styles.overlay}>
-                {selectedVideo ? (
-                  <Video
-                    source={{ uri: selectedVideo.uri }}
-                    style={styles.overlayVideo}
-                    shouldPlay
-                    isLooping
-                    resizeMode={ResizeMode.COVER}
-                  />
+              <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+                {hasVideoSource ? (
+                  <>
+                    {useBuiltInVideo ? (
+                      <BuiltInVideoOverlay onStatusChange={setVideoStatus} />
+                    ) : selectedVideo ? (
+                      <Video
+                        ref={videoRef}
+                        source={{ uri: selectedVideo.uri }}
+                        style={styles.overlayVideo}
+                        shouldPlay
+                        isLooping
+                        resizeMode={ResizeMode.COVER}
+                        onPlaybackStatusUpdate={handleVideoStatusUpdate}
+                      />
+                    ) : null}
+                    {videoStatus === 'playing' && (
+                      <View style={styles.statusBadge}>
+                        <CheckCircle size={12} color="#00ff88" />
+                        <Text style={styles.statusBadgeText}>Video Playing</Text>
+                      </View>
+                    )}
+                  </>
                 ) : (
                   <View style={styles.overlayFallback}>
                     <Film size={24} color="rgba(255,255,255,0.6)" />
                     <Text style={styles.overlayFallbackText}>
-                      Select a compatible video to enable replacement.
+                      Enable built-in video or select a compatible video.
                     </Text>
                   </View>
                 )}
-                {protectedSettings.showProtectedBadge && (
+                {protectedSettings.showProtectedBadge && selectedVideo && (
                   <View style={styles.overlayLabel}>
-                    <Text style={styles.overlayLabelText}>Protected Replacement Active</Text>
+                    <Text style={styles.overlayLabelText}>
+                      {useBuiltInVideo ? 'Built-in Test Video Active' : 'Protected Replacement Active'}
+                    </Text>
                   </View>
                 )}
-              </View>
+              </Animated.View>
             )}
           </View>
 
@@ -166,6 +571,21 @@ export default function ProtectedPreviewScreen() {
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={simulateBodyDetected ? '#ffffff' : '#888888'}
               disabled={!developerModeEnabled}
+            />
+          </View>
+          
+          <View style={styles.toggleRow}>
+            <View style={styles.toggleLabelContainer}>
+              <Text style={styles.toggleLabel}>Use Built-in Test Video</Text>
+              <Text style={styles.toggleHintSmall}>
+                Animated test pattern - no upload needed
+              </Text>
+            </View>
+            <Switch
+              value={useBuiltInVideo}
+              onValueChange={setUseBuiltInVideo}
+              trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#8a2be2' }}
+              thumbColor={useBuiltInVideo ? '#ffffff' : '#888888'}
             />
           </View>
           
@@ -228,12 +648,12 @@ export default function ProtectedPreviewScreen() {
 
           <View style={styles.settingRow}>
             <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Show Protected Badge</Text>
-              <Text style={styles.settingHint}>Display protection indicator</Text>
+              <Text style={styles.settingLabel}>Show Overlay Label</Text>
+              <Text style={styles.settingHint}>Display "Protected" indicator</Text>
             </View>
             <Switch
               value={protectedSettings.showProtectedBadge}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ showProtectedBadge: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateProtectedSettings({ showProtectedBadge: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.showProtectedBadge ? '#ffffff' : '#888888'}
@@ -273,7 +693,7 @@ export default function ProtectedPreviewScreen() {
             </View>
             <Switch
               value={protectedSettings.blurFallback}
-              onValueChange={(val) => developerModeEnabled && updateProtectedSettings({ blurFallback: val })}
+              onValueChange={(val) => { if (developerModeEnabled) updateProtectedSettings({ blurFallback: val }); }}
               disabled={!developerModeEnabled}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={protectedSettings.blurFallback ? '#ffffff' : '#888888'}
@@ -360,14 +780,14 @@ const styles = StyleSheet.create({
   },
   protocolBannerTitle: {
     fontSize: 13,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
   },
   protocolBannerStatus: {
     fontSize: 10,
     color: '#00ff88',
     marginTop: 2,
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   lockedIndicator: {
     width: 24,
@@ -376,6 +796,23 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 107, 53, 0.2)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  protocolBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(255, 204, 0, 0.1)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 204, 0, 0.3)',
+  },
+  protocolBadgeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#ffcc00',
   },
   previewCard: {
     backgroundColor: 'rgba(255,255,255,0.05)',
@@ -393,7 +830,7 @@ const styles = StyleSheet.create({
   },
   previewTitle: {
     fontSize: 16,
-    fontWeight: '700' as const,
+    fontWeight: '700',
     color: '#ffffff',
   },
   previewSubtitle: {
@@ -420,7 +857,7 @@ const styles = StyleSheet.create({
   cameraFallbackText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   permissionButton: {
     marginTop: 12,
@@ -431,7 +868,7 @@ const styles = StyleSheet.create({
   },
   permissionButtonText: {
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#0a0a0a',
   },
   overlay: {
@@ -449,7 +886,7 @@ const styles = StyleSheet.create({
   overlayFallbackText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.7)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   overlayLabel: {
     position: 'absolute',
@@ -464,7 +901,7 @@ const styles = StyleSheet.create({
   overlayLabelText: {
     fontSize: 12,
     color: '#00ff88',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   toggleRow: {
     flexDirection: 'row',
@@ -474,12 +911,37 @@ const styles = StyleSheet.create({
   toggleLabel: {
     fontSize: 13,
     color: '#ffffff',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
   toggleHint: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.5)',
     marginTop: 6,
+  },
+  toggleLabelContainer: {
+    flex: 1,
+  },
+  toggleHintSmall: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.4)',
+    marginTop: 2,
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: '600' as const,
+    color: '#00ff88',
   },
   sensitivityRow: {
     flexDirection: 'row',
@@ -502,7 +964,7 @@ const styles = StyleSheet.create({
   },
   sensitivityBtnText: {
     fontSize: 11,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: 'rgba(255,255,255,0.6)',
   },
   sensitivityBtnTextActive: {
@@ -548,7 +1010,7 @@ const styles = StyleSheet.create({
   },
   selectorTitle: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
     marginBottom: 10,
   },
@@ -559,7 +1021,7 @@ const styles = StyleSheet.create({
   emptyStateText: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.6)',
-    textAlign: 'center' as const,
+    textAlign: 'center',
   },
   openLibraryButton: {
     paddingHorizontal: 16,
@@ -569,7 +1031,7 @@ const styles = StyleSheet.create({
   },
   openLibraryButtonText: {
     fontSize: 12,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#00aaff',
   },
   videoList: {
@@ -601,7 +1063,7 @@ const styles = StyleSheet.create({
   videoOptionBadge: {
     fontSize: 10,
     color: '#00ff88',
-    fontWeight: '600' as const,
+    fontWeight: '600',
     marginLeft: 8,
   },
   settingsCard: {
@@ -610,7 +1072,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.1)',
-    marginTop: 16,
+    marginBottom: 16,
   },
   settingsHeader: {
     flexDirection: 'row',
@@ -623,7 +1085,7 @@ const styles = StyleSheet.create({
   },
   settingsTitle: {
     fontSize: 14,
-    fontWeight: '600' as const,
+    fontWeight: '600',
     color: '#ffffff',
     flex: 1,
   },
@@ -639,7 +1101,7 @@ const styles = StyleSheet.create({
   settingsLockedText: {
     fontSize: 10,
     color: '#ff6b35',
-    fontWeight: '500' as const,
+    fontWeight: '500',
   },
   settingRow: {
     flexDirection: 'row',
@@ -655,7 +1117,7 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 13,
-    fontWeight: '500' as const,
+    fontWeight: '500',
     color: '#ffffff',
   },
   settingHint: {
@@ -679,11 +1141,11 @@ const styles = StyleSheet.create({
   },
   segmentButtonText: {
     fontSize: 11,
-    fontWeight: '500' as const,
+    fontWeight: '500',
     color: 'rgba(255,255,255,0.6)',
   },
   segmentButtonTextActive: {
     color: '#0a0a0a',
-    fontWeight: '600' as const,
+    fontWeight: '600',
   },
 });

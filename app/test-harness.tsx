@@ -8,14 +8,17 @@ import {
   Platform,
   ScrollView,
   UIManager,
+  Alert,
 } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { WebView } from 'react-native-webview';
-import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity, Shield } from 'lucide-react-native';
+import { ChevronLeft, Monitor, Film, FlaskConical, Settings, Lock, Activity, Shield, Play } from 'lucide-react-native';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
+import { useDeviceTemplate } from '@/contexts/DeviceTemplateContext';
 import { formatVideoUriForWebView, isLocalFileUri } from '@/utils/videoServing';
+import { createMediaInjectionScript, CONSOLE_CAPTURE_SCRIPT } from '@/constants/browserScripts';
+import { getBuiltInVideoUri } from '@/constants/builtInTestVideo';
 import TestingWatermark from '@/components/TestingWatermark';
 
 const TEST_HARNESS_HTML = `
@@ -24,93 +27,355 @@ const TEST_HARNESS_HTML = `
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Camera Test Harness</title>
+    <title>Camera Test Harness - Protocol 4</title>
     <style>
+      * { box-sizing: border-box; }
       body {
         margin: 0;
         background: #0a0a0a;
         color: #ffffff;
         font-family: -apple-system, system-ui, sans-serif;
+        min-height: 100vh;
       }
       .container {
         padding: 12px;
       }
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+      }
       .status {
-        font-size: 12px;
-        color: rgba(255, 255, 255, 0.6);
-        margin-bottom: 10px;
+        font-size: 14px;
+        color: rgba(255, 255, 255, 0.8);
+        padding: 8px 12px;
+        background: rgba(0, 255, 136, 0.1);
+        border-radius: 8px;
+        border: 1px solid rgba(0, 255, 136, 0.3);
+      }
+      .status.error {
+        background: rgba(255, 100, 100, 0.1);
+        border-color: rgba(255, 100, 100, 0.3);
+      }
+      .status.success {
+        background: rgba(0, 255, 136, 0.2);
+        color: #00ff88;
       }
       .frame {
         position: relative;
-        border-radius: 12px;
+        border-radius: 16px;
         overflow: hidden;
         background: #111111;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        height: 360px;
+        border: 2px solid rgba(255, 255, 255, 0.1);
+        aspect-ratio: 9/16;
+        max-height: 70vh;
+        margin: 0 auto;
       }
-      video {
+      video, canvas {
         width: 100%;
         height: 100%;
         object-fit: cover;
+        display: block;
       }
       #overlay {
         position: absolute;
         inset: 0;
         display: none;
-        background: #000000;
+        z-index: 10;
       }
       .label {
         position: absolute;
-        bottom: 10px;
-        left: 10px;
-        right: 10px;
+        bottom: 12px;
+        left: 12px;
+        right: 12px;
         text-align: center;
-        background: rgba(0, 0, 0, 0.6);
-        padding: 6px 10px;
-        border-radius: 8px;
-        font-size: 12px;
+        background: rgba(0, 0, 0, 0.75);
+        padding: 10px 14px;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
         color: #00ff88;
+        z-index: 20;
+        backdrop-filter: blur(4px);
+      }
+      .badge {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: rgba(138, 43, 226, 0.9);
+        color: white;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        z-index: 20;
+      }
+      .controls {
+        margin-top: 16px;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        flex: 1;
+        min-width: 120px;
+        padding: 12px 16px;
+        border: none;
+        border-radius: 10px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .btn-primary {
+        background: #00ff88;
+        color: #0a0a0a;
+      }
+      .btn-secondary {
+        background: rgba(255, 255, 255, 0.1);
+        color: #ffffff;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+      .btn:active {
+        transform: scale(0.98);
+      }
+      .info {
+        margin-top: 16px;
+        padding: 12px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 10px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.6);
+        line-height: 1.5;
+      }
+      .info-title {
+        color: #ffffff;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      .metric {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      }
+      .metric:last-child {
+        border-bottom: none;
+      }
+      .metric-value {
+        color: #00ff88;
+        font-weight: 600;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <div class="status" id="status">Requesting camera access...</div>
+      <div class="header">
+        <div class="status" id="status">Initializing Protocol 4...</div>
+      </div>
+      
       <div class="frame">
         <video id="camera" autoplay playsinline muted></video>
         <video id="overlay" autoplay playsinline muted loop></video>
+        <canvas id="fallbackCanvas" style="display:none;"></canvas>
+        <div class="badge">PROTOCOL 4</div>
         <div class="label" id="label">Local Test Harness</div>
       </div>
+      
+      <div class="controls">
+        <button class="btn btn-primary" id="startBtn">Start Camera Test</button>
+        <button class="btn btn-secondary" id="toggleBtn">Toggle Overlay</button>
+      </div>
+      
+      <div class="info">
+        <div class="info-title">Stream Metrics</div>
+        <div class="metric">
+          <span>Stream Type</span>
+          <span class="metric-value" id="streamType">--</span>
+        </div>
+        <div class="metric">
+          <span>Resolution</span>
+          <span class="metric-value" id="resolution">--</span>
+        </div>
+        <div class="metric">
+          <span>FPS</span>
+          <span class="metric-value" id="fps">--</span>
+        </div>
+        <div class="metric">
+          <span>Injection Status</span>
+          <span class="metric-value" id="injectionStatus">Pending</span>
+        </div>
+      </div>
     </div>
+    
     <script>
       const statusEl = document.getElementById('status');
       const cameraVideo = document.getElementById('camera');
       const overlayVideo = document.getElementById('overlay');
-
-      async function startCamera() {
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          cameraVideo.srcObject = stream;
-          statusEl.textContent = 'Camera stream active.';
-        } catch (error) {
-          statusEl.textContent = 'Camera unavailable. Check permissions.';
+      const fallbackCanvas = document.getElementById('fallbackCanvas');
+      const labelEl = document.getElementById('label');
+      const startBtn = document.getElementById('startBtn');
+      const toggleBtn = document.getElementById('toggleBtn');
+      
+      // Metrics elements
+      const streamTypeEl = document.getElementById('streamType');
+      const resolutionEl = document.getElementById('resolution');
+      const fpsEl = document.getElementById('fps');
+      const injectionStatusEl = document.getElementById('injectionStatus');
+      
+      let currentStream = null;
+      let overlayEnabled = false;
+      let frameCount = 0;
+      let lastFpsTime = Date.now();
+      
+      function updateStatus(text, type) {
+        statusEl.textContent = text;
+        statusEl.className = 'status' + (type ? ' ' + type : '');
+      }
+      
+      function updateMetrics(stream) {
+        if (!stream) return;
+        
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          const settings = videoTrack.getSettings();
+          streamTypeEl.textContent = stream._isBuiltIn ? 'Built-in Test' : 'Simulated';
+          resolutionEl.textContent = (settings.width || '?') + 'x' + (settings.height || '?');
+          injectionStatusEl.textContent = 'Active';
+          injectionStatusEl.style.color = '#00ff88';
         }
       }
-
-      window.__setOverlayVideo = (url) => {
+      
+      // FPS counter
+      setInterval(function() {
+        const now = Date.now();
+        const elapsed = (now - lastFpsTime) / 1000;
+        if (elapsed > 0) {
+          const currentFps = Math.round(frameCount / elapsed);
+          fpsEl.textContent = currentFps + ' fps';
+        }
+        frameCount = 0;
+        lastFpsTime = now;
+      }, 1000);
+      
+      // Frame counter for video
+      function countFrames() {
+        frameCount++;
+        if (cameraVideo.readyState >= 2) {
+          requestAnimationFrame(countFrames);
+        }
+      }
+      
+      async function startCamera() {
+        updateStatus('Requesting camera access...', '');
+        
+        try {
+          // This will be intercepted by the injection script
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: 'user',
+              width: { ideal: 1080 },
+              height: { ideal: 1920 },
+              aspectRatio: { ideal: 9/16 }
+            },
+            audio: false
+          });
+          
+          currentStream = stream;
+          cameraVideo.srcObject = stream;
+          
+          // Wait for video to start playing
+          await new Promise(function(resolve) {
+            cameraVideo.onloadedmetadata = function() {
+              cameraVideo.play().then(resolve).catch(resolve);
+            };
+          });
+          
+          updateStatus('Camera injection active - video playing!', 'success');
+          labelEl.textContent = stream._isBuiltIn ? 'Built-in Test Video Active' : 'Simulated Camera Feed';
+          updateMetrics(stream);
+          
+          // Start frame counting
+          requestAnimationFrame(countFrames);
+          
+          // Notify React Native
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'testHarnessStarted',
+              payload: { success: true, isBuiltIn: stream._isBuiltIn || false }
+            }));
+          }
+          
+        } catch (error) {
+          console.error('Camera error:', error);
+          updateStatus('Camera test failed: ' + error.message, 'error');
+          labelEl.textContent = 'Test Failed';
+          injectionStatusEl.textContent = 'Failed';
+          injectionStatusEl.style.color = '#ff6b6b';
+          
+          // Try built-in fallback directly
+          if (window.__createBuiltInVideoStream) {
+            try {
+              updateStatus('Trying built-in video fallback...', '');
+              const fallbackStream = await window.__createBuiltInVideoStream({ patternType: 'bouncing_ball' });
+              currentStream = fallbackStream;
+              cameraVideo.srcObject = fallbackStream;
+              await cameraVideo.play();
+              updateStatus('Built-in video fallback active!', 'success');
+              labelEl.textContent = 'Built-in Test Video';
+              updateMetrics(fallbackStream);
+              requestAnimationFrame(countFrames);
+            } catch (fallbackError) {
+              console.error('Fallback also failed:', fallbackError);
+              updateStatus('All methods failed', 'error');
+            }
+          }
+        }
+      }
+      
+      function toggleOverlay() {
+        overlayEnabled = !overlayEnabled;
+        overlayVideo.style.display = overlayEnabled ? 'block' : 'none';
+        toggleBtn.textContent = overlayEnabled ? 'Hide Overlay' : 'Show Overlay';
+        
+        if (overlayEnabled && !overlayVideo.src) {
+          labelEl.textContent = 'Overlay enabled (no video set)';
+        }
+      }
+      
+      window.__setOverlayVideo = function(url) {
         if (!url) return;
         overlayVideo.src = url;
-        overlayVideo.play().catch(() => {});
+        overlayVideo.load();
+        overlayVideo.play().catch(function() {});
+        console.log('[TestHarness] Overlay video set:', url.substring(0, 50));
       };
-
-      window.__toggleOverlay = (enabled) => {
+      
+      window.__toggleOverlay = function(enabled) {
+        overlayEnabled = enabled;
         overlayVideo.style.display = enabled ? 'block' : 'none';
-        statusEl.textContent = enabled
-          ? 'Overlay replacement active.'
-          : 'Overlay replacement disabled.';
+        toggleBtn.textContent = enabled ? 'Hide Overlay' : 'Show Overlay';
+        updateStatus(enabled ? 'Overlay replacement active' : 'Camera injection active', 'success');
       };
-
-      startCamera();
+      
+      window.__getTestHarnessStatus = function() {
+        return {
+          hasStream: !!currentStream,
+          overlayEnabled: overlayEnabled,
+          isBuiltIn: currentStream && currentStream._isBuiltIn,
+          tracks: currentStream ? currentStream.getTracks().length : 0
+        };
+      };
+      
+      // Event listeners
+      startBtn.addEventListener('click', startCamera);
+      toggleBtn.addEventListener('click', toggleOverlay);
+      
+      // Auto-start camera test
+      setTimeout(startCamera, 500);
+      
+      console.log('[TestHarness] Protocol 4 initialized');
     </script>
   </body>
 </html>
@@ -119,15 +384,18 @@ const TEST_HARNESS_HTML = `
 export default function TestHarnessScreen() {
   const webViewRef = useRef<WebView>(null);
   const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+  const [useBuiltInVideo, setUseBuiltInVideo] = useState(true);
+  const [testStatus, setTestStatus] = useState<'idle' | 'running' | 'success' | 'failed'>('idle');
 
   const { savedVideos, isVideoReady } = useVideoLibrary();
-  const { developerMode } = useDeveloperMode();
+  const { activeTemplate, stealthMode } = useDeviceTemplate();
   const {
     harnessSettings,
     updateHarnessSettings,
     developerModeEnabled,
     presentationMode,
     mlSafetyEnabled,
+    showTestingWatermark,
     protocols,
   } = useProtocol();
 
@@ -151,9 +419,6 @@ export default function TestHarnessScreen() {
     });
   }, [savedVideos, isVideoReady]);
 
-  const webViewOriginWhitelist = useMemo(() => ['about:blank'], []);
-  const allowLocalFileAccess = Platform.OS === 'android' && Boolean(selectedVideo && isLocalFileUri(selectedVideo.uri));
-
   useEffect(() => {
     if (!selectedVideoId && compatibleVideos.length > 0) {
       setSelectedVideoId(compatibleVideos[0].id);
@@ -161,6 +426,36 @@ export default function TestHarnessScreen() {
   }, [selectedVideoId, compatibleVideos]);
 
   const selectedVideo = compatibleVideos.find(video => video.id === selectedVideoId) || null;
+
+  // Create devices with built-in video for testing
+  const testDevices = useMemo(() => {
+    if (!activeTemplate) {
+      // Create a default test device if no template
+      return [{
+        id: 'test_front_camera',
+        name: 'Test Front Camera',
+        type: 'camera' as const,
+        facing: 'front' as const,
+        simulationEnabled: true,
+        assignedVideoUri: useBuiltInVideo ? getBuiltInVideoUri('bouncing_ball') : (selectedVideo?.uri || getBuiltInVideoUri('bouncing_ball')),
+        capabilities: {
+          videoResolutions: [{ width: 1080, height: 1920, maxFps: 30 }],
+        },
+      }];
+    }
+    
+    // Use template devices but assign built-in video for testing
+    return activeTemplate.captureDevices.map(device => ({
+      ...device,
+      simulationEnabled: true,
+      assignedVideoUri: useBuiltInVideo ? getBuiltInVideoUri('bouncing_ball') : (selectedVideo?.uri || device.assignedVideoUri || getBuiltInVideoUri('bouncing_ball')),
+    }));
+  }, [activeTemplate, useBuiltInVideo, selectedVideo]);
+
+  // Generate the injection script with test devices
+  const injectionScript = useMemo(() => {
+    return CONSOLE_CAPTURE_SCRIPT + createMediaInjectionScript(testDevices, true);
+  }, [testDevices]);
 
   const applyOverlaySettings = useCallback(() => {
     if (!webViewRef.current) return;
@@ -188,7 +483,7 @@ export default function TestHarnessScreen() {
   return (
     <View style={styles.container}>
       <TestingWatermark 
-        visible={developerMode.showWatermark}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
       />
@@ -332,19 +627,82 @@ export default function TestHarnessScreen() {
           ) : (
             <WebView
               ref={webViewRef}
-              originWhitelist={webViewOriginWhitelist}
+              originWhitelist={['*']}
               source={{ html: TEST_HARNESS_HTML }}
               style={styles.webView}
-              onLoadEnd={applyOverlaySettings}
+              injectedJavaScriptBeforeContentLoaded={injectionScript}
+              onLoadStart={() => setTestStatus('running')}
+              onLoadEnd={() => {
+                applyOverlaySettings();
+                console.log('[TestHarness] WebView loaded, injection script applied');
+              }}
+              onMessage={(event) => {
+                try {
+                  const data = JSON.parse(event.nativeEvent.data);
+                  if (data.type === 'console') {
+                    console.log(`[TestHarness WebView ${data.level}]`, data.message);
+                  } else if (data.type === 'testHarnessStarted') {
+                    setTestStatus(data.payload?.success ? 'success' : 'failed');
+                    if (data.payload?.success) {
+                      console.log('[TestHarness] Camera injection successful!');
+                    }
+                  } else if (data.type === 'cameraIntercepted') {
+                    console.log('[TestHarness] Camera intercepted:', data.payload);
+                    setTestStatus('success');
+                  }
+                } catch {
+                  console.log('[TestHarness Raw]', event.nativeEvent.data);
+                }
+              }}
               javaScriptEnabled
               domStorageEnabled
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
-              allowFileAccess={allowLocalFileAccess}
-              allowFileAccessFromFileURLs={allowLocalFileAccess}
-              allowUniversalAccessFromFileURLs={allowLocalFileAccess}
+              allowFileAccess
+              allowFileAccessFromFileURLs
+              allowUniversalAccessFromFileURLs
             />
           )}
+        </View>
+        
+        {/* Test Status Indicator */}
+        <View style={styles.testStatusCard}>
+          <View style={styles.testStatusHeader}>
+            <Play size={16} color={testStatus === 'success' ? '#00ff88' : testStatus === 'failed' ? '#ff6b6b' : '#00aaff'} />
+            <Text style={styles.testStatusTitle}>Injection Test Status</Text>
+          </View>
+          <View style={styles.testStatusContent}>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Built-in Test Video</Text>
+              <Switch
+                value={useBuiltInVideo}
+                onValueChange={setUseBuiltInVideo}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={useBuiltInVideo ? '#ffffff' : '#888888'}
+              />
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusLabel}>Status</Text>
+              <Text style={[
+                styles.statusValue,
+                testStatus === 'success' && styles.statusValueSuccess,
+                testStatus === 'failed' && styles.statusValueError,
+              ]}>
+                {testStatus === 'idle' ? 'Ready' : 
+                 testStatus === 'running' ? 'Testing...' :
+                 testStatus === 'success' ? 'Injection Active!' : 'Failed'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.reloadButton}
+              onPress={() => {
+                setTestStatus('running');
+                webViewRef.current?.reload();
+              }}
+            >
+              <Text style={styles.reloadButtonText}>Reload Test</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Settings Card */}
@@ -657,5 +1015,65 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255,255,255,0.5)',
     marginTop: 2,
+  },
+  testStatusCard: {
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginTop: 12,
+  },
+  testStatusHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  testStatusTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  },
+  testStatusContent: {
+    gap: 12,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusLabel: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
+  },
+  statusValue: {
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#00aaff',
+  },
+  statusValueSuccess: {
+    color: '#00ff88',
+  },
+  statusValueError: {
+    color: '#ff6b6b',
+  },
+  reloadButton: {
+    backgroundColor: 'rgba(0, 255, 136, 0.15)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 255, 136, 0.3)',
+  },
+  reloadButtonText: {
+    color: '#00ff88',
+    fontSize: 13,
+    fontWeight: '600' as const,
   },
 });

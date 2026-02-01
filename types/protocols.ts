@@ -3,7 +3,7 @@
  * Defines configuration for all 4 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -25,33 +25,111 @@ export interface StandardInjectionSettings {
   loggingLevel: 'none' | 'minimal' | 'verbose';
 }
 
-// Protocol 2: Allowlist Mode Settings  
-export interface AllowlistSettings {
+// Protocol 2: Advanced Relay Settings (Replaces old Allowlist Mode)
+// This is the most technically advanced video injection system featuring:
+// - Multi-source video pipeline with hot-switching
+// - WebRTC local relay with virtual TURN emulation
+// - GPU-accelerated video processing
+// - Adaptive Stream Intelligence (ASI)
+// - Cross-device live streaming support
+// - Cryptographic stream validation
+export interface AdvancedRelaySettings {
   enabled: boolean;
+  
+  // Video Pipeline Settings
+  pipeline: {
+    hotSwitchThresholdMs: number;
+    minAcceptableFps: number;
+    enableParallelDecoding: boolean;
+  };
+  
+  // WebRTC Relay Settings
+  webrtc: {
+    enabled: boolean;
+    virtualTurnEnabled: boolean;
+    sdpManipulationEnabled: boolean;
+    stealthMode: boolean;
+  };
+  
+  // GPU Processing Settings
+  gpu: {
+    enabled: boolean;
+    qualityPreset: 'ultra' | 'high' | 'medium' | 'low' | 'potato';
+    noiseInjection: boolean;
+    noiseIntensity: number;
+  };
+  
+  // Adaptive Stream Intelligence Settings
+  asi: {
+    enabled: boolean;
+    siteFingerprinting: boolean;
+    autoResolutionMatching: boolean;
+    antiDetectionMeasures: boolean;
+    storeHistory: boolean;
+  };
+  
+  // Cross-Device Streaming Settings
+  crossDevice: {
+    enabled: boolean;
+    discoveryMethod: 'manual' | 'mdns' | 'qr';
+    targetLatencyMs: number;
+    autoReconnect: boolean;
+  };
+  
+  // Cryptographic Validation Settings
+  crypto: {
+    enabled: boolean;
+    frameSigning: boolean;
+    tamperDetection: boolean;
+    keyRotationIntervalMs: number;
+  };
+  
+  // Legacy compatibility - domains still supported for filtering
   domains: string[];
   blockByDefault: boolean;
   showBlockedNotification: boolean;
   autoAddCurrentSite: boolean;
 }
 
+// Legacy alias for backwards compatibility
+export type AllowlistSettings = AdvancedRelaySettings;
+
+// Protocol 5: Holographic Stream Injection (HSI)
+export interface HolographicSettings {
+  enabled: boolean;
+  // Network Layer
+  useWebSocketBridge: boolean;
+  bridgePort: number;
+  latencyMode: 'ultra-low' | 'balanced' | 'quality';
+  
+  // Stream Synthesis
+  canvasResolution: '720p' | '1080p' | '4k';
+  frameRate: 30 | 60;
+  noiseInjectionLevel: number; // 0-1.0, adds sensor noise to bypass "too clean" checks
+  
+  // SDP Mutation
+  sdpMasquerade: boolean; // Rewrites SDP to look like hardware encoder
+  emulatedDevice: 'iphone-front' | 'webcam-c920' | 'obs-virtual';
+}
+
 // Protocol 3: Protected Preview Settings
 export interface ProtectedPreviewSettings {
-  enabled: boolean;
-  bodyDetectionSensitivity: 'low' | 'medium' | 'high';
-  swapDelayMs: number;
-  showOverlayLabel: boolean;
-  fallbackToPlaceholder: boolean;
-  autoStartCamera: boolean;
+  bodyDetectionEnabled: boolean;
+  sensitivityLevel: 'low' | 'medium' | 'high';
+  replacementVideoId: string | null;
+  showProtectedBadge: boolean;
+  autoTriggerOnFace: boolean;
+  blurFallback: boolean;
 }
 
 // Protocol 4: Test Harness Settings
 export interface TestHarnessSettings {
-  enabled: boolean;
-  autoRequestCamera: boolean;
-  showDebugOverlay: boolean;
-  enableConsoleLogging: boolean;
-  simulateLowBandwidth: boolean;
-  recordTestResults: boolean;
+  overlayEnabled: boolean;
+  showDebugInfo: boolean;
+  captureFrameRate: number;
+  enableAudioPassthrough: boolean;
+  mirrorVideo: boolean;
+  testPatternOnNoVideo: boolean;
 }
 
 // Combined Protocol Settings
@@ -60,6 +138,7 @@ export interface ProtocolSettings {
   allowlist: AllowlistSettings;
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
+  holographic: HolographicSettings;
 }
 
 // Developer Mode Settings
@@ -86,30 +165,94 @@ export const DEFAULT_STANDARD_SETTINGS: StandardInjectionSettings = {
   loggingLevel: 'minimal',
 };
 
-export const DEFAULT_ALLOWLIST_SETTINGS: AllowlistSettings = {
-  enabled: false,
+export const DEFAULT_ADVANCED_RELAY_SETTINGS: AdvancedRelaySettings = {
+  enabled: true,
+  
+  // Video Pipeline - optimized for quality
+  pipeline: {
+    hotSwitchThresholdMs: 50,
+    minAcceptableFps: 15,
+    enableParallelDecoding: true,
+  },
+  
+  // WebRTC Relay - maximum stealth
+  webrtc: {
+    enabled: true,
+    virtualTurnEnabled: true,
+    sdpManipulationEnabled: true,
+    stealthMode: true,
+  },
+  
+  // GPU Processing - balanced quality
+  gpu: {
+    enabled: true,
+    qualityPreset: 'high',
+    noiseInjection: true,
+    noiseIntensity: 0.02,
+  },
+  
+  // ASI - intelligent adaptation
+  asi: {
+    enabled: true,
+    siteFingerprinting: true,
+    autoResolutionMatching: true,
+    antiDetectionMeasures: true,
+    storeHistory: true,
+  },
+  
+  // Cross-Device - ready for pairing
+  crossDevice: {
+    enabled: true,
+    discoveryMethod: 'qr',
+    targetLatencyMs: 100,
+    autoReconnect: true,
+  },
+  
+  // Crypto - secure by default
+  crypto: {
+    enabled: true,
+    frameSigning: true,
+    tamperDetection: true,
+    keyRotationIntervalMs: 3600000, // 1 hour
+  },
+  
+  // Legacy domain filtering (preserved for compatibility)
   domains: [],
-  blockByDefault: true,
-  showBlockedNotification: true,
+  blockByDefault: false,
+  showBlockedNotification: false,
   autoAddCurrentSite: false,
 };
 
-export const DEFAULT_PROTECTED_SETTINGS: ProtectedPreviewSettings = {
+// Legacy alias for backwards compatibility
+export const DEFAULT_ALLOWLIST_SETTINGS = DEFAULT_ADVANCED_RELAY_SETTINGS;
+export const DEFAULT_HOLOGRAPHIC_SETTINGS: HolographicSettings = {
   enabled: true,
-  bodyDetectionSensitivity: 'medium',
-  swapDelayMs: 150,
-  showOverlayLabel: true,
-  fallbackToPlaceholder: true,
-  autoStartCamera: true,
+  useWebSocketBridge: true,
+  bridgePort: 8080,
+  latencyMode: 'balanced',
+  canvasResolution: '1080p',
+  frameRate: 30,
+  noiseInjectionLevel: 0.1,
+  sdpMasquerade: true,
+  emulatedDevice: 'iphone-front',
+};
+
+export const DEFAULT_PROTECTED_SETTINGS: ProtectedPreviewSettings = {
+  bodyDetectionEnabled: true,
+  sensitivityLevel: 'medium',
+  replacementVideoId: null,
+  showProtectedBadge: true,
+  autoTriggerOnFace: true,
+  blurFallback: true,
 };
 
 export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
-  enabled: true,
-  autoRequestCamera: true,
-  showDebugOverlay: false,
-  enableConsoleLogging: true,
-  simulateLowBandwidth: false,
-  recordTestResults: false,
+  overlayEnabled: true,
+  showDebugInfo: true,
+  captureFrameRate: 30,
+  enableAudioPassthrough: false,
+  mirrorVideo: false,
+  testPatternOnNoVideo: true,
 };
 
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
@@ -117,6 +260,7 @@ export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   allowlist: DEFAULT_ALLOWLIST_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
+  holographic: DEFAULT_HOLOGRAPHIC_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -145,8 +289,8 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
   },
   allowlist: {
     id: 'allowlist',
-    name: 'Protocol 2: Allowlist Test Mode',
-    description: 'Limits injection to domains you explicitly allow. Recommended for safe testing. Editing requires Developer Mode.',
+    name: 'Protocol 2: Advanced Relay',
+    description: 'The most technically advanced video injection system featuring WebRTC relay, GPU processing, Adaptive Stream Intelligence, cross-device streaming, and cryptographic validation.',
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,
@@ -166,5 +310,13 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     enabled: true,
     isLive: true,
     requiresDeveloperMode: false,
+  },
+  holographic: {
+    id: 'holographic',
+    name: 'Protocol 5: Holographic Stream Injection',
+    description: 'Advanced WebSocket bridge with SDP mutation and canvas-based stream synthesis. The most advanced injection method available.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: true,
   },
 };
