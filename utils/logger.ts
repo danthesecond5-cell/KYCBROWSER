@@ -45,6 +45,8 @@ const LOG_PREFIXES = {
   freeze: '🥶',
 } as const;
 
+const ORIGINAL_CONSOLE_KEY = '__loggerOriginalConsole';
+
 export type FreezeCallback = (freezeInfo: FreezeInfo) => void;
 
 export interface FreezeInfo {
@@ -383,22 +385,23 @@ class Logger {
     const color = LOG_COLORS[level];
     const reset = LOG_COLORS.reset;
     const formattedMessage = `${prefix} [${this.module}] ${message}`;
+    const consoleTarget = (globalThis as Record<string, typeof console>)[ORIGINAL_CONSOLE_KEY] || console;
 
     switch (level) {
       case 'debug':
-        console.debug(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
+        consoleTarget.debug(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
         break;
       case 'info':
-        console.log(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
+        consoleTarget.log(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
         break;
       case 'warn':
-        console.warn(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
+        consoleTarget.warn(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
         break;
       case 'error':
-        console.error(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
+        consoleTarget.error(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
         break;
       case 'freeze':
-        console.error(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
+        consoleTarget.error(`${color}${formattedMessage}${reset}`, data !== undefined ? data : '');
         break;
     }
   }
@@ -475,6 +478,10 @@ export const installConsoleCapture = (): void => {
     error: console.error.bind(console),
     debug: console.debug.bind(console),
   };
+
+  if (!(globalThis as Record<string, typeof original>)[ORIGINAL_CONSOLE_KEY]) {
+    (globalThis as Record<string, typeof original>)[ORIGINAL_CONSOLE_KEY] = original;
+  }
 
   const safeMessageFromArgs = (args: unknown[]): string => {
     const first = args[0];
