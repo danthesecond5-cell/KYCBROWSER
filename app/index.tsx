@@ -1265,7 +1265,6 @@ export default function MotionBrowserScreen() {
             onOpenSiteSettings={() => setShowSiteSettingsModal(true)}
             allowlistStatusLabel={allowlistStatusLabel}
             allowlistBlocked={allowlistBlocked}
-            protocolEnabled={isProtocolEnabled}
             simulationActive={simulationActive}
             useRealSensors={useRealSensors}
             accelData={accelData}

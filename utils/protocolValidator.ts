@@ -12,7 +12,7 @@ import {
   AllowlistSettings,
   ProtectedPreviewSettings,
   TestHarnessSettings,
-  ClaudeProtocolSettings,
+  HolographicSettings,
   DEFAULT_PROTOCOL_SETTINGS,
 } from '@/types/protocols';
 
@@ -190,39 +190,21 @@ export function validateProtectedSettings(settings: Partial<ProtectedPreviewSett
   const suggestions: string[] = [];
 
   // Validate sensitivity level
-  if (settings.bodyDetectionSensitivity !== undefined) {
+  if (settings.sensitivityLevel !== undefined) {
     const validLevels = ['low', 'medium', 'high'];
-    if (!validLevels.includes(settings.bodyDetectionSensitivity)) {
+    if (!validLevels.includes(settings.sensitivityLevel)) {
       errors.push({
         code: 'INVALID_SENSITIVITY',
-        field: 'bodyDetectionSensitivity',
+        field: 'sensitivityLevel',
         message: `Sensitivity must be one of: ${validLevels.join(', ')}`,
         severity: 'error',
       });
     }
   }
 
-  // Validate swap delay
-  if (settings.swapDelayMs !== undefined) {
-    if (settings.swapDelayMs < 0) {
-      errors.push({
-        code: 'INVALID_SWAP_DELAY',
-        field: 'swapDelayMs',
-        message: 'Swap delay cannot be negative',
-        severity: 'error',
-      });
-    } else if (settings.swapDelayMs > 1000) {
-      warnings.push({
-        code: 'HIGH_SWAP_DELAY',
-        field: 'swapDelayMs',
-        message: 'High swap delay may affect user experience',
-      });
-    }
-  }
-
   // Suggestions
-  if (settings.bodyDetectionSensitivity === 'high' && !settings.fallbackToPlaceholder) {
-    suggestions.push('Consider enabling fallback placeholder with high sensitivity detection');
+  if (settings.sensitivityLevel === 'high' && !settings.blurFallback) {
+    suggestions.push('Consider enabling blur fallback with high sensitivity detection');
   }
 
   return {
@@ -243,16 +225,20 @@ export function validateHarnessSettings(settings: Partial<TestHarnessSettings>):
 
   // No critical validation needed for harness settings
   // Add warnings for debugging in production
-  if (settings.showDebugOverlay && settings.enabled) {
-    suggestions.push('Debug overlay is enabled. Consider disabling for production use.');
+  if (settings.showDebugInfo && settings.overlayEnabled) {
+    suggestions.push('Debug info is enabled. Consider disabling for production use.');
   }
 
-  if (settings.simulateLowBandwidth) {
-    warnings.push({
-      code: 'BANDWIDTH_SIMULATION',
-      field: 'simulateLowBandwidth',
-      message: 'Low bandwidth simulation is enabled, performance will be affected',
-    });
+  // Validate capture frame rate
+  if (settings.captureFrameRate !== undefined) {
+    if (settings.captureFrameRate < 1 || settings.captureFrameRate > 60) {
+      errors.push({
+        code: 'INVALID_FRAME_RATE',
+        field: 'captureFrameRate',
+        message: 'Capture frame rate must be between 1 and 60',
+        severity: 'error',
+      });
+    }
   }
 
   return {
@@ -264,82 +250,69 @@ export function validateHarnessSettings(settings: Partial<TestHarnessSettings>):
 }
 
 /**
- * Validate Claude Protocol Settings
+ * Validate Holographic Protocol Settings
  */
-export function validateClaudeSettings(settings: Partial<ClaudeProtocolSettings>): ValidationResult {
+export function validateHolographicSettings(settings: Partial<HolographicSettings>): ValidationResult {
   const errors: ValidationError[] = [];
   const warnings: ValidationWarning[] = [];
   const suggestions: string[] = [];
 
-  // Validate priority level
-  if (settings.priorityLevel !== undefined) {
-    if (settings.priorityLevel < 1 || settings.priorityLevel > 100) {
+  // Validate frame rate
+  if (settings.frameRate !== undefined) {
+    if (settings.frameRate !== 30 && settings.frameRate !== 60) {
       errors.push({
-        code: 'INVALID_PRIORITY',
-        field: 'priorityLevel',
-        message: 'Priority level must be between 1 and 100',
+        code: 'INVALID_FRAME_RATE',
+        field: 'frameRate',
+        message: 'Frame rate must be 30 or 60',
         severity: 'error',
       });
     }
   }
 
-  // Validate injection mode
-  if (settings.injectionMode !== undefined) {
-    const validModes = ['aggressive', 'balanced', 'conservative', 'stealth'];
-    if (!validModes.includes(settings.injectionMode)) {
+  // Validate noise injection level
+  if (settings.noiseInjectionLevel !== undefined) {
+    if (settings.noiseInjectionLevel < 0 || settings.noiseInjectionLevel > 1) {
       errors.push({
-        code: 'INVALID_INJECTION_MODE',
-        field: 'injectionMode',
-        message: `Injection mode must be one of: ${validModes.join(', ')}`,
+        code: 'INVALID_NOISE_LEVEL',
+        field: 'noiseInjectionLevel',
+        message: 'Noise injection level must be between 0 and 1',
         severity: 'error',
       });
     }
   }
 
-  // Validate quality preset
-  if (settings.qualityPreset !== undefined) {
-    const validPresets = ['maximum', 'high', 'balanced', 'performance'];
-    if (!validPresets.includes(settings.qualityPreset)) {
+  // Validate latency mode
+  if (settings.latencyMode !== undefined) {
+    const validModes = ['ultra-low', 'balanced', 'quality'];
+    if (!validModes.includes(settings.latencyMode)) {
       errors.push({
-        code: 'INVALID_QUALITY_PRESET',
-        field: 'qualityPreset',
-        message: `Quality preset must be one of: ${validPresets.join(', ')}`,
+        code: 'INVALID_LATENCY_MODE',
+        field: 'latencyMode',
+        message: `Latency mode must be one of: ${validModes.join(', ')}`,
         severity: 'error',
       });
     }
   }
 
-  // Consistency checks
-  if (settings.injectionMode === 'aggressive' && settings.qualityPreset === 'maximum') {
+  // Validate canvas resolution
+  if (settings.canvasResolution !== undefined) {
+    const validResolutions = ['720p', '1080p', '4k'];
+    if (!validResolutions.includes(settings.canvasResolution)) {
+      errors.push({
+        code: 'INVALID_RESOLUTION',
+        field: 'canvasResolution',
+        message: `Canvas resolution must be one of: ${validResolutions.join(', ')}`,
+        severity: 'error',
+      });
+    }
+  }
+
+  // Performance warnings
+  if (settings.canvasResolution === '4k' && settings.frameRate === 60) {
     warnings.push({
       code: 'HIGH_RESOURCE_USAGE',
-      field: 'injectionMode',
-      message: 'Aggressive mode with maximum quality may cause high resource usage',
-    });
-  }
-
-  if (settings.deepStealthMode && settings.performanceLogging) {
-    suggestions.push('Performance logging may affect stealth. Consider disabling for maximum stealth.');
-  }
-
-  if (settings.redundantStreams && !settings.memoryOptimization) {
-    suggestions.push('Enable memory optimization when using redundant streams to prevent memory issues.');
-  }
-
-  // Feature dependency checks
-  if (settings.aiQualityOptimization && !settings.advancedMetrics) {
-    warnings.push({
-      code: 'MISSING_DEPENDENCY',
-      field: 'aiQualityOptimization',
-      message: 'AI quality optimization works best with advanced metrics enabled',
-    });
-  }
-
-  if (settings.autoRecovery && !settings.healthMonitoring) {
-    warnings.push({
-      code: 'MISSING_DEPENDENCY',
-      field: 'autoRecovery',
-      message: 'Auto recovery requires health monitoring for optimal function',
+      field: 'canvasResolution',
+      message: '4K at 60fps may cause high resource usage on some devices',
     });
   }
 
@@ -360,7 +333,7 @@ export function validateProtocolSettings(settings: Partial<ProtocolSettings>): R
     allowlist: validateAllowlistSettings(settings.allowlist || {}),
     protected: validateProtectedSettings(settings.protected || {}),
     harness: validateHarnessSettings(settings.harness || {}),
-    claude: validateClaudeSettings(settings.claude || {}),
+    holographic: validateHolographicSettings(settings.holographic || {}),
   };
 }
 
@@ -409,13 +382,13 @@ export function getProtocolCapabilities(protocolId: ProtocolId): ProtocolCapabil
         stealthLevel: 'none',
         performanceImpact: 'low',
       };
-    case 'claude':
+    case 'holographic':
       return {
         supportsVideo: true,
         supportsAudio: true,
         supportsMotion: true,
         requiresCamera: false,
-        requiresNetwork: false,
+        requiresNetwork: true,
         stealthLevel: 'maximum',
         performanceImpact: 'high',
       };
@@ -609,39 +582,36 @@ export function getRecommendedSettings(
 ): Partial<ProtocolSettings> {
   const { networkQuality = 'good', devicePerformance = 'medium', privacyConcern = 'medium' } = conditions;
 
-  if (protocolId === 'claude') {
-    let injectionMode: 'aggressive' | 'balanced' | 'conservative' | 'stealth' = 'balanced';
-    let qualityPreset: 'maximum' | 'high' | 'balanced' | 'performance' = 'balanced';
+  if (protocolId === 'holographic') {
+    let latencyMode: 'ultra-low' | 'balanced' | 'quality' = 'balanced';
+    let canvasResolution: '720p' | '1080p' | '4k' = '1080p';
+    let frameRate: 30 | 60 = 30;
 
     // Adjust based on network
     if (networkQuality === 'poor') {
-      qualityPreset = 'performance';
+      canvasResolution = '720p';
+      latencyMode = 'ultra-low';
     } else if (networkQuality === 'good') {
-      qualityPreset = 'high';
+      canvasResolution = '1080p';
+      latencyMode = 'quality';
     }
 
     // Adjust based on device performance
     if (devicePerformance === 'low') {
-      qualityPreset = 'performance';
-      injectionMode = 'conservative';
+      canvasResolution = '720p';
+      frameRate = 30;
     } else if (devicePerformance === 'high') {
-      qualityPreset = 'maximum';
-    }
-
-    // Adjust based on privacy
-    if (privacyConcern === 'high') {
-      injectionMode = 'stealth';
+      canvasResolution = '1080p';
+      frameRate = 60;
     }
 
     return {
-      claude: {
-        ...DEFAULT_PROTOCOL_SETTINGS.claude,
-        injectionMode,
-        qualityPreset,
-        memoryOptimization: devicePerformance === 'low',
-        gpuAcceleration: devicePerformance !== 'low',
-        deepStealthMode: privacyConcern !== 'low',
-        behavioralMimicry: privacyConcern !== 'low',
+      holographic: {
+        ...DEFAULT_PROTOCOL_SETTINGS.holographic,
+        latencyMode,
+        canvasResolution,
+        frameRate,
+        sdpMasquerade: privacyConcern !== 'low',
       },
     };
   }
@@ -697,13 +667,13 @@ export function checkProtocolCompatibility(protocolId: ProtocolId): {
   }
 
   // Protocol-specific checks
-  if (protocolId === 'claude') {
-    // Claude protocol has more advanced requirements
+  if (protocolId === 'holographic') {
+    // Holographic protocol has more advanced requirements
     if (typeof Worker === 'undefined') {
-      recommendations.push('Web Workers not available - workerThreads feature will be disabled');
+      recommendations.push('Web Workers not available - some features will be disabled');
     }
-    if (typeof performance === 'undefined' || !performance.now) {
-      recommendations.push('High-resolution timing not available - metrics may be less accurate');
+    if (typeof WebSocket === 'undefined') {
+      missingFeatures.push('WebSocket API');
     }
   }
 

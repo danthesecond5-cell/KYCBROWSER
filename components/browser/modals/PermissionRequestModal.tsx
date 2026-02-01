@@ -48,6 +48,7 @@ export default function PermissionRequestModal({
     allowlist: <Shield size={18} color="#00aaff" />,
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
+    holographic: <VideoIcon size={18} color="#ff00ff" />,
   };
 
   const handleSimulate = () => {
