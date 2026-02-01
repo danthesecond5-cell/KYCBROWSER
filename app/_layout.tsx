@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
+import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
 import { ProtocolProvider } from "@/contexts/ProtocolContext";
