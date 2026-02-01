@@ -8,7 +8,6 @@ import {
   AllowlistSettings,
   ProtectedPreviewSettings,
   TestHarnessSettings,
-  CodexInjectionSettings,
   DEFAULT_DEVELOPER_MODE,
   DEFAULT_PROTOCOL_SETTINGS,
   ProtocolId,
@@ -35,7 +34,6 @@ interface DeveloperModeContextValue {
   updateAllowlistSettings: (updates: Partial<AllowlistSettings>) => Promise<void>;
   updateProtectedSettings: (updates: Partial<ProtectedPreviewSettings>) => Promise<void>;
   updateHarnessSettings: (updates: Partial<TestHarnessSettings>) => Promise<void>;
-  updateCodexSettings: (updates: Partial<CodexInjectionSettings>) => Promise<void>;
   toggleProtocolEnabled: (protocolId: ProtocolId) => Promise<void>;
   resetProtocolSettings: (protocolId?: ProtocolId) => Promise<void>;
   
@@ -70,7 +68,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
             allowlist: { ...DEFAULT_PROTOCOL_SETTINGS.allowlist, ...parsed.allowlist },
             protected: { ...DEFAULT_PROTOCOL_SETTINGS.protected, ...parsed.protected },
             harness: { ...DEFAULT_PROTOCOL_SETTINGS.harness, ...parsed.harness },
-            codex: { ...DEFAULT_PROTOCOL_SETTINGS.codex, ...parsed.codex },
           });
           console.log('[DeveloperMode] Loaded protocol settings');
         }
@@ -183,15 +180,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     await saveProtocolSettings(updated);
   }, [protocolSettings, saveProtocolSettings]);
 
-  const updateCodexSettings = useCallback(async (updates: Partial<CodexInjectionSettings>) => {
-    const updated = {
-      ...protocolSettings,
-      codex: { ...protocolSettings.codex, ...updates },
-    };
-    setProtocolSettings(updated);
-    await saveProtocolSettings(updated);
-  }, [protocolSettings, saveProtocolSettings]);
-
   // Toggle protocol enabled status
   const toggleProtocolEnabled = useCallback(async (protocolId: ProtocolId) => {
     const updates: Partial<ProtocolSettings> = {};
@@ -209,8 +197,8 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
       case 'harness':
         updates.harness = { ...protocolSettings.harness, enabled: !protocolSettings.harness.enabled };
         break;
-      case 'gpt52':
-        updates.codex = { ...protocolSettings.codex, enabled: !protocolSettings.codex.enabled };
+      case 'gpt-5.2-codex-high':
+        // Protocol settings for Codex High are managed in ProtocolContext.
         break;
     }
 
@@ -239,8 +227,8 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
         case 'harness':
           updated.harness = DEFAULT_PROTOCOL_SETTINGS.harness;
           break;
-        case 'gpt52':
-          updated.codex = DEFAULT_PROTOCOL_SETTINGS.codex;
+        case 'gpt-5.2-codex-high':
+          // Protocol settings for Codex High are managed in ProtocolContext.
           break;
       }
     } else {
@@ -271,7 +259,6 @@ export const [DeveloperModeProvider, useDeveloperMode] = createContextHook<Devel
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
-    updateCodexSettings,
     toggleProtocolEnabled,
     resetProtocolSettings,
     isLoading,

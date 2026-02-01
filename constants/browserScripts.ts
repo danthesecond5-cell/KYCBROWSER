@@ -11,6 +11,51 @@ import {
 
 export const SAFARI_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
 
+export type PerformanceProfile = 'standard' | 'advanced' | 'aggressive';
+
+export interface PerformanceProfilePreset {
+  videoLoadTimeout: number;
+  maxRetryAttempts: number;
+  initialRetryDelay: number;
+  healthCheckInterval: number;
+  minAcceptableFps: number;
+  qualityAdaptationInterval: number;
+  performanceSampleSize: number;
+}
+
+const PERFORMANCE_PROFILE_PRESETS: Record<PerformanceProfile, PerformanceProfilePreset> = {
+  standard: {
+    videoLoadTimeout: 12000,
+    maxRetryAttempts: 4,
+    initialRetryDelay: 500,
+    healthCheckInterval: 5000,
+    minAcceptableFps: 15,
+    qualityAdaptationInterval: 3000,
+    performanceSampleSize: 60,
+  },
+  advanced: {
+    videoLoadTimeout: 15000,
+    maxRetryAttempts: 6,
+    initialRetryDelay: 400,
+    healthCheckInterval: 3500,
+    minAcceptableFps: 12,
+    qualityAdaptationInterval: 2000,
+    performanceSampleSize: 90,
+  },
+  aggressive: {
+    videoLoadTimeout: 18000,
+    maxRetryAttempts: 8,
+    initialRetryDelay: 300,
+    healthCheckInterval: 2500,
+    minAcceptableFps: 10,
+    qualityAdaptationInterval: 1500,
+    performanceSampleSize: 120,
+  },
+};
+
+export const getPerformanceProfilePreset = (profile: PerformanceProfile): PerformanceProfilePreset =>
+  PERFORMANCE_PROFILE_PRESETS[profile] || PERFORMANCE_PROFILE_PRESETS.standard;
+
 export const IPHONE_DEFAULT_PORTRAIT_RESOLUTION = {
   width: 1080,
   height: 1920,
@@ -661,10 +706,9 @@ export interface MediaInjectionOptions {
   showOverlayLabel?: boolean;
   loopVideo?: boolean;
   mirrorVideo?: boolean;
-  adaptiveQuality?: boolean;
-  maxRetryAttempts?: number;
-  videoLoadTimeoutMs?: number;
   debugEnabled?: boolean;
+  performanceProfile?: PerformanceProfile;
+  adaptiveQualityEnabled?: boolean;
 }
 
 export const createMediaInjectionScript = (
@@ -680,13 +724,13 @@ export const createMediaInjectionScript = (
     showOverlayLabel = false,
     loopVideo = true,
     mirrorVideo = false,
-    adaptiveQuality = false,
-    maxRetryAttempts = 4,
-    videoLoadTimeoutMs = 12000,
     debugEnabled,
+    performanceProfile = 'standard',
+    adaptiveQualityEnabled = false,
   } = options;
   const frontCamera = devices.find(d => d.facing === 'front' && d.type === 'camera');
   const defaultRes = frontCamera?.capabilities?.videoResolutions?.[0];
+  const profilePreset = getPerformanceProfilePreset(performanceProfile);
   
   const placeholderWidth = defaultRes?.width || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width;
   const placeholderHeight = defaultRes?.height || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height;
@@ -707,10 +751,16 @@ export const createMediaInjectionScript = (
         showOverlayLabel: ${showOverlayLabel ? 'true' : 'false'},
         loopVideo: ${loopVideo ? 'true' : 'false'},
         mirrorVideo: ${mirrorVideo ? 'true' : 'false'},
-        adaptiveQuality: ${adaptiveQuality ? 'true' : 'false'},
-        maxRetryAttempts: ${maxRetryAttempts},
-        videoLoadTimeoutMs: ${videoLoadTimeoutMs},
-        debugEnabled: ${debugEnabled === undefined ? 'undefined' : JSON.stringify(debugEnabled)}
+        debugEnabled: ${debugEnabled === undefined ? 'undefined' : JSON.stringify(debugEnabled)},
+        adaptiveQualityEnabled: ${adaptiveQualityEnabled ? 'true' : 'false'},
+        performanceProfile: ${JSON.stringify(performanceProfile)},
+        videoLoadTimeout: ${profilePreset.videoLoadTimeout},
+        maxRetryAttempts: ${profilePreset.maxRetryAttempts},
+        initialRetryDelay: ${profilePreset.initialRetryDelay},
+        healthCheckInterval: ${profilePreset.healthCheckInterval},
+        minAcceptableFps: ${profilePreset.minAcceptableFps},
+        qualityAdaptationInterval: ${profilePreset.qualityAdaptationInterval},
+        performanceSampleSize: ${profilePreset.performanceSampleSize}
       });
     }
     return;
@@ -727,21 +777,22 @@ export const createMediaInjectionScript = (
     SHOW_OVERLAY_LABEL: ${showOverlayLabel ? 'true' : 'false'},
     LOOP_VIDEO: ${loopVideo ? 'true' : 'false'},
     MIRROR_VIDEO: ${mirrorVideo ? 'true' : 'false'},
+    PERFORMANCE_PROFILE: ${JSON.stringify(performanceProfile)},
+    ADAPTIVE_QUALITY_ENABLED: ${adaptiveQualityEnabled ? 'true' : 'false'},
     PORTRAIT_WIDTH: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width},
     PORTRAIT_HEIGHT: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height},
     TARGET_FPS: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.fps},
-    ADAPTIVE_QUALITY: ${adaptiveQuality ? 'true' : 'false'},
-    VIDEO_LOAD_TIMEOUT: ${videoLoadTimeoutMs},
-    MAX_RETRY_ATTEMPTS: ${maxRetryAttempts},
-    INITIAL_RETRY_DELAY: 500,
-    HEALTH_CHECK_INTERVAL: 5000,
-    MIN_ACCEPTABLE_FPS: 15,
+    VIDEO_LOAD_TIMEOUT: ${profilePreset.videoLoadTimeout},
+    MAX_RETRY_ATTEMPTS: ${profilePreset.maxRetryAttempts},
+    INITIAL_RETRY_DELAY: ${profilePreset.initialRetryDelay},
+    HEALTH_CHECK_INTERVAL: ${profilePreset.healthCheckInterval},
+    MIN_ACCEPTABLE_FPS: ${profilePreset.minAcceptableFps},
     CORS_STRATEGIES: ['anonymous', 'use-credentials', null],
-    PERFORMANCE_SAMPLE_SIZE: 60,
+    PERFORMANCE_SAMPLE_SIZE: ${profilePreset.performanceSampleSize},
     QUALITY_HIGH_FPS_THRESHOLD: 25,
     QUALITY_MEDIUM_FPS_THRESHOLD: 18,
     QUALITY_LOW_FPS_THRESHOLD: 12,
-    QUALITY_ADAPTATION_INTERVAL: 3000,
+    QUALITY_ADAPTATION_INTERVAL: ${profilePreset.qualityAdaptationInterval},
     QUALITY_LEVELS: [
       { name: 'high', scale: 1.0, fps: 30 },
       { name: 'medium', scale: 0.75, fps: 24 },
@@ -750,6 +801,49 @@ export const createMediaInjectionScript = (
     MAX_ACTIVE_STREAMS: 3,
     CLEANUP_DELAY: 100,
   };
+
+  const RuntimeConfig = {
+    adaptiveQualityEnabled: CONFIG.ADAPTIVE_QUALITY_ENABLED,
+    performanceProfile: CONFIG.PERFORMANCE_PROFILE,
+    videoLoadTimeout: CONFIG.VIDEO_LOAD_TIMEOUT,
+    maxRetryAttempts: CONFIG.MAX_RETRY_ATTEMPTS,
+    initialRetryDelay: CONFIG.INITIAL_RETRY_DELAY,
+    healthCheckInterval: CONFIG.HEALTH_CHECK_INTERVAL,
+    minAcceptableFps: CONFIG.MIN_ACCEPTABLE_FPS,
+    qualityAdaptationInterval: CONFIG.QUALITY_ADAPTATION_INTERVAL,
+    performanceSampleSize: CONFIG.PERFORMANCE_SAMPLE_SIZE
+  };
+
+  function updateRuntimeConfig(update) {
+    if (!update || typeof update !== 'object') return;
+    if (typeof update.adaptiveQualityEnabled === 'boolean') {
+      RuntimeConfig.adaptiveQualityEnabled = update.adaptiveQualityEnabled;
+    }
+    if (typeof update.performanceProfile === 'string') {
+      RuntimeConfig.performanceProfile = update.performanceProfile;
+    }
+    if (typeof update.videoLoadTimeout === 'number') {
+      RuntimeConfig.videoLoadTimeout = update.videoLoadTimeout;
+    }
+    if (typeof update.maxRetryAttempts === 'number') {
+      RuntimeConfig.maxRetryAttempts = update.maxRetryAttempts;
+    }
+    if (typeof update.initialRetryDelay === 'number') {
+      RuntimeConfig.initialRetryDelay = update.initialRetryDelay;
+    }
+    if (typeof update.healthCheckInterval === 'number') {
+      RuntimeConfig.healthCheckInterval = update.healthCheckInterval;
+    }
+    if (typeof update.minAcceptableFps === 'number') {
+      RuntimeConfig.minAcceptableFps = update.minAcceptableFps;
+    }
+    if (typeof update.qualityAdaptationInterval === 'number') {
+      RuntimeConfig.qualityAdaptationInterval = update.qualityAdaptationInterval;
+    }
+    if (typeof update.performanceSampleSize === 'number') {
+      RuntimeConfig.performanceSampleSize = update.performanceSampleSize;
+    }
+  }
   
   // ============ EXPO/WEBVIEW COMPATIBILITY ============
   if (!window.performance) {
@@ -862,12 +956,8 @@ export const createMediaInjectionScript = (
         const delta = now - this.lastFrameTime;
         const fps = 1000 / delta;
         this.fpsHistory.push(fps);
-        if (this.fpsHistory.length > CONFIG.PERFORMANCE_SAMPLE_SIZE) {
+        if (this.fpsHistory.length > RuntimeConfig.performanceSampleSize) {
           this.fpsHistory.shift();
-        }
-        if (CONFIG.ADAPTIVE_QUALITY) {
-          QualityAdapter.recordFps(fps);
-          QualityAdapter.adapt();
         }
       }
       this.lastFrameTime = now;
@@ -937,6 +1027,40 @@ export const createMediaInjectionScript = (
       return { activeCount: this.activeStreams.size, streams: Array.from(this.activeStreams.keys()) };
     }
   };
+
+  function registerStreamWithRegistry(stream, device) {
+    if (!stream) return null;
+    const baseId = device?.id || device?.nativeDeviceId || device?.name || 'sim_stream';
+    const streamId = baseId + '_' + Math.random().toString(36).slice(2, 9);
+    stream._registryUnregistered = false;
+    stream._registryId = streamId;
+
+    const cleanupOnce = function() {
+      if (stream._registryUnregistered) return;
+      stream._registryUnregistered = true;
+      StreamRegistry.unregister(streamId);
+    };
+
+    StreamRegistry.register(streamId, stream, function() {
+      try {
+        if (stream._cleanup) stream._cleanup();
+      } catch (e) {}
+    });
+
+    try {
+      stream.getTracks().forEach(function(track) {
+        if (track && typeof track.addEventListener === 'function') {
+          track.addEventListener('ended', cleanupOnce);
+          track.addEventListener('inactive', cleanupOnce);
+        } else if (track) {
+          track.onended = cleanupOnce;
+          track.oninactive = cleanupOnce;
+        }
+      });
+    } catch (e) {}
+
+    return streamId;
+  }
   
   // ============ QUALITY ADAPTATION SYSTEM ============
   const QualityAdapter = {
@@ -947,6 +1071,7 @@ export const createMediaInjectionScript = (
     getCurrentQuality: function() { return CONFIG.QUALITY_LEVELS[this.currentLevel]; },
     
     recordFps: function(fps) {
+      if (!RuntimeConfig.adaptiveQualityEnabled) return;
       this.fpsHistory.push(fps);
       if (this.fpsHistory.length > 30) this.fpsHistory.shift();
     },
@@ -957,8 +1082,9 @@ export const createMediaInjectionScript = (
     },
     
     adapt: function() {
+      if (!RuntimeConfig.adaptiveQualityEnabled) return;
       var now = Date.now();
-      if (now - this.lastAdaptTime < CONFIG.QUALITY_ADAPTATION_INTERVAL || this.fpsHistory.length < 10) return;
+      if (now - this.lastAdaptTime < RuntimeConfig.qualityAdaptationInterval || this.fpsHistory.length < 10) return;
       
       var avgFps = this.getAverageFps();
       var prevLevel = this.currentLevel;
@@ -974,11 +1100,6 @@ export const createMediaInjectionScript = (
       if (prevLevel !== this.currentLevel) {
         this.lastAdaptTime = now;
         var quality = this.getCurrentQuality();
-        RenderCache.frameSkipThreshold = quality.name === 'low'
-          ? 0.03
-          : quality.name === 'medium'
-            ? 0.01
-            : 0.001;
         Logger.log('Quality adapted:', quality.name, '| FPS:', avgFps.toFixed(1));
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -993,21 +1114,8 @@ export const createMediaInjectionScript = (
       return { width: Math.round(w * q.scale), height: Math.round(h * q.scale), fps: q.fps };
     },
     
-    reset: function() {
-      this.currentLevel = 0;
-      this.fpsHistory = [];
-      this.lastAdaptTime = 0;
-      RenderCache.frameSkipThreshold = 0.001;
-    }
+    reset: function() { this.currentLevel = 0; this.fpsHistory = []; this.lastAdaptTime = 0; }
   };
-
-  function getTargetFps() {
-    return CONFIG.ADAPTIVE_QUALITY ? QualityAdapter.getCurrentQuality().fps : CONFIG.TARGET_FPS;
-  }
-
-  function getTargetFrameTime() {
-    return 1000 / getTargetFps();
-  }
   
   // ============ PAGE LIFECYCLE CLEANUP ============
   window.addEventListener('beforeunload', function() {
@@ -1264,12 +1372,18 @@ export const createMediaInjectionScript = (
     forceSimulation: CONFIG.FORCE_SIMULATION,
     loopVideo: CONFIG.LOOP_VIDEO,
     mirrorVideo: CONFIG.MIRROR_VIDEO,
-    adaptiveQuality: CONFIG.ADAPTIVE_QUALITY,
-    maxRetryAttempts: CONFIG.MAX_RETRY_ATTEMPTS,
-    videoLoadTimeoutMs: CONFIG.VIDEO_LOAD_TIMEOUT,
     protocolId: CONFIG.PROTOCOL_ID,
     overlayLabelText: CONFIG.PROTOCOL_LABEL,
-    showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL
+    showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL,
+    adaptiveQualityEnabled: CONFIG.ADAPTIVE_QUALITY_ENABLED,
+    performanceProfile: CONFIG.PERFORMANCE_PROFILE,
+    videoLoadTimeout: CONFIG.VIDEO_LOAD_TIMEOUT,
+    maxRetryAttempts: CONFIG.MAX_RETRY_ATTEMPTS,
+    initialRetryDelay: CONFIG.INITIAL_RETRY_DELAY,
+    healthCheckInterval: CONFIG.HEALTH_CHECK_INTERVAL,
+    minAcceptableFps: CONFIG.MIN_ACCEPTABLE_FPS,
+    qualityAdaptationInterval: CONFIG.QUALITY_ADAPTATION_INTERVAL,
+    performanceSampleSize: CONFIG.PERFORMANCE_SAMPLE_SIZE
   };
 
   // ============ PROTOCOL OVERLAY BADGE ============
@@ -1313,24 +1427,13 @@ export const createMediaInjectionScript = (
   
   window.__updateMediaConfig = function(config) {
     Object.assign(window.__mediaSimConfig, config);
+    updateRuntimeConfig(config);
     Logger.log('Config updated - devices:', window.__mediaSimConfig.devices?.length || 0);
     if (config.debugEnabled !== undefined) {
       Logger.setEnabled(config.debugEnabled);
     }
-    if (config.adaptiveQuality !== undefined) {
-      CONFIG.ADAPTIVE_QUALITY = !!config.adaptiveQuality;
-      window.__mediaSimConfig.adaptiveQuality = CONFIG.ADAPTIVE_QUALITY;
-      if (!CONFIG.ADAPTIVE_QUALITY) {
-        QualityAdapter.reset();
-      }
-    }
-    if (config.maxRetryAttempts !== undefined) {
-      CONFIG.MAX_RETRY_ATTEMPTS = Math.max(1, Number(config.maxRetryAttempts));
-      window.__mediaSimConfig.maxRetryAttempts = CONFIG.MAX_RETRY_ATTEMPTS;
-    }
-    if (config.videoLoadTimeoutMs !== undefined) {
-      CONFIG.VIDEO_LOAD_TIMEOUT = Math.max(1000, Number(config.videoLoadTimeoutMs));
-      window.__mediaSimConfig.videoLoadTimeoutMs = CONFIG.VIDEO_LOAD_TIMEOUT;
+    if (config.adaptiveQualityEnabled === false) {
+      QualityAdapter.reset();
     }
     if (
       config.loopVideo !== undefined ||
@@ -1594,7 +1697,11 @@ export const createMediaInjectionScript = (
       
       if (_origGetUserMedia && !cfg.stealthMode && !forceSimulation) {
         Logger.log('Using real getUserMedia');
-        return _origGetUserMedia(constraints);
+        try {
+          return await _origGetUserMedia(constraints);
+        } catch (err) {
+          Logger.warn('Real getUserMedia failed, falling back to simulation:', err?.message || err);
+        }
       }
       
       Logger.log('No simulation, returning canvas pattern');
@@ -1698,17 +1805,17 @@ export const createMediaInjectionScript = (
   }
   
   async function loadVideoWithRetry(videoUri, maxAttempts) {
-    maxAttempts = maxAttempts || CONFIG.MAX_RETRY_ATTEMPTS;
+    const effectiveMaxAttempts = typeof maxAttempts === 'number' ? maxAttempts : RuntimeConfig.maxRetryAttempts;
     let lastError = null;
     
     // Handle base64 data URIs directly (no CORS needed)
     if (isBase64VideoUri(videoUri)) {
-      return loadBase64Video(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT * 2); // Extra timeout for large base64
+      return loadBase64Video(videoUri, RuntimeConfig.videoLoadTimeout * 2); // Extra timeout for large base64
     }
     
     // Handle blob URLs directly (no CORS needed)
     if (isBlobUri(videoUri)) {
-      return loadBlobVideo(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT);
+      return loadBlobVideo(videoUri, RuntimeConfig.videoLoadTimeout);
     }
     
     // Check connection quality first
@@ -1720,8 +1827,8 @@ export const createMediaInjectionScript = (
     for (let strategy = 0; strategy < CONFIG.CORS_STRATEGIES.length; strategy++) {
       const corsMode = CONFIG.CORS_STRATEGIES[strategy];
       
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
-        const delay = CONFIG.INITIAL_RETRY_DELAY * Math.pow(2, attempt);
+      for (let attempt = 0; attempt < effectiveMaxAttempts; attempt++) {
+        const delay = RuntimeConfig.initialRetryDelay * Math.pow(2, attempt);
         
         if (attempt > 0) {
           Logger.log('Retry attempt', attempt + 1, 'with', delay, 'ms delay, CORS:', corsMode);
@@ -1732,7 +1839,7 @@ export const createMediaInjectionScript = (
         Metrics.startVideoLoad();
         
         try {
-          const video = await loadVideoElement(videoUri, corsMode, CONFIG.VIDEO_LOAD_TIMEOUT);
+          const video = await loadVideoElement(videoUri, corsMode, RuntimeConfig.videoLoadTimeout);
           Metrics.endVideoLoad(true);
           notifyLoadingProgress(1, 'complete', 'Video loaded successfully');
           return video;
@@ -1983,7 +2090,6 @@ export const createMediaInjectionScript = (
       let fallbackAttempt = 0;
       const start = Date.now();
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
       
       // Get the current fallback renderer
       let currentRenderer = VIDEO_FORMAT_FALLBACKS[0].render;
@@ -1992,12 +2098,19 @@ export const createMediaInjectionScript = (
         if (!isRunning) return;
         
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        const targetFps = RuntimeConfig.adaptiveQualityEnabled
+          ? QualityAdapter.getCurrentQuality().fps
+          : CONFIG.TARGET_FPS;
+        const targetFrameTime = 1000 / targetFps;
+        if (elapsed < targetFrameTime * 0.9) {
           requestAnimationFrame(render);
           return;
         }
         lastDrawTime = timestamp;
         
+        const fps = 1000 / Math.max(1, elapsed);
+        QualityAdapter.recordFps(fps);
+        QualityAdapter.adapt();
         Metrics.recordFrame();
         const t = (Date.now() - start) / 1000;
         
@@ -2025,7 +2138,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('Green screen captureStream failed'));
             return;
@@ -2038,6 +2151,8 @@ export const createMediaInjectionScript = (
             Logger.log('Green screen stream cleanup');
           };
           stream._isRunning = function() { return isRunning; };
+
+          registerStreamWithRegistry(stream, device);
           
           Logger.log('Green screen stream ready:', stream.getTracks().length, 'tracks (9:16 enforced)');
           resolve(stream);
@@ -2139,7 +2254,6 @@ export const createMediaInjectionScript = (
       
       let isRunning = true;
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
       let frameCount = 0;
       
       // Pre-cache canvas dimensions
@@ -2151,7 +2265,11 @@ export const createMediaInjectionScript = (
         
         // Optimized frame rate limiting
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        const targetFps = RuntimeConfig.adaptiveQualityEnabled
+          ? QualityAdapter.getCurrentQuality().fps
+          : CONFIG.TARGET_FPS;
+        const minFrameTime = (1000 / targetFps) * 0.9;
+        if (elapsed < minFrameTime) {
           requestAnimationFrame(draw);
           return;
         }
@@ -2168,6 +2286,9 @@ export const createMediaInjectionScript = (
         // Update natural variations (throttled internally)
         NaturalVariations.update(timestamp);
         
+        const fps = 1000 / Math.max(1, elapsed);
+        QualityAdapter.recordFps(fps);
+        QualityAdapter.adapt();
         // Record metrics every 10 frames to reduce overhead
         if (frameCount % 10 === 0) {
           Metrics.recordFrame();
@@ -2209,7 +2330,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('captureStream failed'));
             return;
@@ -2294,6 +2415,8 @@ export const createMediaInjectionScript = (
           stream._canvas = canvas;
           stream._isRunning = function() { return isRunning; };
           stream._stop = function() { isRunning = false; };
+
+          registerStreamWithRegistry(stream, device);
           
           resolve(stream);
         } catch (err) {
@@ -2312,7 +2435,7 @@ export const createMediaInjectionScript = (
       }
       
       const avgFps = Metrics.getAverageFps();
-      const isHealthy = avgFps >= CONFIG.MIN_ACCEPTABLE_FPS;
+      const isHealthy = avgFps >= RuntimeConfig.minAcceptableFps;
       
       if (!isHealthy) {
         Logger.warn('Stream health degraded - FPS:', avgFps.toFixed(1));
@@ -2338,7 +2461,7 @@ export const createMediaInjectionScript = (
           Logger.error('Failed to resume video:', e.message);
         });
       }
-    }, CONFIG.HEALTH_CHECK_INTERVAL);
+    }, RuntimeConfig.healthCheckInterval);
     
     // Store interval for cleanup
     stream._healthInterval = healthInterval;
@@ -2386,7 +2509,6 @@ export const createMediaInjectionScript = (
       const start = Date.now();
       let isRunning = true;
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
       let currentFallbackIdx = 0;
       let errorCount = 0;
       const MAX_ERRORS_BEFORE_FALLBACK = 3;
@@ -2395,12 +2517,19 @@ export const createMediaInjectionScript = (
         if (!isRunning) return;
         
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        const targetFps = RuntimeConfig.adaptiveQualityEnabled
+          ? QualityAdapter.getCurrentQuality().fps
+          : CONFIG.TARGET_FPS;
+        const targetFrameTime = 1000 / targetFps;
+        if (elapsed < targetFrameTime * 0.9) {
           requestAnimationFrame(render);
           return;
         }
         lastDrawTime = timestamp;
         
+        const fps = 1000 / Math.max(1, elapsed);
+        QualityAdapter.recordFps(fps);
+        QualityAdapter.adapt();
         Metrics.recordFrame();
         const t = (Date.now() - start) / 1000;
         
@@ -2436,7 +2565,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('Green screen captureStream failed'));
             return;
@@ -2510,6 +2639,8 @@ export const createMediaInjectionScript = (
             currentFallbackIdx = (currentFallbackIdx + 1) % VIDEO_FORMAT_FALLBACKS.length;
             Logger.log('Manual fallback switch to:', VIDEO_FORMAT_FALLBACKS[currentFallbackIdx].name);
           };
+
+          registerStreamWithRegistry(stream, device);
           
           Logger.log('Green screen stream ready:', stream.getTracks().length, 'tracks | 9:16 enforced | Fallback:', VIDEO_FORMAT_FALLBACKS[currentFallbackIdx].name);
           resolve(stream);

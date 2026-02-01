@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
 
 // Protocol Types
-export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'gpt52';
+export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'gpt-5.2-codex-high';
 
 export interface ProtocolConfig {
   id: ProtocolType;
@@ -47,12 +47,14 @@ export interface HarnessProtocolSettings {
   testPatternOnNoVideo: boolean;
 }
 
-export interface CodexProtocolSettings {
-  adaptiveQuality: boolean;
-  forceStealth: boolean;
+export interface CodexHighProtocolSettings {
+  autoInject: boolean;
+  alwaysStealth: boolean;
   forceSimulation: boolean;
-  aggressiveRetries: boolean;
+  adaptiveQuality: boolean;
+  aggressiveTuning: boolean;
   showOverlayLabel: boolean;
+  injectMotionData: boolean;
 }
 
 export interface ProtocolContextValue {
@@ -85,14 +87,14 @@ export interface ProtocolContextValue {
   allowlistSettings: AllowlistProtocolSettings;
   protectedSettings: ProtectedProtocolSettings;
   harnessSettings: HarnessProtocolSettings;
-  codexSettings: CodexProtocolSettings;
+  codexSettings: CodexHighProtocolSettings;
   
   // Settings Updaters
   updateStandardSettings: (settings: Partial<StandardProtocolSettings>) => Promise<void>;
   updateAllowlistSettings: (settings: Partial<AllowlistProtocolSettings>) => Promise<void>;
   updateProtectedSettings: (settings: Partial<ProtectedProtocolSettings>) => Promise<void>;
   updateHarnessSettings: (settings: Partial<HarnessProtocolSettings>) => Promise<void>;
-  updateCodexSettings: (settings: Partial<CodexProtocolSettings>) => Promise<void>;
+  updateCodexSettings: (settings: Partial<CodexHighProtocolSettings>) => Promise<void>;
   
   // Allowlist helpers
   addAllowlistDomain: (domain: string) => Promise<void>;
@@ -163,12 +165,14 @@ const DEFAULT_HARNESS_SETTINGS: HarnessProtocolSettings = {
   testPatternOnNoVideo: true,
 };
 
-const DEFAULT_CODEX_SETTINGS: CodexProtocolSettings = {
-  adaptiveQuality: true,
-  forceStealth: true,
+const DEFAULT_CODEX_SETTINGS: CodexHighProtocolSettings = {
+  autoInject: true,
+  alwaysStealth: true,
   forceSimulation: true,
-  aggressiveRetries: true,
+  adaptiveQuality: true,
+  aggressiveTuning: true,
   showOverlayLabel: true,
+  injectMotionData: true,
 };
 
 const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
@@ -200,10 +204,10 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
     enabled: true,
     settings: {},
   },
-  gpt52: {
-    id: 'gpt52',
+  'gpt-5.2-codex-high': {
+    id: 'gpt-5.2-codex-high',
     name: 'Protocol 5: GPT-5.2 Codex High',
-    description: 'Most advanced adaptive injection mode with resilience, stealth-first defaults, and performance tuning.',
+    description: 'AI-optimized injection profile for the most advanced attempt at this app to date.',
     enabled: true,
     settings: {},
   },
@@ -225,7 +229,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   const [allowlistSettings, setAllowlistSettings] = useState<AllowlistProtocolSettings>(DEFAULT_ALLOWLIST_SETTINGS);
   const [protectedSettings, setProtectedSettings] = useState<ProtectedProtocolSettings>(DEFAULT_PROTECTED_SETTINGS);
   const [harnessSettings, setHarnessSettings] = useState<HarnessProtocolSettings>(DEFAULT_HARNESS_SETTINGS);
-  const [codexSettings, setCodexSettings] = useState<CodexProtocolSettings>(DEFAULT_CODEX_SETTINGS);
+  const [codexSettings, setCodexSettings] = useState<CodexHighProtocolSettings>(DEFAULT_CODEX_SETTINGS);
 
   // Load all settings on mount
   useEffect(() => {
@@ -265,14 +269,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
         if (pin) setDeveloperPinState(pin);
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) {
-          if (Object.prototype.hasOwnProperty.call(DEFAULT_PROTOCOLS, activeProto)) {
-            setActiveProtocolState(activeProto as ProtocolType);
-          } else {
-            console.warn('[Protocol] Unknown active protocol in storage, defaulting:', activeProto);
-            setActiveProtocolState('standard');
-          }
-        }
+        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);
@@ -417,7 +414,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.HARNESS_SETTINGS, JSON.stringify(newSettings));
   }, [harnessSettings]);
 
-  const updateCodexSettings = useCallback(async (settings: Partial<CodexProtocolSettings>) => {
+  const updateCodexSettings = useCallback(async (settings: Partial<CodexHighProtocolSettings>) => {
     const newSettings = { ...codexSettings, ...settings };
     setCodexSettings(newSettings);
     await AsyncStorage.setItem(STORAGE_KEYS.CODEX_SETTINGS, JSON.stringify(newSettings));

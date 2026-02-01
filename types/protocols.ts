@@ -3,7 +3,7 @@
  * Defines configuration for all 5 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'gpt52';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'gpt-5.2-codex-high';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -54,23 +54,12 @@ export interface TestHarnessSettings {
   recordTestResults: boolean;
 }
 
-// Protocol 5: GPT-5.2 Codex High Settings
-export interface CodexInjectionSettings {
-  enabled: boolean;
-  adaptiveQuality: boolean;
-  forceStealth: boolean;
-  forceSimulation: boolean;
-  aggressiveRetries: boolean;
-  showOverlayLabel: boolean;
-}
-
 // Combined Protocol Settings
 export interface ProtocolSettings {
   standard: StandardInjectionSettings;
   allowlist: AllowlistSettings;
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
-  codex: CodexInjectionSettings;
 }
 
 // Developer Mode Settings
@@ -123,21 +112,11 @@ export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
   recordTestResults: false,
 };
 
-export const DEFAULT_CODEX_SETTINGS: CodexInjectionSettings = {
-  enabled: true,
-  adaptiveQuality: true,
-  forceStealth: true,
-  forceSimulation: true,
-  aggressiveRetries: true,
-  showOverlayLabel: true,
-};
-
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   standard: DEFAULT_STANDARD_SETTINGS,
   allowlist: DEFAULT_ALLOWLIST_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
-  codex: DEFAULT_CODEX_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -188,12 +167,12 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     isLive: true,
     requiresDeveloperMode: false,
   },
-  gpt52: {
-    id: 'gpt52',
+  'gpt-5.2-codex-high': {
+    id: 'gpt-5.2-codex-high',
     name: 'Protocol 5: GPT-5.2 Codex High',
-    description: 'Most advanced adaptive injection mode with resilience, stealth-first defaults, and performance tuning.',
+    description: 'AI-optimized injection profile for the most advanced attempt at this app so far.',
     enabled: true,
     isLive: true,
-    requiresDeveloperMode: false,
+    requiresDeveloperMode: true,
   },
 };

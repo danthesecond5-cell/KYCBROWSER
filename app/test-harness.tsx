@@ -126,6 +126,7 @@ export default function TestHarnessScreen() {
     developerModeEnabled,
     showTestingWatermark,
     presentationMode,
+    showTestingWatermark,
     mlSafetyEnabled,
     protocols,
   } = useProtocol();

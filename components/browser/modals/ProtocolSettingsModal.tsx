@@ -281,13 +281,13 @@ export default function ProtocolSettingsModal({
 
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Auto Add Current Site</Text>
-                <Text style={styles.settingHint}>Automatically add the current site when allowlist is active</Text>
+                <Text style={styles.settingLabel}>Auto-add Current Site</Text>
+                <Text style={styles.settingHint}>Automatically allow sites you visit</Text>
               </View>
               <Switch
                 value={allowlistSettings.autoAddCurrentSite}
                 onValueChange={(v) => updateAllowlistSettings({ autoAddCurrentSite: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
                 thumbColor={allowlistSettings.autoAddCurrentSite ? '#ffffff' : '#888'}
               />
             </View>
@@ -462,37 +462,39 @@ export default function ProtocolSettingsModal({
           </View>
         );
 
-      case 'gpt52':
+      case 'gpt-5.2-codex-high':
         return (
           <View style={styles.settingsGroup}>
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Adaptive Quality</Text>
-                <Text style={styles.settingHint}>Auto-tune FPS and workload for stable injection</Text>
+                <Text style={styles.settingLabel}>Auto Inject</Text>
+                <Text style={styles.settingHint}>Keep advanced injection active</Text>
               </View>
               <Switch
-                value={codexSettings.adaptiveQuality}
-                onValueChange={(v) => updateCodexSettings({ adaptiveQuality: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
-                thumbColor={codexSettings.adaptiveQuality ? '#ffffff' : '#888'}
+                value={codexSettings.autoInject}
+                onValueChange={(v) => updateCodexSettings({ autoInject: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#9b59ff' }}
+                thumbColor={codexSettings.autoInject ? '#ffffff' : '#888'}
               />
             </View>
+
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Force Stealth</Text>
-                <Text style={styles.settingHint}>Always enforce stealth-first injection behavior</Text>
+                <Text style={styles.settingLabel}>Always Stealth</Text>
+                <Text style={styles.settingHint}>Force stealth mode for all sites</Text>
               </View>
               <Switch
-                value={codexSettings.forceStealth}
-                onValueChange={(v) => updateCodexSettings({ forceStealth: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
-                thumbColor={codexSettings.forceStealth ? '#ffffff' : '#888'}
+                value={codexSettings.alwaysStealth}
+                onValueChange={(v) => updateCodexSettings({ alwaysStealth: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={codexSettings.alwaysStealth ? '#ffffff' : '#888'}
               />
             </View>
+
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
                 <Text style={styles.settingLabel}>Force Simulation</Text>
-                <Text style={styles.settingHint}>Prioritize simulated streams for consistency</Text>
+                <Text style={styles.settingHint}>Prefer simulated streams over real camera</Text>
               </View>
               <Switch
                 value={codexSettings.forceSimulation}
@@ -501,27 +503,55 @@ export default function ProtocolSettingsModal({
                 thumbColor={codexSettings.forceSimulation ? '#ffffff' : '#888'}
               />
             </View>
+
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Aggressive Retries</Text>
-                <Text style={styles.settingHint}>Use extended retry windows on video load</Text>
+                <Text style={styles.settingLabel}>Adaptive Quality</Text>
+                <Text style={styles.settingHint}>Auto-tune FPS based on performance</Text>
               </View>
               <Switch
-                value={codexSettings.aggressiveRetries}
-                onValueChange={(v) => updateCodexSettings({ aggressiveRetries: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
-                thumbColor={codexSettings.aggressiveRetries ? '#ffffff' : '#888'}
+                value={codexSettings.adaptiveQuality}
+                onValueChange={(v) => updateCodexSettings({ adaptiveQuality: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ffcc00' }}
+                thumbColor={codexSettings.adaptiveQuality ? '#ffffff' : '#888'}
               />
             </View>
+
             <View style={styles.settingRow}>
               <View style={styles.settingInfo}>
-                <Text style={styles.settingLabel}>Overlay Label</Text>
-                <Text style={styles.settingHint}>Display GPT-5.2 Codex High overlay badge</Text>
+                <Text style={styles.settingLabel}>Aggressive Tuning</Text>
+                <Text style={styles.settingHint}>Prioritize recovery and resiliency</Text>
+              </View>
+              <Switch
+                value={codexSettings.aggressiveTuning}
+                onValueChange={(v) => updateCodexSettings({ aggressiveTuning: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={codexSettings.aggressiveTuning ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Inject Motion Data</Text>
+                <Text style={styles.settingHint}>Simulate realistic device motion</Text>
+              </View>
+              <Switch
+                value={codexSettings.injectMotionData}
+                onValueChange={(v) => updateCodexSettings({ injectMotionData: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={codexSettings.injectMotionData ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Show Overlay Label</Text>
+                <Text style={styles.settingHint}>Display protocol status badge</Text>
               </View>
               <Switch
                 value={codexSettings.showOverlayLabel}
                 onValueChange={(v) => updateCodexSettings({ showOverlayLabel: v })}
-                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
                 thumbColor={codexSettings.showOverlayLabel ? '#ffffff' : '#888'}
               />
             </View>
@@ -538,7 +568,7 @@ export default function ProtocolSettingsModal({
     allowlist: <Shield size={18} color="#00aaff" />,
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
-    gpt52: <Cpu size={18} color="#00d2ff" />,
+    'gpt-5.2-codex-high': <Cpu size={18} color="#9b59ff" />,
   };
 
   return (
