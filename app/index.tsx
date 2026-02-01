@@ -109,9 +109,12 @@ export default function MotionBrowserScreen() {
     protectedSettings,
     harnessSettings,
     gpt52Settings,
+    codexSettings,
     isAllowlisted: checkIsAllowlisted,
     httpsEnforced,
     mlSafetyEnabled,
+    addAllowlistDomain,
+    removeAllowlistDomain,
   } = useProtocol();
 
   const [url, setUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
@@ -228,6 +231,7 @@ export default function MotionBrowserScreen() {
   ]);
 
   const allowlistBlocked = allowlistEnabled && allowlistSettings.blockUnlisted && !isAllowlisted;
+  const isCodexProtocol = activeProtocol === 'gpt-5-2-codex-high';
 
   const effectiveStealthMode = useMemo(() => {
     if (activeProtocol === 'protected' || activeProtocol === 'harness') {
@@ -235,6 +239,9 @@ export default function MotionBrowserScreen() {
     }
     if (activeProtocol === 'gpt52') {
       return true;
+    }
+    if (activeProtocol === 'gpt-5-2-codex-high') {
+      return codexSettings.stealthMode;
     }
     if (!standardSettings.stealthByDefault) {
       return false;
@@ -245,6 +252,7 @@ export default function MotionBrowserScreen() {
     return shouldUseStealthForUrl(url);
   }, [
     activeProtocol,
+    codexSettings.stealthMode,
     standardSettings.stealthByDefault,
     standardSettings.respectSiteSettings,
     shouldUseStealthForUrl,
@@ -255,11 +263,13 @@ export default function MotionBrowserScreen() {
     activeProtocol === 'protected'
     || (activeProtocol === 'gpt52' && gpt52Settings.forceSimulation)
     || (activeProtocol === 'harness' && harnessSettings.overlayEnabled)
+    || (activeProtocol === 'gpt-5-2-codex-high' && codexSettings.forceSimulation)
   );
 
   const protocolMirrorVideo = isProtocolEnabled && (
     (activeProtocol === 'harness' && harnessSettings.mirrorVideo) ||
-    (activeProtocol === 'gpt52' && gpt52Settings.mirrorVideo)
+    (activeProtocol === 'gpt52' && gpt52Settings.mirrorVideo) ||
+    (activeProtocol === 'gpt-5-2-codex-high' && codexSettings.mirrorVideo)
   );
 
   const protocolOverlayLabel = useMemo(() => {
@@ -275,6 +285,9 @@ export default function MotionBrowserScreen() {
     if (activeProtocol === 'allowlist' && allowlistEnabled) {
       return allowlistBlocked ? 'Allowlist Blocked' : 'Allowlist Active';
     }
+    if (activeProtocol === 'gpt-5-2-codex-high') {
+      return 'GPT-5.2 Codex High';
+    }
     return '';
   }, [activeProtocol, harnessSettings.overlayEnabled, allowlistEnabled, allowlistBlocked, isProtocolEnabled]);
 
@@ -288,32 +301,48 @@ export default function MotionBrowserScreen() {
     if (activeProtocol === 'harness') {
       return harnessSettings.showDebugInfo || harnessSettings.overlayEnabled;
     }
+    if (activeProtocol === 'gpt-5-2-codex-high') {
+      return codexSettings.showOverlayLabel;
+    }
     return false;
   }, [
     activeProtocol,
     protectedSettings.showProtectedBadge,
     harnessSettings.showDebugInfo,
     harnessSettings.overlayEnabled,
+    codexSettings.showOverlayLabel,
     isProtocolEnabled,
   ]);
 
   const autoInjectEnabled = isProtocolEnabled && (
-    activeProtocol === 'gpt52'
-      ? gpt52Settings.autoInject
-      : (activeProtocol === 'standard' || activeProtocol === 'allowlist')
-        ? standardSettings.autoInject
-        : true
+    (activeProtocol === 'standard' || activeProtocol === 'allowlist')
+      ? standardSettings.autoInject
+      : activeProtocol === 'gpt52'
+        ? gpt52Settings.autoInject
+        : activeProtocol === 'gpt-5-2-codex-high'
+          ? codexSettings.autoInject
+          : true
   );
+
+  const effectiveLoopVideo = activeProtocol === 'gpt-5-2-codex-high'
+    ? codexSettings.loopVideo
+    : activeProtocol === 'gpt52'
+      ? gpt52Settings.loopVideo
+      : standardSettings.loopVideo;
 
   const loopVideoEnabled = useMemo(() => {
     if (activeProtocol === 'gpt52') return gpt52Settings.loopVideo;
+    if (activeProtocol === 'gpt-5-2-codex-high') return codexSettings.loopVideo;
     return standardSettings.loopVideo;
-  }, [activeProtocol, gpt52Settings.loopVideo, standardSettings.loopVideo]);
+  }, [activeProtocol, gpt52Settings.loopVideo, codexSettings.loopVideo, standardSettings.loopVideo]);
 
   const motionInjectionEnabled = useMemo(() => {
     if (activeProtocol === 'gpt52') return gpt52Settings.injectMotionData;
     return standardSettings.injectMotionData;
   }, [activeProtocol, gpt52Settings.injectMotionData, standardSettings.injectMotionData]);
+
+  const aggressiveRetries = activeProtocol === 'gpt-5-2-codex-high' && codexSettings.aggressiveRetries;
+  const debugEnabled = developerModeEnabled || (isCodexProtocol && codexSettings.enableTelemetry);
 
   const mediaTuningOptions = useMemo(() => {
     if (activeProtocol !== 'gpt52') return {};
@@ -395,9 +424,10 @@ export default function MotionBrowserScreen() {
       protocolId: activeProtocol,
       overlayLabelText: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: loopVideoEnabled,
+      loopVideo: effectiveLoopVideo,
       mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
+      aggressiveRetries,
+      debugEnabled,
       ...mediaTuningOptions,
     };
 
@@ -418,9 +448,10 @@ export default function MotionBrowserScreen() {
       protocolId: activeProtocol,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: loopVideoEnabled,
+      loopVideo: effectiveLoopVideo,
       mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
+      aggressiveRetries,
+      debugEnabled,
       ...mediaTuningOptions,
     });
 
@@ -448,10 +479,11 @@ export default function MotionBrowserScreen() {
     isProtocolEnabled,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
-    loopVideoEnabled,
     protocolMirrorVideo,
+    effectiveLoopVideo,
+    aggressiveRetries,
+    debugEnabled,
     mediaTuningOptions,
-    developerModeEnabled,
   ]);
 
   const injectMediaConfig = useCallback(() => {
@@ -748,6 +780,7 @@ export default function MotionBrowserScreen() {
     });
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
+    const shouldCaptureConsole = debugEnabled;
     const injectionOptions = {
       stealthMode: effectiveStealthMode,
       fallbackVideoUri,
@@ -755,13 +788,14 @@ export default function MotionBrowserScreen() {
       protocolId: activeProtocol,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: loopVideoEnabled,
+      loopVideo: effectiveLoopVideo,
       mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
+      aggressiveRetries,
+      debugEnabled,
       ...mediaTuningOptions,
     };
     const script =
-      CONSOLE_CAPTURE_SCRIPT +
+      (shouldCaptureConsole ? CONSOLE_CAPTURE_SCRIPT : '') +
       spoofScript +
       (shouldInjectMedia ? createMediaInjectionScript(devices, injectionOptions) : '') +
       VIDEO_SIMULATION_TEST_SCRIPT;
@@ -784,9 +818,10 @@ export default function MotionBrowserScreen() {
     activeProtocol,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
-    loopVideoEnabled,
     protocolMirrorVideo,
-    developerModeEnabled,
+    effectiveLoopVideo,
+    aggressiveRetries,
+    debugEnabled,
     mediaTuningOptions,
     isProtocolEnabled,
   ]);
@@ -954,6 +989,18 @@ export default function MotionBrowserScreen() {
                     } else if (data.type === 'streamHealth') {
                       if (!data.payload?.healthy) {
                         console.warn('[WebView Stream Health] Degraded FPS:', data.payload?.fps);
+                        if (isCodexProtocol && codexSettings.autoRecover && isProtocolEnabled) {
+                          const now = Date.now();
+                          if (now - lastRecoveryAtRef.current > 5000) {
+                            lastRecoveryAtRef.current = now;
+                            setTimeout(() => {
+                              if (isMountedRef.current) {
+                                console.log('[Codex High] Auto-recovery triggered');
+                                injectMediaConfig();
+                              }
+                            }, 250);
+                          }
+                        }
                       }
                     }
                   } catch {
