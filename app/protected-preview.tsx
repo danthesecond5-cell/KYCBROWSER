@@ -389,6 +389,7 @@ export default function ProtectedPreviewScreen() {
     showTestingWatermark,
     protocols,
     presentationMode,
+    showTestingWatermark,
     mlSafetyEnabled,
   } = useProtocol();
 
