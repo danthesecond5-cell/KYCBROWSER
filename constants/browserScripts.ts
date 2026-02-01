@@ -1519,12 +1519,90 @@ export const createMediaInjectionScript = (
       return [];
     };
 
+    // ============ PERMISSION PROMPT SYSTEM ============
+    // Generates unique request IDs for permission prompts
+    let permissionRequestId = 0;
+    const pendingPermissionRequests = new Map();
+    
+    // Listen for permission responses from React Native
+    function handlePermissionResponse(response) {
+      const requestId = response.requestId;
+      const resolver = pendingPermissionRequests.get(requestId);
+      if (resolver) {
+        pendingPermissionRequests.delete(requestId);
+        resolver(response);
+        Logger.log('Permission response received:', response.choice, 'for request', requestId);
+      } else {
+        Logger.warn('No pending request found for ID:', requestId);
+      }
+    }
+    
+    // Expose handler globally for React Native to call
+    window.__handleCameraPermissionResponse = handlePermissionResponse;
+    
+    // Request permission from user via React Native
+    function requestUserPermissionChoice(constraints, requestingUrl) {
+      return new Promise(function(resolve) {
+        const requestId = ++permissionRequestId;
+        const cfg = window.__mediaSimConfig || {};
+        
+        // Store the resolver
+        pendingPermissionRequests.set(requestId, resolve);
+        
+        // Send permission request to React Native
+        if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'cameraPermissionRequest',
+            payload: {
+              requestId: requestId,
+              requestingUrl: requestingUrl || window.location.href,
+              constraints: {
+                video: !!constraints?.video,
+                audio: !!constraints?.audio,
+              },
+              currentProtocol: cfg.protocolId || 'standard',
+              hasVideos: !!(cfg.fallbackVideoUri || (cfg.devices && cfg.devices.some(function(d) { return d.assignedVideoUri; }))),
+              timestamp: Date.now()
+            }
+          }));
+          Logger.log('Permission request sent to RN, awaiting response...', requestId);
+        } else {
+          // Fallback: if no RN bridge, use default behavior (simulate if configured)
+          Logger.warn('No ReactNativeWebView bridge, using default behavior');
+          resolve({
+            requestId: requestId,
+            choice: cfg.forceSimulation || cfg.stealthMode ? 'simulate' : 'allow',
+            protocolId: cfg.protocolId,
+            videoUri: cfg.fallbackVideoUri,
+          });
+        }
+        
+        // Timeout after 60 seconds - default to deny if no response
+        setTimeout(function() {
+          if (pendingPermissionRequests.has(requestId)) {
+            pendingPermissionRequests.delete(requestId);
+            Logger.warn('Permission request timed out after 60s, denying');
+            resolve({ requestId: requestId, choice: 'deny' });
+          }
+        }, 60000);
+      });
+    }
+    
     // ============ GET USER MEDIA OVERRIDE ============
     mediaDevices.getUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       const cfg = window.__mediaSimConfig || {};
       const wantsVideo = !!constraints?.video;
       const wantsAudio = !!constraints?.audio;
+      
+      // Only prompt for video requests (not audio-only)
+      if (!wantsVideo) {
+        Logger.log('Audio-only request, passing through to real getUserMedia');
+        if (_origGetUserMedia) {
+          return _origGetUserMedia(constraints);
+        }
+        throw new DOMException('getUserMedia not available', 'NotSupportedError');
+      }
       
       let reqDeviceId = null;
       let reqFacing = null;
@@ -1536,49 +1614,72 @@ export const createMediaInjectionScript = (
       
       const selectedDevice = selectDevice(cfg.devices, reqDeviceId, reqFacing);
       const device = normalizeDevice(selectedDevice);
-      const resolvedUri = resolveVideoUri(device);
-      const hasVideoUri = resolvedUri && !resolvedUri.startsWith('canvas:');
-      const forceSimulation = !!cfg.forceSimulation;
       
       Logger.log(
         'Device:', device?.name || 'none',
         '| ReqId:', reqDeviceId || 'none',
-        '| Facing:', reqFacing || 'any',
-        '| SimEnabled:', device?.simulationEnabled,
-        '| ForceSim:', forceSimulation,
-        '| URI:', resolvedUri ? resolvedUri.substring(0, 40) : 'none'
+        '| Facing:', reqFacing || 'any'
       );
       
-      const shouldSimulate = forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri);
+      // ============ PROMPT USER FOR PERMISSION CHOICE ============
+      // Always prompt when a site requests camera access
+      const permissionResponse = await requestUserPermissionChoice(constraints, window.location.href);
+      Logger.log('User permission choice:', permissionResponse.choice);
       
-      if (shouldSimulate && wantsVideo) {
-        if (hasVideoUri) {
-          Logger.log('Creating simulated stream from video');
-          try {
-            const deviceForSim = {
-              ...device,
-              assignedVideoUri: resolvedUri,
-              simulationEnabled: true
-            };
-            const stream = await createVideoStream(deviceForSim, !!wantsAudio);
-            Logger.log('SUCCESS - tracks:', stream.getTracks().length);
-            return stream;
-          } catch (err) {
-            Logger.error('Video stream failed:', err.message);
-            Logger.log('Falling back to canvas pattern');
-          }
+      // Handle the user's choice
+      if (permissionResponse.choice === 'deny') {
+        Logger.log('User denied camera permission');
+        throw new DOMException('Permission denied', 'NotAllowedError');
+      }
+      
+      if (permissionResponse.choice === 'allow') {
+        Logger.log('User allowed real camera access');
+        if (_origGetUserMedia) {
+          return _origGetUserMedia(constraints);
         }
-        
-        Logger.log('Returning canvas test pattern');
-        return await createCanvasStream(device, !!wantsAudio, 'default');
+        // Fallback if original getUserMedia not available
+        throw new DOMException('getUserMedia not available', 'NotSupportedError');
       }
       
-      if (_origGetUserMedia && !cfg.stealthMode && !forceSimulation) {
-        Logger.log('Using real getUserMedia');
-        return _origGetUserMedia(constraints);
+      // choice === 'simulate'
+      Logger.log('User chose to simulate video');
+      
+      // Use video from response if provided, otherwise use configured fallback
+      const videoUri = permissionResponse.videoUri || cfg.fallbackVideoUri;
+      const hasVideoUri = videoUri && !videoUri.startsWith('canvas:');
+      
+      // Update config with response settings if provided
+      if (permissionResponse.protocolId) {
+        cfg.protocolId = permissionResponse.protocolId;
+      }
+      if (permissionResponse.videoUri) {
+        cfg.fallbackVideoUri = permissionResponse.videoUri;
       }
       
-      Logger.log('No simulation, returning canvas pattern');
+      Logger.log(
+        'Simulating with:',
+        '| Protocol:', permissionResponse.protocolId || cfg.protocolId,
+        '| VideoURI:', videoUri ? videoUri.substring(0, 40) : 'none'
+      );
+      
+      if (hasVideoUri) {
+        Logger.log('Creating simulated stream from video');
+        try {
+          const deviceForSim = {
+            ...device,
+            assignedVideoUri: videoUri,
+            simulationEnabled: true
+          };
+          const stream = await createVideoStream(deviceForSim, !!wantsAudio);
+          Logger.log('SUCCESS - tracks:', stream.getTracks().length);
+          return stream;
+        } catch (err) {
+          Logger.error('Video stream failed:', err.message);
+          Logger.log('Falling back to canvas pattern');
+        }
+      }
+      
+      Logger.log('Returning canvas test pattern');
       return await createCanvasStream(device, !!wantsAudio, 'default');
     };
 

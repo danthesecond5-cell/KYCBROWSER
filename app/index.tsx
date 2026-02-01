@@ -47,7 +47,8 @@ import TemplateModal from '@/components/browser/TemplateModal';
 import TestingWatermark from '@/components/TestingWatermark';
 
 import ControlToolbar, { SiteSettingsModal } from '@/components/browser/ControlToolbar';
-import { ProtocolSettingsModal } from '@/components/browser/modals';
+import { ProtocolSettingsModal, CameraPermissionPromptModal } from '@/components/browser/modals';
+import type { CameraPermissionPromptResult } from '@/components/browser/modals';
 import SetupRequired from '@/components/SetupRequired';
 
 export default function MotionBrowserScreen() {
@@ -145,6 +146,11 @@ export default function MotionBrowserScreen() {
 
   const [showSiteSettingsModal, setShowSiteSettingsModal] = useState(false);
   const [showProtocolSettingsModal, setShowProtocolSettingsModal] = useState(false);
+  const [showPermissionPromptModal, setShowPermissionPromptModal] = useState(false);
+  const [pendingPermissionRequest, setPendingPermissionRequest] = useState<{
+    requestId: number;
+    requestingUrl: string;
+  } | null>(null);
 
   const isProtocolEnabled = useMemo(
     () => protocols[activeProtocol]?.enabled ?? true,
@@ -878,6 +884,57 @@ export default function MotionBrowserScreen() {
     console.log('[App] Website settings deleted:', id);
   }, [deleteWebsiteSettings]);
 
+  // Handle camera permission prompt response
+  const handlePermissionPromptResponse = useCallback((result: CameraPermissionPromptResult) => {
+    if (!pendingPermissionRequest || !webViewRef.current) {
+      console.warn('[App] No pending permission request to respond to');
+      return;
+    }
+
+    const { requestId } = pendingPermissionRequest;
+    
+    // Send response back to WebView
+    const response = {
+      requestId,
+      choice: result.choice,
+      protocolId: result.protocolId,
+      videoUri: result.videoUri ? formatVideoUriForWebView(result.videoUri) : undefined,
+      videoName: result.videoName,
+    };
+
+    console.log('[App] Sending permission response to WebView:', {
+      requestId,
+      choice: result.choice,
+      protocol: result.protocolId,
+      video: result.videoName,
+    });
+
+    webViewRef.current.injectJavaScript(`
+      (function() {
+        if (window.__handleCameraPermissionResponse) {
+          window.__handleCameraPermissionResponse(${JSON.stringify(response)});
+        } else {
+          console.warn('[MediaSim] Permission response handler not found');
+        }
+      })();
+      true;
+    `);
+
+    // Clear pending request
+    setPendingPermissionRequest(null);
+    setShowPermissionPromptModal(false);
+  }, [pendingPermissionRequest]);
+
+  // Protocol list for permission prompt
+  const protocolListForPrompt = useMemo(() => {
+    return [
+      { id: 'standard' as const, name: protocols.standard?.name || 'Standard Injection', enabled: protocols.standard?.enabled ?? true },
+      { id: 'allowlist' as const, name: protocols.allowlist?.name || 'Allowlist Mode', enabled: protocols.allowlist?.enabled ?? true },
+      { id: 'protected' as const, name: protocols.protected?.name || 'Protected Preview', enabled: protocols.protected?.enabled ?? true },
+      { id: 'harness' as const, name: protocols.harness?.name || 'Test Harness', enabled: protocols.harness?.enabled ?? true },
+    ];
+  }, [protocols]);
+
   if (requiresSetup) {
     return (
       <SetupRequired
@@ -983,6 +1040,14 @@ export default function MotionBrowserScreen() {
                       console.log('[WebView Injection Ready]', data.payload);
                     } else if (data.type === 'mediaAccess') {
                       console.log('[WebView Media Access]', data.device, data.action);
+                    } else if (data.type === 'cameraPermissionRequest') {
+                      // Handle camera permission request from website
+                      console.log('[WebView Camera Permission Request]', data.payload);
+                      setPendingPermissionRequest({
+                        requestId: data.payload.requestId,
+                        requestingUrl: data.payload.requestingUrl,
+                      });
+                      setShowPermissionPromptModal(true);
                     } else if (data.type === 'videoError') {
                       console.error('[WebView Video Error]', data.payload?.error?.message);
                       const errorMsg = data.payload?.error?.message || 'Video failed to load';
@@ -1152,6 +1217,20 @@ export default function MotionBrowserScreen() {
         visible={showProtocolSettingsModal}
         currentHostname={currentHostname}
         onClose={() => setShowProtocolSettingsModal(false)}
+      />
+
+      <CameraPermissionPromptModal
+        visible={showPermissionPromptModal}
+        requestingUrl={pendingPermissionRequest?.requestingUrl || url}
+        compatibleVideos={compatibleVideos}
+        protocols={protocolListForPrompt}
+        activeProtocol={activeProtocol}
+        defaultVideoId={fallbackVideo?.id}
+        onResponse={handlePermissionPromptResponse}
+        onClose={() => {
+          // If user closes modal without selecting, deny permission
+          handlePermissionPromptResponse({ choice: 'deny' });
+        }}
       />
 
       {/* Testing Watermark Overlay */}
