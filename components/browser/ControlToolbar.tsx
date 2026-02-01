@@ -39,8 +39,7 @@ import {
   ChevronRight,
   Info,
 } from 'lucide-react-native';
-import { useDeveloperMode } from '@/contexts/DeveloperModeContext';
-import { PROTOCOL_METADATA, ProtocolId } from '@/types/protocols';
+// NOTE: Protocol settings UI lives in `components/browser/modals/ProtocolSettingsModal.tsx`.
 import type { AccelerometerData, GyroscopeData } from '@/hooks/useMotionSensors';
 import type { SimulationConfig, SimulationPattern, WebsiteSettings } from '@/types/browser';
 import type { CaptureDevice } from '@/types/device';

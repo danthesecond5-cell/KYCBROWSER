@@ -72,7 +72,7 @@ export interface CodexHighProtocolSettings {
 export interface ProtocolContextValue {
   // Developer Mode
   developerModeEnabled: boolean;
-  toggleDeveloperMode: () => Promise<void>;
+  toggleDeveloperMode: (pinAttempt?: string) => Promise<boolean>;
   setDeveloperModeWithPin: (pin: string) => Promise<boolean>;
   developerPin: string | null;
   setDeveloperPin: (pin: string) => Promise<void>;
@@ -306,11 +306,20 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
         if (pin) setDeveloperPinState(pin);
         if (presMode !== null) setPresentationMode(presMode === 'true');
         if (watermark !== null) setShowTestingWatermarkState(watermark === 'true');
-        if (activeProto) setActiveProtocolState(activeProto as ProtocolType);
+        if (activeProto) {
+          setActiveProtocolState(isProtocolType(activeProto) ? activeProto : 'standard');
+        }
         if (protocolsConfig) {
           try {
             const parsed = JSON.parse(protocolsConfig);
-            setProtocols({ ...DEFAULT_PROTOCOLS, ...parsed });
+            // Merge only known protocol keys to avoid invalid persisted shapes.
+            const merged = { ...DEFAULT_PROTOCOLS } as Record<ProtocolType, ProtocolConfig>;
+            (Object.keys(DEFAULT_PROTOCOLS) as ProtocolType[]).forEach((key) => {
+              if (parsed && parsed[key]) {
+                merged[key] = { ...DEFAULT_PROTOCOLS[key], ...parsed[key], id: key };
+              }
+            });
+            setProtocols(merged);
           } catch (e) {
             console.warn('[Protocol] Failed to parse protocols config:', e);
           }
@@ -369,14 +378,22 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     };
 
     loadSettings();
-  }, []);
+  }, [isProtocolType]);
 
-  const toggleDeveloperMode = useCallback(async () => {
+  const toggleDeveloperMode = useCallback(async (pinAttempt?: string): Promise<boolean> => {
+    // Enabling requires a pin (if one has been set).
+    if (!developerModeEnabled) {
+      if (developerPin && pinAttempt !== developerPin) {
+        console.warn('[Protocol] Incorrect PIN attempt to enable developer mode');
+        return false;
+      }
+    }
     const newValue = !developerModeEnabled;
     setDeveloperModeEnabled(newValue);
     await AsyncStorage.setItem(STORAGE_KEYS.DEVELOPER_MODE, String(newValue));
     console.log('[Protocol] Developer mode toggled:', newValue);
-  }, [developerModeEnabled]);
+    return true;
+  }, [developerModeEnabled, developerPin]);
 
   const setDeveloperModeWithPin = useCallback(async (pin: string): Promise<boolean> => {
     if (!developerPin) {
@@ -417,10 +434,15 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   }, []);
 
   const setActiveProtocol = useCallback(async (protocol: ProtocolType) => {
+    // Defensive: callers should only pass known protocols, but guard against bad values.
+    if (!isProtocolType(protocol)) {
+      console.warn('[Protocol] Ignoring invalid protocol set:', protocol);
+      return;
+    }
     setActiveProtocolState(protocol);
     await AsyncStorage.setItem(STORAGE_KEYS.ACTIVE_PROTOCOL, protocol);
     console.log('[Protocol] Active protocol set:', protocol);
-  }, []);
+  }, [isProtocolType]);
 
   const updateProtocolConfig = useCallback(async <T extends ProtocolType>(
     protocol: T,

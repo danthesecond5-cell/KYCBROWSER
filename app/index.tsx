@@ -228,8 +228,20 @@ export default function MotionBrowserScreen() {
   const allowlistBlocked = allowlistEnabled && allowlistSettings.blockUnlisted && !isAllowlisted;
   const isCodexProtocol = activeProtocol === 'gpt-5-2-codex-high';
 
+  const activeInjectMotionData = useMemo(() => {
+    return activeProtocol === 'gpt52' ? gpt52Settings.injectMotionData : standardSettings.injectMotionData;
+  }, [activeProtocol, gpt52Settings.injectMotionData, standardSettings.injectMotionData]);
+
+  const activeLoopVideo = useMemo(() => {
+    return activeProtocol === 'gpt52' ? gpt52Settings.loopVideo : standardSettings.loopVideo;
+  }, [activeProtocol, gpt52Settings.loopVideo, standardSettings.loopVideo]);
+
+  const activeRespectSiteSettings = useMemo(() => {
+    return activeProtocol === 'gpt52' ? gpt52Settings.respectSiteSettings : standardSettings.respectSiteSettings;
+  }, [activeProtocol, gpt52Settings.respectSiteSettings, standardSettings.respectSiteSettings]);
+
   const effectiveStealthMode = useMemo(() => {
-    if (activeProtocol === 'protected' || activeProtocol === 'harness') {
+    if (activeProtocol === 'protected' || activeProtocol === 'harness' || activeProtocol === 'gpt52') {
       return true;
     }
     if (activeProtocol === 'gpt52') {
@@ -241,7 +253,7 @@ export default function MotionBrowserScreen() {
     if (!standardSettings.stealthByDefault) {
       return false;
     }
-    if (!standardSettings.respectSiteSettings) {
+    if (!activeRespectSiteSettings) {
       return true;
     }
     return shouldUseStealthForUrl(url);
@@ -249,7 +261,7 @@ export default function MotionBrowserScreen() {
     activeProtocol,
     codexSettings.stealthMode,
     standardSettings.stealthByDefault,
-    standardSettings.respectSiteSettings,
+    activeRespectSiteSettings,
     shouldUseStealthForUrl,
     url,
   ]);
@@ -284,7 +296,14 @@ export default function MotionBrowserScreen() {
       return 'GPT-5.2 Codex High';
     }
     return '';
-  }, [activeProtocol, harnessSettings.overlayEnabled, allowlistEnabled, allowlistBlocked, isProtocolEnabled]);
+  }, [
+    activeProtocol,
+    harnessSettings.overlayEnabled,
+    allowlistEnabled,
+    allowlistBlocked,
+    isProtocolEnabled,
+    gpt52Settings.ultraStealth,
+  ]);
 
   const showProtocolOverlayLabel = useMemo(() => {
     if (!isProtocolEnabled) {
@@ -307,6 +326,7 @@ export default function MotionBrowserScreen() {
     harnessSettings.overlayEnabled,
     codexSettings.showOverlayLabel,
     isProtocolEnabled,
+    gpt52Settings.showOverlayLabel,
   ]);
 
   const autoInjectEnabled = isProtocolEnabled && (
