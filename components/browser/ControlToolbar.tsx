@@ -10,7 +10,6 @@ import {
   Modal,
   Switch,
   TextInput,
-  Alert,
 } from 'react-native';
 import {
   ChevronUp,
@@ -30,16 +29,7 @@ import {
   Shield,
   ShieldOff,
   Film,
-  Lock,
-  Unlock,
-  Code,
-  Monitor,
-  FlaskConical,
-  RotateCcw,
-  ChevronRight,
-  Info,
 } from 'lucide-react-native';
-// NOTE: Protocol settings UI lives in `components/browser/modals/ProtocolSettingsModal.tsx`.
 import type { AccelerometerData, GyroscopeData } from '@/hooks/useMotionSensors';
 import type { SimulationConfig, SimulationPattern, WebsiteSettings } from '@/types/browser';
 import type { CaptureDevice } from '@/types/device';
@@ -76,6 +66,14 @@ interface ControlToolbarProps {
   onApplyVideoToDevice: (deviceId: string, video: SavedVideo) => void;
   onApplyVideoToAll: (video: SavedVideo) => void;
 }
+
+const getHostnameFromUrl = (url: string): string => {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+};
 
 const ControlToolbar = memo(function ControlToolbar({
   isExpanded,
@@ -312,7 +310,7 @@ const ControlToolbar = memo(function ControlToolbar({
             <View style={styles.siteSettingsInfo}>
               <Text style={styles.siteSettingsLabel}>Site Settings</Text>
               <Text style={styles.siteSettingsUrl} numberOfLines={1}>
-                {currentUrl ? new URL(currentUrl).hostname : 'No site loaded'}
+                {currentUrl ? getHostnameFromUrl(currentUrl) : 'No site loaded'}
               </Text>
             </View>
             {currentWebsiteSettings && (
@@ -573,13 +571,7 @@ export function SiteSettingsModal({
     }
   }, [currentSettings]);
 
-  const hostname = useMemo(() => {
-    try {
-      return new URL(currentUrl).hostname;
-    } catch {
-      return currentUrl;
-    }
-  }, [currentUrl]);
+  const hostname = useMemo(() => getHostnameFromUrl(currentUrl), [currentUrl]);
 
   const handleSave = () => {
     onSave(currentUrl, { useStealthByDefault, applyToSubdomains });
@@ -706,7 +698,6 @@ function LegacyProtocolSettingsModal({
   const [expandedProtocol, setExpandedProtocol] = useState<ProtocolId | null>(null);
   
   const {
-    developerMode,
     isDeveloperModeEnabled,
     isAllowlistEditable,
     isProtocolEditable,
@@ -807,7 +798,9 @@ function LegacyProtocolSettingsModal({
             </View>
             <Switch
               value={isDeveloperModeEnabled}
-              onValueChange={toggleDeveloperMode}
+              onValueChange={() => {
+                toggleDeveloperMode();
+              }}
               trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
               thumbColor={isDeveloperModeEnabled ? '#ffffff' : '#888888'}
             />
@@ -1857,344 +1850,3 @@ const modalStyles = StyleSheet.create({
   },
 });
 
-const protocolStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    justifyContent: 'flex-end',
-  },
-  content: {
-    backgroundColor: '#1a1a1a',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    color: '#ffffff',
-  },
-  developerModeBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    marginHorizontal: 16,
-    marginTop: 12,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.1)',
-  },
-  developerModeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  developerModeIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255, 107, 53, 0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  developerModeIconActive: {
-    backgroundColor: '#00ff88',
-  },
-  developerModeLabel: {
-    fontSize: 14,
-    fontWeight: '600' as const,
-    color: '#ffffff',
-  },
-  developerModeHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
-  body: {
-    padding: 16,
-  },
-  section: {
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  sectionHeaderLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  protocolIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sectionTitleContainer: {
-    flex: 1,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '600' as const,
-    color: '#ffffff',
-    marginBottom: 4,
-  },
-  protocolBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  liveBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  liveBadgeActive: {
-    backgroundColor: 'rgba(0, 255, 136, 0.2)',
-  },
-  liveBadgeText: {
-    fontSize: 9,
-    fontWeight: '700' as const,
-    color: 'rgba(255,255,255,0.7)',
-    letterSpacing: 0.5,
-  },
-  lockedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 107, 53, 0.15)',
-  },
-  lockedBadgeText: {
-    fontSize: 9,
-    fontWeight: '600' as const,
-    color: '#ff6b35',
-  },
-  sectionText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.6)',
-    lineHeight: 18,
-  },
-  settingsPanel: {
-    marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.08)',
-  },
-  settingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255,255,255,0.05)',
-  },
-  settingInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  settingLabel: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: '#ffffff',
-  },
-  settingHint: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    marginTop: 2,
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 6,
-    padding: 2,
-  },
-  segmentButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 4,
-  },
-  segmentButtonActive: {
-    backgroundColor: '#00ff88',
-  },
-  segmentButtonText: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: 'rgba(255,255,255,0.6)',
-  },
-  segmentButtonTextActive: {
-    color: '#0a0a0a',
-    fontWeight: '600' as const,
-  },
-  resetButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 12,
-    paddingVertical: 8,
-    borderRadius: 6,
-    backgroundColor: 'rgba(255, 71, 87, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 71, 87, 0.2)',
-  },
-  resetButtonText: {
-    fontSize: 12,
-    fontWeight: '500' as const,
-    color: '#ff4757',
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  statusLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-  },
-  statusValue: {
-    fontSize: 12,
-    color: '#ffffff',
-    flex: 1,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusBadgeAllowed: {
-    backgroundColor: 'rgba(0,255,136,0.15)',
-  },
-  statusBadgeBlocked: {
-    backgroundColor: 'rgba(255,68,68,0.15)',
-  },
-  statusBadgeText: {
-    fontSize: 10,
-    fontWeight: '600' as const,
-    color: '#ffffff',
-  },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 8,
-  },
-  inputRowDisabled: {
-    opacity: 0.6,
-  },
-  domainInput: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    color: '#ffffff',
-    fontSize: 13,
-  },
-  domainInputDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.04)',
-  },
-  addButton: {
-    backgroundColor: '#00ff88',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  addButtonDisabled: {
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  addButtonText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#0a0a0a',
-  },
-  emptyText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.4)',
-    marginTop: 10,
-  },
-  domainList: {
-    marginTop: 10,
-    gap: 6,
-  },
-  domainItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  domainText: {
-    fontSize: 12,
-    color: '#ffffff',
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 12,
-    backgroundColor: 'rgba(0,170,255,0.15)',
-    borderRadius: 8,
-    paddingVertical: 10,
-  },
-  actionButtonText: {
-    fontSize: 12,
-    fontWeight: '600' as const,
-    color: '#00aaff',
-  },
-  infoFooter: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 8,
-    marginBottom: 20,
-    padding: 12,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    borderRadius: 10,
-  },
-  infoFooterText: {
-    flex: 1,
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.5)',
-    lineHeight: 16,
-  },
-});

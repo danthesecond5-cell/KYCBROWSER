@@ -7,8 +7,8 @@ import { Alert } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
-import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import { ProtocolProvider } from "@/contexts/ProtocolContext";
+import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import {
   installConsoleCapture,
   startFreezeDetection,

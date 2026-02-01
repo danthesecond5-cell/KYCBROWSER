@@ -8,53 +8,9 @@ import {
   STEALTH_DETECTION_CHECKS,
   PROPERTIES_TO_DELETE,
 } from './stealthProfiles';
+import { BUILT_IN_VIDEO_INJECTION_SCRIPT } from './builtInTestVideo';
 
 export const SAFARI_USER_AGENT = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1';
-
-export type PerformanceProfile = 'standard' | 'advanced' | 'aggressive';
-
-export interface PerformanceProfilePreset {
-  videoLoadTimeout: number;
-  maxRetryAttempts: number;
-  initialRetryDelay: number;
-  healthCheckInterval: number;
-  minAcceptableFps: number;
-  qualityAdaptationInterval: number;
-  performanceSampleSize: number;
-}
-
-const PERFORMANCE_PROFILE_PRESETS: Record<PerformanceProfile, PerformanceProfilePreset> = {
-  standard: {
-    videoLoadTimeout: 12000,
-    maxRetryAttempts: 4,
-    initialRetryDelay: 500,
-    healthCheckInterval: 5000,
-    minAcceptableFps: 15,
-    qualityAdaptationInterval: 3000,
-    performanceSampleSize: 60,
-  },
-  advanced: {
-    videoLoadTimeout: 15000,
-    maxRetryAttempts: 6,
-    initialRetryDelay: 400,
-    healthCheckInterval: 3500,
-    minAcceptableFps: 12,
-    qualityAdaptationInterval: 2000,
-    performanceSampleSize: 90,
-  },
-  aggressive: {
-    videoLoadTimeout: 18000,
-    maxRetryAttempts: 8,
-    initialRetryDelay: 300,
-    healthCheckInterval: 2500,
-    minAcceptableFps: 10,
-    qualityAdaptationInterval: 1500,
-    performanceSampleSize: 120,
-  },
-};
-
-export const getPerformanceProfilePreset = (profile: PerformanceProfile): PerformanceProfilePreset =>
-  PERFORMANCE_PROFILE_PRESETS[profile] || PERFORMANCE_PROFILE_PRESETS.standard;
 
 export const IPHONE_DEFAULT_PORTRAIT_RESOLUTION = {
   width: 1080,
@@ -706,8 +662,8 @@ export interface MediaInjectionOptions {
   showOverlayLabel?: boolean;
   loopVideo?: boolean;
   mirrorVideo?: boolean;
-  aggressiveRetries?: boolean;
   debugEnabled?: boolean;
+  permissionPromptEnabled?: boolean;
   videoLoadTimeoutMs?: number;
   maxRetryAttempts?: number;
   initialRetryDelayMs?: number;
@@ -728,8 +684,8 @@ export const createMediaInjectionScript = (
     showOverlayLabel = false,
     loopVideo = true,
     mirrorVideo = false,
-    aggressiveRetries = false,
     debugEnabled,
+    permissionPromptEnabled = true,
     videoLoadTimeoutMs,
     maxRetryAttempts,
     initialRetryDelayMs,
@@ -738,42 +694,17 @@ export const createMediaInjectionScript = (
   } = options;
   const frontCamera = devices.find(d => d.facing === 'front' && d.type === 'camera');
   const defaultRes = frontCamera?.capabilities?.videoResolutions?.[0];
-  const profilePreset = getPerformanceProfilePreset(performanceProfile);
   
   const placeholderWidth = defaultRes?.width || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width;
   const placeholderHeight = defaultRes?.height || IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height;
 
-  const performanceProfiles = {
-    standard: {
-      performanceSampleSize: 60,
-      qualityAdaptationInterval: 3000,
-      minAcceptableFps: 15,
-      maxActiveStreams: 3,
-      healthCheckInterval: 5000,
-      qualityThresholds: { high: 25, medium: 18, low: 12 },
-      qualityLevels: [
-        { name: 'high', scale: 1.0, fps: 30 },
-        { name: 'medium', scale: 0.75, fps: 24 },
-        { name: 'low', scale: 0.5, fps: 15 },
-      ],
-    },
-    codex: {
-      performanceSampleSize: 90,
-      qualityAdaptationInterval: 2000,
-      minAcceptableFps: 18,
-      maxActiveStreams: 4,
-      healthCheckInterval: 4000,
-      qualityThresholds: { high: 26, medium: 20, low: 14 },
-      qualityLevels: [
-        { name: 'ultra', scale: 1.0, fps: 30 },
-        { name: 'high', scale: 0.85, fps: 26 },
-        { name: 'medium', scale: 0.7, fps: 22 },
-        { name: 'low', scale: 0.55, fps: 16 },
-      ],
-    },
-  };
+  // Include the built-in video injection script for fallback
+  const builtInVideoScript = BUILT_IN_VIDEO_INJECTION_SCRIPT;
 
   return `
+// ===== BUILT-IN VIDEO SYSTEM =====
+${builtInVideoScript}
+
 (function() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
   if (window.__mediaInjectorInitialized) {
@@ -790,6 +721,7 @@ export const createMediaInjectionScript = (
         loopVideo: ${loopVideo ? 'true' : 'false'},
         mirrorVideo: ${mirrorVideo ? 'true' : 'false'},
         debugEnabled: ${debugEnabled === undefined ? 'undefined' : JSON.stringify(debugEnabled)},
+        permissionPromptEnabled: ${permissionPromptEnabled ? 'true' : 'false'},
         videoLoadTimeoutMs: ${videoLoadTimeoutMs === undefined ? 'undefined' : JSON.stringify(videoLoadTimeoutMs)},
         maxRetryAttempts: ${maxRetryAttempts === undefined ? 'undefined' : JSON.stringify(maxRetryAttempts)},
         initialRetryDelayMs: ${initialRetryDelayMs === undefined ? 'undefined' : JSON.stringify(initialRetryDelayMs)},
@@ -802,7 +734,6 @@ export const createMediaInjectionScript = (
   window.__mediaInjectorInitialized = true;
   
   // ============ CONFIGURATION ============
-  const PERFORMANCE_PROFILES = ${JSON.stringify(performanceProfiles)};
   const CONFIG = {
     DEBUG_ENABLED: ${debugEnabled === undefined ? 'true' : JSON.stringify(debugEnabled)},
     FALLBACK_VIDEO_URI: ${JSON.stringify(fallbackVideoUri)},
@@ -812,7 +743,7 @@ export const createMediaInjectionScript = (
     SHOW_OVERLAY_LABEL: ${showOverlayLabel ? 'true' : 'false'},
     LOOP_VIDEO: ${loopVideo ? 'true' : 'false'},
     MIRROR_VIDEO: ${mirrorVideo ? 'true' : 'false'},
-    AGGRESSIVE_RETRIES: ${aggressiveRetries ? 'true' : 'false'},
+    PERMISSION_PROMPT_ENABLED: ${permissionPromptEnabled ? 'true' : 'false'},
     PORTRAIT_WIDTH: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.width},
     PORTRAIT_HEIGHT: ${IPHONE_DEFAULT_PORTRAIT_RESOLUTION.height},
     TARGET_FPS: ${targetFps ?? IPHONE_DEFAULT_PORTRAIT_RESOLUTION.fps},
@@ -822,10 +753,10 @@ export const createMediaInjectionScript = (
     HEALTH_CHECK_INTERVAL: 5000,
     MIN_ACCEPTABLE_FPS: 15,
     CORS_STRATEGIES: ['anonymous', 'use-credentials', null],
-    PERFORMANCE_SAMPLE_SIZE: 90, // Increased for better averaging
-    QUALITY_HIGH_FPS_THRESHOLD: 27, // Optimized thresholds
-    QUALITY_MEDIUM_FPS_THRESHOLD: 20,
-    QUALITY_LOW_FPS_THRESHOLD: 15,
+    PERFORMANCE_SAMPLE_SIZE: 60,
+    QUALITY_HIGH_FPS_THRESHOLD: 25,
+    QUALITY_MEDIUM_FPS_THRESHOLD: 18,
+    QUALITY_LOW_FPS_THRESHOLD: 12,
     QUALITY_ADAPTATION_INTERVAL: 3000,
     QUALITY_LEVELS: [
       { name: 'high', scale: 1.0, fps: 30 },
@@ -834,38 +765,7 @@ export const createMediaInjectionScript = (
     ],
     MAX_ACTIVE_STREAMS: ${maxActiveStreams ?? 3},
     CLEANUP_DELAY: 100,
-    PRELOAD_BUFFER_SIZE: 2, // Number of videos to preload
-    MEMORY_PRESSURE_THRESHOLD: 0.8, // 80% memory usage triggers cleanup
   };
-
-  const RETRY_BASELINE = {
-    MAX_RETRY_ATTEMPTS: CONFIG.MAX_RETRY_ATTEMPTS,
-    VIDEO_LOAD_TIMEOUT: CONFIG.VIDEO_LOAD_TIMEOUT,
-    INITIAL_RETRY_DELAY: CONFIG.INITIAL_RETRY_DELAY,
-    HEALTH_CHECK_INTERVAL: CONFIG.HEALTH_CHECK_INTERVAL,
-    PERFORMANCE_SAMPLE_SIZE: CONFIG.PERFORMANCE_SAMPLE_SIZE,
-    QUALITY_ADAPTATION_INTERVAL: CONFIG.QUALITY_ADAPTATION_INTERVAL,
-  };
-
-  function applyRetryProfile(isAggressive) {
-    if (!isAggressive) {
-      CONFIG.MAX_RETRY_ATTEMPTS = RETRY_BASELINE.MAX_RETRY_ATTEMPTS;
-      CONFIG.VIDEO_LOAD_TIMEOUT = RETRY_BASELINE.VIDEO_LOAD_TIMEOUT;
-      CONFIG.INITIAL_RETRY_DELAY = RETRY_BASELINE.INITIAL_RETRY_DELAY;
-      CONFIG.HEALTH_CHECK_INTERVAL = RETRY_BASELINE.HEALTH_CHECK_INTERVAL;
-      CONFIG.PERFORMANCE_SAMPLE_SIZE = RETRY_BASELINE.PERFORMANCE_SAMPLE_SIZE;
-      CONFIG.QUALITY_ADAPTATION_INTERVAL = RETRY_BASELINE.QUALITY_ADAPTATION_INTERVAL;
-      return;
-    }
-    CONFIG.MAX_RETRY_ATTEMPTS = Math.max(CONFIG.MAX_RETRY_ATTEMPTS, 6);
-    CONFIG.VIDEO_LOAD_TIMEOUT = Math.max(CONFIG.VIDEO_LOAD_TIMEOUT, 20000);
-    CONFIG.INITIAL_RETRY_DELAY = Math.max(CONFIG.INITIAL_RETRY_DELAY, 400);
-    CONFIG.HEALTH_CHECK_INTERVAL = Math.min(CONFIG.HEALTH_CHECK_INTERVAL, 4000);
-    CONFIG.PERFORMANCE_SAMPLE_SIZE = Math.max(CONFIG.PERFORMANCE_SAMPLE_SIZE, 90);
-    CONFIG.QUALITY_ADAPTATION_INTERVAL = Math.min(CONFIG.QUALITY_ADAPTATION_INTERVAL, 2000);
-  }
-
-  applyRetryProfile(CONFIG.AGGRESSIVE_RETRIES);
   
   // ============ EXPO/WEBVIEW COMPATIBILITY ============
   if (!window.performance) {
@@ -941,7 +841,6 @@ export const createMediaInjectionScript = (
           source: source,
           fallback: CONFIG.FALLBACK_VIDEO_URI,
           forceSimulation: CONFIG.FORCE_SIMULATION,
-          performanceProfile: CONFIG.PERFORMANCE_PROFILE,
           timestamp: Date.now()
         }
       }));
@@ -949,7 +848,7 @@ export const createMediaInjectionScript = (
   }
   
   Logger.log('======== WEBCAM SIMULATION INIT ========');
-  Logger.log('Protocol:', CONFIG.PROTOCOL_ID, '| Devices:', ${devices.length}, '| Stealth:', ${stealthMode}, '| ForceSim:', CONFIG.FORCE_SIMULATION, '| AggressiveRetries:', CONFIG.AGGRESSIVE_RETRIES);
+  Logger.log('Protocol:', CONFIG.PROTOCOL_ID, '| Devices:', ${devices.length}, '| Stealth:', ${stealthMode}, '| ForceSim:', CONFIG.FORCE_SIMULATION);
   
   // ============ METRICS TRACKING ============
   const Metrics = {
@@ -979,12 +878,8 @@ export const createMediaInjectionScript = (
         const delta = now - this.lastFrameTime;
         const fps = 1000 / delta;
         this.fpsHistory.push(fps);
-        if (this.fpsHistory.length > RuntimeConfig.performanceSampleSize) {
+        if (this.fpsHistory.length > CONFIG.PERFORMANCE_SAMPLE_SIZE) {
           this.fpsHistory.shift();
-        }
-        if (CONFIG.ADAPTIVE_QUALITY) {
-          QualityAdapter.recordFps(fps);
-          QualityAdapter.adapt();
         }
       }
       this.lastFrameTime = now;
@@ -1054,67 +949,18 @@ export const createMediaInjectionScript = (
       return { activeCount: this.activeStreams.size, streams: Array.from(this.activeStreams.keys()) };
     }
   };
-
-  function registerStream(stream, device, source) {
-    if (!stream) return;
-    if (stream._streamId) return;
-    const baseId = device?.id || device?.nativeDeviceId || device?.deviceId || 'stream';
-    const streamId = baseId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-    stream._streamId = streamId;
-    stream._source = source || 'simulated';
-    StreamRegistry.register(streamId, stream, stream._cleanup);
-    try {
-      const stopHandler = function() { StreamRegistry.unregister(streamId); };
-      stream.getTracks().forEach(function(track) {
-        track.addEventListener('ended', stopHandler);
-        track.addEventListener('inactive', stopHandler);
-      });
-    } catch (e) {}
-  }
   
-  // ============ ENHANCED QUALITY ADAPTATION SYSTEM ============
+  // ============ QUALITY ADAPTATION SYSTEM ============
   const QualityAdapter = {
     currentLevel: 0,
     lastAdaptTime: 0,
     fpsHistory: [],
-    memoryHistory: [],
-    cpuHistory: [],
-    adaptiveMode: 'balanced', // conservative, balanced, aggressive, experimental
     
-    getCurrentQuality: function() { return CONFIG.QUALITY_LEVELS[this.currentLevel] || CONFIG.QUALITY_LEVELS[0]; },
+    getCurrentQuality: function() { return CONFIG.QUALITY_LEVELS[this.currentLevel]; },
     
     recordFps: function(fps) {
-      if (!RuntimeConfig.adaptiveQualityEnabled) return;
       this.fpsHistory.push(fps);
-      if (this.fpsHistory.length > CONFIG.PERFORMANCE_SAMPLE_SIZE) this.fpsHistory.shift();
-    },
-    
-    recordMemory: function() {
-      if (performance.memory) {
-        const memUsage = (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100;
-        this.memoryHistory.push(memUsage);
-        if (this.memoryHistory.length > 20) this.memoryHistory.shift();
-      }
-    },
-    
-    recordCpu: function() {
-      // Estimate CPU usage based on frame timing
-      if (this.fpsHistory.length >= 2) {
-        const recentFps = this.fpsHistory.slice(-5);
-        const variance = this.calculateVariance(recentFps);
-        this.cpuHistory.push(variance);
-        if (this.cpuHistory.length > 20) this.cpuHistory.shift();
-      }
-    },
-    
-    calculateVariance: function(arr) {
-      if (arr.length === 0) return 0;
-      const mean = arr.reduce(function(a, b) { return a + b; }, 0) / arr.length;
-      const squareDiffs = arr.map(function(value) {
-        const diff = value - mean;
-        return diff * diff;
-      });
-      return Math.sqrt(squareDiffs.reduce(function(a, b) { return a + b; }, 0) / arr.length);
+      if (this.fpsHistory.length > 30) this.fpsHistory.shift();
     },
     
     getAverageFps: function() {
@@ -1122,42 +968,17 @@ export const createMediaInjectionScript = (
       return this.fpsHistory.reduce(function(a, b) { return a + b; }, 0) / this.fpsHistory.length;
     },
     
-    getAverageMemory: function() {
-      if (this.memoryHistory.length === 0) return 0;
-      return this.memoryHistory.reduce(function(a, b) { return a + b; }, 0) / this.memoryHistory.length;
-    },
-    
-    getAdaptiveThresholds: function() {
-      switch(this.adaptiveMode) {
-        case 'conservative':
-          return { lowFps: 20, mediumFps: 25, highFps: 28, memoryLimit: 70 };
-        case 'balanced':
-          return { lowFps: 15, mediumFps: 22, highFps: 27, memoryLimit: 80 };
-        case 'aggressive':
-          return { lowFps: 12, mediumFps: 18, highFps: 25, memoryLimit: 85 };
-        case 'experimental':
-          return { lowFps: 10, mediumFps: 15, highFps: 22, memoryLimit: 90 };
-        default:
-          return { lowFps: 15, mediumFps: 22, highFps: 27, memoryLimit: 80 };
-      }
-    },
-    
     adapt: function() {
-      if (!RuntimeConfig.adaptiveQualityEnabled) return;
       var now = Date.now();
-      if (now - this.lastAdaptTime < RuntimeConfig.qualityAdaptationInterval || this.fpsHistory.length < 10) return;
+      if (now - this.lastAdaptTime < CONFIG.QUALITY_ADAPTATION_INTERVAL || this.fpsHistory.length < 10) return;
       
-      this.recordMemory();
-      this.recordCpu();
+      var avgFps = this.getAverageFps();
+      var prevLevel = this.currentLevel;
       
-      var maxLevel = CONFIG.QUALITY_LEVELS.length - 1;
-      var midLevel = Math.max(0, maxLevel - 1);
-      if (maxLevel < 0) return;
-      
-      if (avgFps < CONFIG.QUALITY_LOW_FPS_THRESHOLD && this.currentLevel < maxLevel) {
-        this.currentLevel = maxLevel;
-      } else if (avgFps < CONFIG.QUALITY_MEDIUM_FPS_THRESHOLD && this.currentLevel < midLevel) {
-        this.currentLevel = midLevel;
+      if (avgFps < CONFIG.QUALITY_LOW_FPS_THRESHOLD && this.currentLevel < 2) {
+        this.currentLevel = 2;
+      } else if (avgFps < CONFIG.QUALITY_MEDIUM_FPS_THRESHOLD && this.currentLevel < 1) {
+        this.currentLevel = 1;
       } else if (avgFps > CONFIG.QUALITY_HIGH_FPS_THRESHOLD && this.currentLevel > 0) {
         this.currentLevel = Math.max(0, this.currentLevel - 1);
       }
@@ -1165,31 +986,12 @@ export const createMediaInjectionScript = (
       if (prevLevel !== this.currentLevel) {
         this.lastAdaptTime = now;
         var quality = this.getCurrentQuality();
-        RenderCache.frameSkipThreshold = quality.name === 'low'
-          ? 0.03
-          : quality.name === 'medium'
-            ? 0.01
-            : 0.001;
         Logger.log('Quality adapted:', quality.name, '| FPS:', avgFps.toFixed(1));
         if (window.ReactNativeWebView) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'qualityAdapted', 
-            payload: { 
-              level: this.currentLevel, 
-              name: quality.name, 
-              avgFps: avgFps,
-              avgMemory: avgMemory,
-              mode: this.adaptiveMode
-            }
+            type: 'qualityAdapted', payload: { level: this.currentLevel, name: quality.name, avgFps: avgFps }
           }));
         }
-      }
-    },
-    
-    setAdaptiveMode: function(mode) {
-      if (['conservative', 'balanced', 'aggressive', 'experimental'].indexOf(mode) !== -1) {
-        this.adaptiveMode = mode;
-        Logger.log('Adaptive mode set to:', mode);
       }
     },
     
@@ -1198,21 +1000,8 @@ export const createMediaInjectionScript = (
       return { width: Math.round(w * q.scale), height: Math.round(h * q.scale), fps: q.fps };
     },
     
-    reset: function() {
-      this.currentLevel = 0;
-      this.fpsHistory = [];
-      this.lastAdaptTime = 0;
-      RenderCache.frameSkipThreshold = 0.001;
-    }
+    reset: function() { this.currentLevel = 0; this.fpsHistory = []; this.lastAdaptTime = 0; }
   };
-
-  function getTargetFps() {
-    return CONFIG.ADAPTIVE_QUALITY ? QualityAdapter.getCurrentQuality().fps : CONFIG.TARGET_FPS;
-  }
-
-  function getTargetFrameTime() {
-    return 1000 / getTargetFps();
-  }
   
   // ============ PAGE LIFECYCLE CLEANUP ============
   window.addEventListener('beforeunload', function() {
@@ -1237,74 +1026,31 @@ export const createMediaInjectionScript = (
     }
   });
   
-  // ============ ENHANCED VIDEO CACHE ============
+  // ============ VIDEO CACHE ============
   const VideoCache = {
     cache: new Map(),
-    maxSize: 8, // Increased from 5
+    maxSize: 5,
     
     get: function(url) {
       const entry = this.cache.get(url);
       if (entry && entry.video && !entry.video.error) {
         Logger.log('Cache HIT for:', url.substring(0, 50));
         entry.lastAccessed = Date.now();
-        entry.accessCount = (entry.accessCount || 0) + 1;
-        this.recordAccess(url);
         return entry.video;
       }
-      Logger.log('Cache MISS for:', url.substring(0, 50));
-      this.recordAccess(url);
       return null;
     },
-    
     set: function(url, video) {
       if (this.cache.size >= this.maxSize) {
-        this.evictLeastValuable();
+        var oldestKey = null, oldestTime = Infinity;
+        this.cache.forEach(function(entry, key) {
+          if (entry.lastAccessed < oldestTime) { oldestTime = entry.lastAccessed; oldestKey = key; }
+        });
+        if (oldestKey) this.evict(oldestKey);
       }
-      this.cache.set(url, { 
-        video, 
-        timestamp: Date.now(), 
-        lastAccessed: Date.now(),
-        accessCount: 1,
-        size: this.estimateVideoSize(video)
-      });
+      this.cache.set(url, { video, timestamp: Date.now(), lastAccessed: Date.now() });
       Logger.log('Cache SET for:', url.substring(0, 50));
-      
-      // Trigger predictive preload
-      this.predictNextVideo();
     },
-    
-    estimateVideoSize: function(video) {
-      if (!video) return 0;
-      // Rough estimation based on duration and dimensions
-      const duration = video.duration || 10;
-      const width = video.videoWidth || 1080;
-      const height = video.videoHeight || 1920;
-      return Math.round((width * height * duration * 0.1) / 1024 / 1024); // MB estimate
-    },
-    
-    evictLeastValuable: function() {
-      var leastValuable = null;
-      var lowestScore = Infinity;
-      
-      this.cache.forEach(function(entry, key) {
-        // Calculate value score based on recency, frequency, and size
-        var recencyScore = (Date.now() - entry.lastAccessed) / 1000; // seconds ago
-        var frequencyScore = 100 / (entry.accessCount || 1);
-        var sizeScore = entry.size || 10;
-        var valueScore = recencyScore * frequencyScore * (sizeScore * 0.1);
-        
-        if (valueScore < lowestScore) {
-          lowestScore = valueScore;
-          leastValuable = key;
-        }
-      });
-      
-      if (leastValuable) {
-        Logger.log('Evicting least valuable cache entry');
-        this.evict(leastValuable);
-      }
-    },
-    
     evict: function(url) {
       var entry = this.cache.get(url);
       if (entry && entry.video) {
@@ -1318,67 +1064,6 @@ export const createMediaInjectionScript = (
       this.cache.delete(url);
       Logger.log('Cache evicted:', url?.substring(0, 50));
     },
-    
-    recordAccess: function(url) {
-      this.accessHistory.push({ url: url, timestamp: Date.now() });
-      if (this.accessHistory.length > 50) {
-        this.accessHistory.shift();
-      }
-    },
-    
-    predictNextVideo: function() {
-      if (this.accessHistory.length < 3) return;
-      
-      // Simple pattern detection: look for repeated sequences
-      var recent = this.accessHistory.slice(-10);
-      var urlCounts = {};
-      recent.forEach(function(entry) {
-        urlCounts[entry.url] = (urlCounts[entry.url] || 0) + 1;
-      });
-      
-      // Find most frequently accessed URL not in cache
-      var mostFrequent = null;
-      var maxCount = 0;
-      Object.keys(urlCounts).forEach(function(url) {
-        if (urlCounts[url] > maxCount && !this.cache.has(url)) {
-          mostFrequent = url;
-          maxCount = urlCounts[url];
-        }
-      }, this);
-      
-      if (mostFrequent && this.preloadQueue.indexOf(mostFrequent) === -1) {
-        this.preloadQueue.push(mostFrequent);
-        Logger.log('Predicted next video for preload:', mostFrequent.substring(0, 50));
-      }
-    },
-    
-    getStats: function() {
-      var totalSize = 0;
-      var totalAccesses = 0;
-      this.cache.forEach(function(entry) {
-        totalSize += entry.size || 0;
-        totalAccesses += entry.accessCount || 0;
-      });
-      
-      return {
-        cacheSize: this.cache.size,
-        maxSize: this.maxSize,
-        totalSizeMB: totalSize,
-        totalAccesses: totalAccesses,
-        hitRate: this.calculateHitRate(),
-        preloadQueueSize: this.preloadQueue.length
-      };
-    },
-    
-    calculateHitRate: function() {
-      if (this.accessHistory.length === 0) return 0;
-      var hits = 0;
-      this.accessHistory.forEach(function(entry) {
-        if (this.cache.has(entry.url)) hits++;
-      }, this);
-      return Math.round((hits / this.accessHistory.length) * 100);
-    },
-    
     clear: function() {
       this.cache.forEach(function(entry) {
         if (entry.video) {
@@ -1391,47 +1076,13 @@ export const createMediaInjectionScript = (
         }
       });
       this.cache.clear();
-      this.accessHistory = [];
-      this.preloadQueue = [];
       Logger.log('Cache cleared');
     }
   };
   
-  // ============ ENHANCED ERROR HANDLING ============
+  // ============ ERROR HANDLING ============
   const ErrorHandler = {
-    errorHistory: [],
-    maxHistorySize: 50,
-    
-    recordError: function(error, context, videoUrl) {
-      const errorRecord = {
-        timestamp: Date.now(),
-        error: error,
-        context: context,
-        url: videoUrl ? videoUrl.substring(0, 100) : null,
-        userAgent: navigator.userAgent,
-        memoryUsage: performance.memory ? performance.memory.usedJSHeapSize : null
-      };
-      this.errorHistory.push(errorRecord);
-      if (this.errorHistory.length > this.maxHistorySize) {
-        this.errorHistory.shift();
-      }
-    },
-    
-    getErrorPattern: function() {
-      if (this.errorHistory.length < 3) return null;
-      const recentErrors = this.errorHistory.slice(-5);
-      const errorTypes = recentErrors.map(e => e.context);
-      const uniqueTypes = [...new Set(errorTypes)];
-      if (uniqueTypes.length === 1 && errorTypes.length >= 3) {
-        return { pattern: 'repeating', type: uniqueTypes[0] };
-      }
-      return null;
-    },
-    
     getDetailedErrorMessage: function(error, context, videoUrl) {
-      this.recordError(error, context, videoUrl);
-      const pattern = this.getErrorPattern();
-      
       const errorMap = {
         'MEDIA_ERR_ABORTED': {
           message: 'Video loading was aborted',
@@ -1555,12 +1206,10 @@ export const createMediaInjectionScript = (
     }
   };
   
-  // ============ ENHANCED CONNECTION QUALITY ============
+  // ============ CONNECTION QUALITY ============
   const ConnectionQuality = {
     lastCheckTime: 0,
     quality: 'unknown',
-    bandwidth: 0,
-    rtt: 0,
     
     check: async function() {
       const now = Date.now();
@@ -1571,28 +1220,14 @@ export const createMediaInjectionScript = (
         const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
         if (conn) {
           const effectiveType = conn.effectiveType || '4g';
-          this.bandwidth = conn.downlink || 0; // Mbps
-          this.rtt = conn.rtt || 0; // ms
-          
           if (effectiveType === 'slow-2g' || effectiveType === '2g') {
             this.quality = 'poor';
           } else if (effectiveType === '3g') {
             this.quality = 'moderate';
-          } else if (effectiveType === '4g' || effectiveType === '5g') {
-            this.quality = 'good';
           } else {
-            this.quality = 'good'; // Default to good
+            this.quality = 'good';
           }
-          
-          // Override with bandwidth if available
-          if (this.bandwidth > 0) {
-            if (this.bandwidth < 1) this.quality = 'poor';
-            else if (this.bandwidth < 5) this.quality = 'moderate';
-            else this.quality = 'good';
-          }
-          
-          Logger.log('Connection quality:', this.quality, '(' + effectiveType + ') |', 
-                     'Bandwidth:', this.bandwidth.toFixed(1), 'Mbps | RTT:', this.rtt, 'ms');
+          Logger.log('Connection quality:', this.quality, '(' + effectiveType + ')');
         } else {
           this.quality = 'unknown';
         }
@@ -1608,18 +1243,7 @@ export const createMediaInjectionScript = (
         case 'moderate': return { width: 720, height: 1280 };
         default: return { width: CONFIG.PORTRAIT_WIDTH, height: CONFIG.PORTRAIT_HEIGHT };
       }
-    },
-    
-    getRecommendedBitrate: function() {
-      // Returns multiplier for video quality
-      switch (this.quality) {
-        case 'poor': return 0.5;
-        case 'moderate': return 0.75;
-        case 'good': return 1.0;
-        default: return 0.75;
-      }
     }
-  };
   };
   
   // ============ MAIN CONFIG STATE ============
@@ -1634,20 +1258,10 @@ export const createMediaInjectionScript = (
     forceSimulation: CONFIG.FORCE_SIMULATION,
     loopVideo: CONFIG.LOOP_VIDEO,
     mirrorVideo: CONFIG.MIRROR_VIDEO,
-    aggressiveRetries: CONFIG.AGGRESSIVE_RETRIES,
     protocolId: CONFIG.PROTOCOL_ID,
-    performanceProfile: CONFIG.PERFORMANCE_PROFILE,
     overlayLabelText: CONFIG.PROTOCOL_LABEL,
     showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL,
-    adaptiveQualityEnabled: CONFIG.ADAPTIVE_QUALITY_ENABLED,
-    performanceProfile: CONFIG.PERFORMANCE_PROFILE,
-    videoLoadTimeout: CONFIG.VIDEO_LOAD_TIMEOUT,
-    maxRetryAttempts: CONFIG.MAX_RETRY_ATTEMPTS,
-    initialRetryDelay: CONFIG.INITIAL_RETRY_DELAY,
-    healthCheckInterval: CONFIG.HEALTH_CHECK_INTERVAL,
-    minAcceptableFps: CONFIG.MIN_ACCEPTABLE_FPS,
-    qualityAdaptationInterval: CONFIG.QUALITY_ADAPTATION_INTERVAL,
-    performanceSampleSize: CONFIG.PERFORMANCE_SAMPLE_SIZE
+    permissionPromptEnabled: CONFIG.PERMISSION_PROMPT_ENABLED
   };
 
   // ============ PROTOCOL OVERLAY BADGE ============
@@ -1691,7 +1305,6 @@ export const createMediaInjectionScript = (
   
   window.__updateMediaConfig = function(config) {
     Object.assign(window.__mediaSimConfig, config);
-    updateRuntimeConfig(config);
     Logger.log('Config updated - devices:', window.__mediaSimConfig.devices?.length || 0);
     if (config.debugEnabled !== undefined) {
       Logger.setEnabled(config.debugEnabled);
@@ -1729,73 +1342,83 @@ export const createMediaInjectionScript = (
     }
     notifyReady('update');
   };
+
+  window.__handlePermissionResponse = async function(data) {
+    const req = window.__pendingRequests && window.__pendingRequests[data.requestId];
+    if (!req) {
+      Logger.warn('Unknown permission request:', data.requestId);
+      return;
+    }
+    
+    // Cleanup
+    delete window.__pendingRequests[data.requestId];
+    
+    Logger.log('Permission response:', data.action);
+    
+    if (data.action === 'deny') {
+      req.reject(new DOMException('Permission denied', 'NotAllowedError'));
+      return;
+    }
+    
+    if (data.action === 'allow') {
+      if (_origGetUserMedia) {
+        try {
+          const stream = await _origGetUserMedia(req.constraints);
+          req.resolve(stream);
+        } catch(e) {
+          req.reject(e);
+        }
+      } else {
+        req.reject(new Error('Real getUserMedia not available'));
+      }
+      return;
+    }
+    
+    if (data.action === 'simulate') {
+      try {
+        // Update device with config from response
+        const device = req.device || {};
+        const config = data.config || {};
+        
+        // Use provided URI or fallback to device's URI or global fallback
+        const videoUri = config.videoUri || device.assignedVideoUri || getFallbackVideoUri();
+        
+        const deviceForSim = {
+          ...device,
+          assignedVideoUri: videoUri,
+          simulationEnabled: true
+        };
+        
+        Logger.log('Simulating:', videoUri ? videoUri.substring(0, 30) : 'canvas');
+        
+        // If we have a URI, try video stream
+        if (videoUri && !videoUri.startsWith('canvas:')) {
+           try {
+             const stream = await createVideoStream(deviceForSim, req.wantsAudio);
+             req.resolve(stream);
+             return;
+           } catch(e) {
+             Logger.warn('Video sim failed, falling back to canvas', e.message);
+           }
+        }
+        
+        // Fallback to canvas
+        const stream = await createCanvasStream(deviceForSim, req.wantsAudio, 'default');
+        req.resolve(stream);
+      } catch(e) {
+        Logger.error('Simulation failed:', e.message);
+        req.reject(e);
+      }
+    }
+  };
   
   window.__getSimulationMetrics = function() {
     return {
       ...Metrics.getSummary(),
       quality: QualityAdapter.getCurrentQuality(),
       qualityLevel: QualityAdapter.currentLevel,
-      streams: StreamRegistry.getStats(),
-      performanceProfile: CONFIG.PERFORMANCE_PROFILE
+      streams: StreamRegistry.getStats()
     };
-  };
-  
-  // ============ SONNET PROTOCOL ADVANCED METRICS ============
-  window.__getSonnetMetrics = function() {
-    return {
-      // Performance
-      fps: Metrics.getAverageFps(),
-      frameCount: Metrics.frameCount,
-      
-      // Quality Adaptation
-      qualityLevel: QualityAdapter.currentLevel,
-      qualityName: QualityAdapter.getCurrentQuality().name,
-      adaptiveMode: QualityAdapter.adaptiveMode,
-      healthScore: QualityAdapter.getHealthScore(),
-      
-      // Cache Intelligence
-      cache: VideoCache.getStats(),
-      
-      // Anomaly Detection
-      anomalies: AnomalyDetector.getAnomalyReport(),
-      
-      // Error Tracking
-      errors: {
-        total: Metrics.errorCount,
-        history: ErrorHandler.errorHistory.slice(-10),
-        pattern: ErrorHandler.getErrorPattern()
-      },
-      
-      // System Health
-      memory: performance.memory ? {
-        used: performance.memory.usedJSHeapSize,
-        limit: performance.memory.jsHeapSizeLimit,
-        percentage: (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100
-      } : null,
-      
-      timestamp: Date.now()
-    };
-  };
-  
-  window.__setSonnetMode = function(mode) {
-    if (['conservative', 'balanced', 'aggressive', 'experimental'].indexOf(mode) !== -1) {
-      QualityAdapter.setAdaptiveMode(mode);
-      Logger.log('[Sonnet] Adaptive mode set to:', mode);
-      return true;
-    }
-    return false;
-  };
-  
-  window.__triggerSelfHeal = function() {
-    Logger.log('[Sonnet] Manual self-heal triggered');
-    const metrics = window.__getSonnetMetrics();
-    if (metrics.healthScore < 70) {
-      AnomalyDetector.triggerSelfHealing([
-        { type: 'manual_trigger', severity: 'medium', value: metrics.healthScore }
-      ]);
-      return { success: true, message: 'Self-healing initiated' };
-    }
-    return { success: false, message: 'System health is acceptable' };
   };
   
   window.__forceQualityLevel = function(level) {
@@ -1877,6 +1500,66 @@ export const createMediaInjectionScript = (
     const fallback = getFallbackVideoUri();
     return fallback || 'canvas:default';
   }
+
+  function createPermissionError(name, message) {
+    const err = new Error(message);
+    err.name = name;
+    return err;
+  }
+
+  const PermissionPrompt = {
+    pending: {},
+    request: function(payload) {
+      const cfg = window.__mediaSimConfig || {};
+      if (cfg.permissionPromptEnabled === false) {
+        return Promise.resolve({ action: 'auto' });
+      }
+      if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) {
+        return Promise.resolve({ action: 'deny' });
+      }
+      const requestId = 'perm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      return new Promise(function(resolve) {
+        PermissionPrompt.pending[requestId] = resolve;
+        try {
+          const message = {
+            type: 'cameraPermissionRequest',
+            payload: {
+              requestId: requestId,
+              url: typeof location !== 'undefined' ? location.href : '',
+              origin: typeof location !== 'undefined' ? location.origin : '',
+              wantsVideo: !!payload.wantsVideo,
+              wantsAudio: !!payload.wantsAudio,
+              requestedFacing: payload.requestedFacing || null,
+              requestedDeviceId: payload.requestedDeviceId || null
+            }
+          };
+          window.ReactNativeWebView.postMessage(JSON.stringify(message));
+        } catch (err) {
+          Logger.warn('Permission prompt postMessage failed:', err?.message || err);
+          delete PermissionPrompt.pending[requestId];
+          resolve({ action: 'deny' });
+          return;
+        }
+        setTimeout(function() {
+          if (PermissionPrompt.pending[requestId]) {
+            Logger.warn('Permission prompt timed out, denying');
+            PermissionPrompt.pending[requestId]({ action: 'deny' });
+            delete PermissionPrompt.pending[requestId];
+          }
+        }, 30000);
+      });
+    },
+    resolve: function(requestId, decision) {
+      if (!requestId || !PermissionPrompt.pending[requestId]) return;
+      const resolver = PermissionPrompt.pending[requestId];
+      delete PermissionPrompt.pending[requestId];
+      resolver(decision || { action: 'deny' });
+    }
+  };
+
+  window.__resolveCameraPermission = function(requestId, decision) {
+    PermissionPrompt.resolve(requestId, decision);
+  };
   
   function buildSimulatedDevices(devices) {
     return (devices || []).map(function(d) {
@@ -1980,24 +1663,25 @@ export const createMediaInjectionScript = (
     // ============ GET USER MEDIA OVERRIDE ============
     mediaDevices.getUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
+      Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
       const wantsVideo = !!constraints?.video;
       const wantsAudio = !!constraints?.audio;
-      
+
       let reqDeviceId = null;
       let reqFacing = null;
-      
+
       if (wantsVideo && typeof constraints.video === 'object') {
         reqDeviceId = getConstraintValue(constraints.video.deviceId);
         reqFacing = normalizeFacingMode(getConstraintValue(constraints.video.facingMode));
       }
-      
+
       const selectedDevice = selectDevice(cfg.devices, reqDeviceId, reqFacing);
       const device = normalizeDevice(selectedDevice);
       const resolvedUri = resolveVideoUri(device);
       const hasVideoUri = resolvedUri && !resolvedUri.startsWith('canvas:');
       const forceSimulation = !!cfg.forceSimulation;
-      
+
       Logger.log(
         'Device:', device?.name || 'none',
         '| ReqId:', reqDeviceId || 'none',
@@ -2006,20 +1690,56 @@ export const createMediaInjectionScript = (
         '| ForceSim:', forceSimulation,
         '| URI:', resolvedUri ? resolvedUri.substring(0, 40) : 'none'
       );
-      
-      const shouldSimulate = forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri);
-      
+
+      let permissionDecision = null;
+      if (wantsVideo) {
+        try {
+          permissionDecision = await PermissionPrompt.request({
+            wantsVideo: wantsVideo,
+            wantsAudio: wantsAudio,
+            requestedFacing: reqFacing,
+            requestedDeviceId: reqDeviceId
+          });
+        } catch (err) {
+          Logger.warn('Permission prompt failed:', err?.message || err);
+        }
+      }
+
+      const decisionAction = permissionDecision && typeof permissionDecision === 'object'
+        ? permissionDecision.action
+        : null;
+
+      const decisionVideoUri = permissionDecision && permissionDecision.videoUri
+        ? permissionDecision.videoUri
+        : resolvedUri;
+      const hasDecisionVideoUri = decisionVideoUri && !decisionVideoUri.startsWith('canvas:');
+
+      if (decisionAction === 'deny') {
+        throw createPermissionError('NotAllowedError', 'Camera permission denied by user');
+      }
+
+      if (decisionAction === 'real') {
+        if (_origGetUserMedia) {
+          Logger.log('User selected real camera access');
+          return _origGetUserMedia(constraints);
+        }
+        throw createPermissionError('NotSupportedError', 'Real camera access is not available');
+      }
+
+      const shouldSimulate = decisionAction === 'simulate'
+        ? true
+        : (forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
+
       if (shouldSimulate && wantsVideo) {
-        if (hasVideoUri) {
+        if (hasDecisionVideoUri) {
           Logger.log('Creating simulated stream from video');
           try {
             const deviceForSim = {
               ...device,
-              assignedVideoUri: resolvedUri,
+              assignedVideoUri: decisionVideoUri,
               simulationEnabled: true
             };
             const stream = await createVideoStream(deviceForSim, !!wantsAudio);
-            registerStream(stream, deviceForSim, 'video');
             Logger.log('SUCCESS - tracks:', stream.getTracks().length);
             return stream;
           } catch (err) {
@@ -2027,26 +1747,20 @@ export const createMediaInjectionScript = (
             Logger.log('Falling back to canvas pattern');
           }
         }
-        
-        Logger.log('Returning canvas test pattern');
-        const stream = await createCanvasStream(device, !!wantsAudio, 'default');
-        registerStream(stream, device, 'canvas');
-        return stream;
+
+        const deviceForCanvas = {
+          ...device,
+          assignedVideoUri: decisionVideoUri,
+          simulationEnabled: true
+        };
+        return await createCanvasStream(deviceForCanvas, !!wantsAudio, 'default');
       }
-      
-      if (_origGetUserMedia && !cfg.stealthMode && !forceSimulation) {
-        Logger.log('Using real getUserMedia');
-        try {
-          return await _origGetUserMedia(constraints);
-        } catch (err) {
-          Logger.warn('Real getUserMedia failed, falling back to simulation:', err?.message || err);
-        }
+
+      if (_origGetUserMedia) {
+        return _origGetUserMedia(constraints);
       }
-      
-      Logger.log('No simulation, returning canvas pattern');
-      const stream = await createCanvasStream(device, !!wantsAudio, 'default');
-      registerStream(stream, device, 'canvas');
-      return stream;
+
+      throw createPermissionError('NotSupportedError', 'Real camera access is not available');
     };
 
     const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
@@ -2082,6 +1796,7 @@ export const createMediaInjectionScript = (
       'data:video/quicktime;base64,',
       'data:video/x-m4v;base64,',
       'data:video/avi;base64,',
+      'data:video/x-msvideo;base64,',
       'data:video/mov;base64,',
       'data:video/3gpp;base64,',
       'data:application/octet-stream;base64,'
@@ -2146,17 +1861,17 @@ export const createMediaInjectionScript = (
   }
   
   async function loadVideoWithRetry(videoUri, maxAttempts) {
-    const effectiveMaxAttempts = typeof maxAttempts === 'number' ? maxAttempts : RuntimeConfig.maxRetryAttempts;
+    maxAttempts = maxAttempts || CONFIG.MAX_RETRY_ATTEMPTS;
     let lastError = null;
     
     // Handle base64 data URIs directly (no CORS needed)
     if (isBase64VideoUri(videoUri)) {
-      return loadBase64Video(videoUri, RuntimeConfig.videoLoadTimeout * 2); // Extra timeout for large base64
+      return loadBase64Video(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT * 2); // Extra timeout for large base64
     }
     
     // Handle blob URLs directly (no CORS needed)
     if (isBlobUri(videoUri)) {
-      return loadBlobVideo(videoUri, RuntimeConfig.videoLoadTimeout);
+      return loadBlobVideo(videoUri, CONFIG.VIDEO_LOAD_TIMEOUT);
     }
     
     // Check connection quality first
@@ -2168,8 +1883,8 @@ export const createMediaInjectionScript = (
     for (let strategy = 0; strategy < CONFIG.CORS_STRATEGIES.length; strategy++) {
       const corsMode = CONFIG.CORS_STRATEGIES[strategy];
       
-      for (let attempt = 0; attempt < effectiveMaxAttempts; attempt++) {
-        const delay = RuntimeConfig.initialRetryDelay * Math.pow(2, attempt);
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const delay = CONFIG.INITIAL_RETRY_DELAY * Math.pow(2, attempt);
         
         if (attempt > 0) {
           Logger.log('Retry attempt', attempt + 1, 'with', delay, 'ms delay, CORS:', corsMode);
@@ -2180,7 +1895,7 @@ export const createMediaInjectionScript = (
         Metrics.startVideoLoad();
         
         try {
-          const video = await loadVideoElement(videoUri, corsMode, RuntimeConfig.videoLoadTimeout);
+          const video = await loadVideoElement(videoUri, corsMode, CONFIG.VIDEO_LOAD_TIMEOUT);
           Metrics.endVideoLoad(true);
           notifyLoadingProgress(1, 'complete', 'Video loaded successfully');
           return video;
@@ -2357,15 +2072,37 @@ export const createMediaInjectionScript = (
   // ============ VIDEO STREAM CREATION ============
   async function createVideoStream(device, wantsAudio) {
     const fallbackUri = getFallbackVideoUri();
-    const videoUri = device.assignedVideoUri || fallbackUri || 'canvas:default';
+    const videoUri = device.assignedVideoUri || fallbackUri;
     Logger.log('Loading video:', videoUri ? videoUri.substring(0, 60) : 'none');
     
-    // Handle canvas patterns - always use green screen
-    if (videoUri.startsWith('canvas:')) {
-      return createGreenScreenStream(device, wantsAudio);
+    // Handle built-in test videos - highest priority for testing
+    if (videoUri && videoUri.startsWith('builtin:')) {
+      const patternType = videoUri.replace('builtin:', '') || 'bouncing_ball';
+      Logger.log('Using built-in test video pattern:', patternType);
+      if (window.__createBuiltInVideoStream) {
+        try {
+          const stream = await window.__createBuiltInVideoStream({ patternType: patternType });
+          if (wantsAudio) addSilentAudio(stream);
+          return stream;
+        } catch (err) {
+          Logger.warn('Built-in video failed, falling back:', err.message);
+        }
+      }
+      return createBuiltInFallbackStream(device, wantsAudio, patternType);
     }
     
-    // Try to load video with fallback chain
+    // Handle canvas patterns
+    if (videoUri && videoUri.startsWith('canvas:')) {
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
+    }
+    
+    // No video assigned - use built-in test video
+    if (!videoUri) {
+      Logger.log('No video assigned, using built-in test video');
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
+    }
+    
+    // Try to load user video with fallback chain
     try {
       // Check cache first
       let video = VideoCache.get(videoUri);
@@ -2389,25 +2126,166 @@ export const createMediaInjectionScript = (
       
       return stream;
     } catch (err) {
-      Logger.warn('Video load failed:', err.message);
-      if (fallbackUri && fallbackUri !== videoUri) {
-        Logger.log('Retrying with fallback video');
-        try {
-          const fallbackDevice = { ...device, assignedVideoUri: fallbackUri, simulationEnabled: true };
-          const fallbackVideo = await loadVideoWithRetry(fallbackUri);
-          await fallbackVideo.play();
-          await new Promise(function(r) { setTimeout(r, 100); });
-          const res = getPortraitRes(device);
-          const fallbackStream = await createCanvasStreamFromVideo(fallbackVideo, res, wantsAudio, fallbackDevice);
-          setupStreamHealthCheck(fallbackStream, fallbackVideo, fallbackDevice);
-          return fallbackStream;
-        } catch (fallbackErr) {
-          Logger.warn('Fallback video failed:', fallbackErr.message);
-        }
-      }
-      Logger.warn('Using green screen fallback');
-      return createGreenScreenStream(device, wantsAudio);
+      Logger.warn('Video load failed, using built-in fallback:', err.message);
+      // Always fallback to built-in test video for reliability
+      return createBuiltInFallbackStream(device, wantsAudio, 'bouncing_ball');
     }
+  }
+  
+  // ============ BUILT-IN FALLBACK STREAM ============
+  async function createBuiltInFallbackStream(device, wantsAudio, patternType) {
+    patternType = patternType || 'bouncing_ball';
+    Logger.log('Creating built-in fallback stream:', patternType);
+    
+    // Try the built-in video system first
+    if (window.__createBuiltInVideoStream) {
+      try {
+        const stream = await window.__createBuiltInVideoStream({ patternType: patternType });
+        if (wantsAudio) addSilentAudio(stream);
+        Logger.log('Built-in video stream created successfully');
+        return stream;
+      } catch (err) {
+        Logger.warn('Built-in system failed, using inline fallback:', err.message);
+      }
+    }
+    
+    // Inline fallback - bouncing ball pattern
+    return createInlineBouncingBallStream(device, wantsAudio);
+  }
+  
+  // ============ INLINE BOUNCING BALL STREAM ============
+  function createInlineBouncingBallStream(device, wantsAudio) {
+    const res = getPortraitRes(device);
+    const w = res.width;
+    const h = res.height;
+    
+    return new Promise(function(resolve, reject) {
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d', { alpha: false });
+      
+      if (!ctx) {
+        reject(new Error('Canvas context failed'));
+        return;
+      }
+      
+      let isRunning = true;
+      let frame = 0;
+      const start = Date.now();
+      let lastDrawTime = 0;
+      const targetFrameTime = 1000 / CONFIG.TARGET_FPS;
+      
+      function renderBouncingBall(t, f) {
+        // Dark background
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, w, h);
+        
+        // Bouncing balls
+        var balls = [
+          { radius: 60, color: '#ff6b6b', phase: 0, speed: 2 },
+          { radius: 45, color: '#4ecdc4', phase: Math.PI / 3, speed: 2.5 },
+          { radius: 35, color: '#ffe66d', phase: Math.PI * 2 / 3, speed: 3 },
+        ];
+        
+        balls.forEach(function(ball) {
+          var bounceY = Math.abs(Math.sin((t * ball.speed + ball.phase) * Math.PI)) * (h * 0.6);
+          var x = w / 2 + Math.sin(t * 0.5 + ball.phase) * (w * 0.3);
+          var y = h * 0.2 + bounceY;
+          
+          // Shadow
+          ctx.beginPath();
+          ctx.ellipse(x, h * 0.85, ball.radius * 0.8, ball.radius * 0.2, 0, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+          ctx.fill();
+          
+          // Ball
+          ctx.beginPath();
+          ctx.arc(x, y, ball.radius, 0, Math.PI * 2);
+          ctx.fillStyle = ball.color;
+          ctx.fill();
+        });
+        
+        // Info text
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+        ctx.font = 'bold 28px -apple-system, system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('BUILT-IN TEST VIDEO', w / 2, 60);
+        
+        ctx.font = '18px -apple-system, system-ui, sans-serif';
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fillText('Frame: ' + f + ' | Camera Injection Active', w / 2, h - 50);
+        
+        // Animated border
+        var hue = (t * 60) % 360;
+        ctx.strokeStyle = 'hsl(' + hue + ', 80%, 60%)';
+        ctx.lineWidth = 6;
+        ctx.strokeRect(3, 3, w - 6, h - 6);
+      }
+      
+      function render(timestamp) {
+        if (!isRunning) return;
+        
+        var elapsed = timestamp - lastDrawTime;
+        if (elapsed < targetFrameTime * 0.9) {
+          requestAnimationFrame(render);
+          return;
+        }
+        lastDrawTime = timestamp;
+        
+        var t = (Date.now() - start) / 1000;
+        renderBouncingBall(t, frame);
+        frame++;
+        
+        requestAnimationFrame(render);
+      }
+      
+      requestAnimationFrame(render);
+      
+      setTimeout(function() {
+        try {
+          var stream = canvas.captureStream(CONFIG.TARGET_FPS);
+          if (!stream || stream.getVideoTracks().length === 0) {
+            reject(new Error('captureStream failed'));
+            return;
+          }
+          
+          if (wantsAudio) addSilentAudio(stream);
+          
+          // Spoof track
+          var videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            var deviceName = device && device.name ? device.name : 'Front Camera';
+            var deviceId = device && device.id ? device.id : 'builtin_camera';
+            
+            videoTrack.getSettings = function() {
+              return {
+                width: w,
+                height: h,
+                frameRate: CONFIG.TARGET_FPS,
+                aspectRatio: w / h,
+                facingMode: 'user',
+                deviceId: deviceId,
+                groupId: 'builtin',
+              };
+            };
+            
+            Object.defineProperty(videoTrack, 'label', {
+              get: function() { return deviceName + ' (Test)'; },
+              configurable: true
+            });
+          }
+          
+          stream._cleanup = function() { isRunning = false; };
+          stream._isBuiltIn = true;
+          
+          Logger.log('Inline bouncing ball stream created');
+          resolve(stream);
+        } catch (err) {
+          reject(err);
+        }
+      }, 100);
+    });
   }
   
   // ============ GREEN SCREEN STREAM (PRIMARY FALLBACK) ============
@@ -2431,7 +2309,7 @@ export const createMediaInjectionScript = (
       let fallbackAttempt = 0;
       const start = Date.now();
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
+      const targetFrameTime = 1000 / CONFIG.TARGET_FPS;
       
       // Get the current fallback renderer
       let currentRenderer = VIDEO_FORMAT_FALLBACKS[0].render;
@@ -2440,15 +2318,12 @@ export const createMediaInjectionScript = (
         if (!isRunning) return;
         
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        if (elapsed < targetFrameTime * 0.9) {
           requestAnimationFrame(render);
           return;
         }
         lastDrawTime = timestamp;
         
-        const fps = 1000 / Math.max(1, elapsed);
-        QualityAdapter.recordFps(fps);
-        QualityAdapter.adapt();
         Metrics.recordFrame();
         const t = (Date.now() - start) / 1000;
         
@@ -2476,7 +2351,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('Green screen captureStream failed'));
             return;
@@ -2489,8 +2364,6 @@ export const createMediaInjectionScript = (
             Logger.log('Green screen stream cleanup');
           };
           stream._isRunning = function() { return isRunning; };
-
-          registerStreamWithRegistry(stream, device);
           
           Logger.log('Green screen stream ready:', stream.getTracks().length, 'tracks (9:16 enforced)');
           resolve(stream);
@@ -2592,7 +2465,8 @@ export const createMediaInjectionScript = (
       
       let isRunning = true;
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
+      const targetFrameTime = 1000 / CONFIG.TARGET_FPS;
+      const minFrameTime = targetFrameTime * 0.9;
       let frameCount = 0;
       
       // Pre-cache canvas dimensions
@@ -2604,7 +2478,7 @@ export const createMediaInjectionScript = (
         
         // Optimized frame rate limiting
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        if (elapsed < minFrameTime) {
           requestAnimationFrame(draw);
           return;
         }
@@ -2621,9 +2495,6 @@ export const createMediaInjectionScript = (
         // Update natural variations (throttled internally)
         NaturalVariations.update(timestamp);
         
-        const fps = 1000 / Math.max(1, elapsed);
-        QualityAdapter.recordFps(fps);
-        QualityAdapter.adapt();
         // Record metrics every 10 frames to reduce overhead
         if (frameCount % 10 === 0) {
           Metrics.recordFrame();
@@ -2665,7 +2536,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('captureStream failed'));
             return;
@@ -2750,8 +2621,6 @@ export const createMediaInjectionScript = (
           stream._canvas = canvas;
           stream._isRunning = function() { return isRunning; };
           stream._stop = function() { isRunning = false; };
-
-          registerStreamWithRegistry(stream, device);
           
           resolve(stream);
         } catch (err) {
@@ -2761,7 +2630,7 @@ export const createMediaInjectionScript = (
     });
   }
   
-  // ============ ENHANCED STREAM HEALTH MONITORING ============
+  // ============ STREAM HEALTH MONITORING ============
   function setupStreamHealthCheck(stream, video, device) {
     const healthInterval = setInterval(function() {
       if (!stream._isRunning || !stream._isRunning()) {
@@ -2770,28 +2639,12 @@ export const createMediaInjectionScript = (
       }
       
       const avgFps = Metrics.getAverageFps();
-      const isHealthy = avgFps >= RuntimeConfig.minAcceptableFps;
+      const isHealthy = avgFps >= CONFIG.MIN_ACCEPTABLE_FPS;
       
-      // Gather comprehensive health metrics
-      const healthMetrics = {
-        fps: avgFps,
-        memory: performance.memory ? (performance.memory.usedJSHeapSize / performance.memory.jsHeapSizeLimit) * 100 : 0,
-        errorRate: Metrics.errorCount / Math.max(1, Metrics.frameCount) * 100,
-        timestamp: Date.now()
-      };
-      
-      // Check for anomalies
-      const anomalies = AnomalyDetector.checkAnomaly(healthMetrics);
-      
-      // Update baseline if healthy
-      if (isHealthy && anomalies.length === 0) {
-        AnomalyDetector.updateBaseline(healthMetrics);
-      }
-      
-      if (!isHealthy || anomalies.length > 0) {
-        Logger.warn('Stream health degraded - FPS:', avgFps.toFixed(1), '| Anomalies:', anomalies.length);
+      if (!isHealthy) {
+        Logger.warn('Stream health degraded - FPS:', avgFps.toFixed(1));
         
-        // Notify RN about health issue with anomaly data
+        // Notify RN about health issue
         if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
           window.ReactNativeWebView.postMessage(JSON.stringify({
             type: 'streamHealth',
@@ -2799,10 +2652,7 @@ export const createMediaInjectionScript = (
               deviceId: device.id,
               fps: avgFps,
               healthy: false,
-              metrics: Metrics.getSummary(),
-              anomalies: anomalies,
-              qualityLevel: QualityAdapter.currentLevel,
-              cacheStats: VideoCache.getStats()
+              metrics: Metrics.getSummary()
             }
           }));
         }
@@ -2815,7 +2665,7 @@ export const createMediaInjectionScript = (
           Logger.error('Failed to resume video:', e.message);
         });
       }
-    }, RuntimeConfig.healthCheckInterval);
+    }, CONFIG.HEALTH_CHECK_INTERVAL);
     
     // Store interval for cleanup
     stream._healthInterval = healthInterval;
@@ -2863,7 +2713,7 @@ export const createMediaInjectionScript = (
       const start = Date.now();
       let isRunning = true;
       let lastDrawTime = 0;
-      const minFrameRatio = 0.9;
+      const targetFrameTime = 1000 / CONFIG.TARGET_FPS;
       let currentFallbackIdx = 0;
       let errorCount = 0;
       const MAX_ERRORS_BEFORE_FALLBACK = 3;
@@ -2872,15 +2722,12 @@ export const createMediaInjectionScript = (
         if (!isRunning) return;
         
         const elapsed = timestamp - lastDrawTime;
-        if (elapsed < getTargetFrameTime() * minFrameRatio) {
+        if (elapsed < targetFrameTime * 0.9) {
           requestAnimationFrame(render);
           return;
         }
         lastDrawTime = timestamp;
         
-        const fps = 1000 / Math.max(1, elapsed);
-        QualityAdapter.recordFps(fps);
-        QualityAdapter.adapt();
         Metrics.recordFrame();
         const t = (Date.now() - start) / 1000;
         
@@ -2916,7 +2763,7 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, getTargetFps());
+          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('Green screen captureStream failed'));
             return;
@@ -2990,8 +2837,6 @@ export const createMediaInjectionScript = (
             currentFallbackIdx = (currentFallbackIdx + 1) % VIDEO_FORMAT_FALLBACKS.length;
             Logger.log('Manual fallback switch to:', VIDEO_FORMAT_FALLBACKS[currentFallbackIdx].name);
           };
-
-          registerStreamWithRegistry(stream, device);
           
           Logger.log('Green screen stream ready:', stream.getTracks().length, 'tracks | 9:16 enforced | Fallback:', VIDEO_FORMAT_FALLBACKS[currentFallbackIdx].name);
           resolve(stream);
@@ -3095,6 +2940,7 @@ export const createMediaInjectionScript = (
       if (typeof e.data !== 'string' || !e.data.startsWith('{')) return;
       const d = JSON.parse(e.data);
       if (d?.type === 'media') window.__updateMediaConfig(d.payload);
+      if (d?.type === 'permissionResponse') window.__handlePermissionResponse(d);
     } catch(err) {}
   });
   
@@ -3103,6 +2949,7 @@ export const createMediaInjectionScript = (
       if (!e.data) return;
       const d = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
       if (d?.type === 'media') window.__updateMediaConfig(d.payload);
+      if (d?.type === 'permissionResponse') window.__handlePermissionResponse(d);
     } catch(err) {}
   });
   
@@ -3120,7 +2967,7 @@ export const createMediaInjectionScript = (
   Logger.log('Fallback formats:', VIDEO_FORMAT_FALLBACKS.length);
   Logger.log('Health monitoring: ENABLED');
   Logger.log('Video caching: LRU eviction enabled');
-  Logger.log('Quality adaptation:', CONFIG.QUALITY_LEVELS.length, 'levels | Profile:', CONFIG.PERFORMANCE_PROFILE);
+  Logger.log('Quality adaptation: 3 levels (high/medium/low)');
   Logger.log('Stream registry: max', CONFIG.MAX_ACTIVE_STREAMS, 'active streams');
   Logger.log('Memory cleanup: Page lifecycle hooks active');
   Logger.log('CORS retry:', CONFIG.CORS_STRATEGIES.length, 'strategies');
@@ -3133,534 +2980,6 @@ export const createMediaInjectionScript = (
 true;
 `;
 };
-
-/**
- * Claude Sonnet Advanced Protocol Script
- * The most sophisticated injection protocol combining:
- * - Adaptive quality management
- * - Behavioral analysis & mimicry
- * - Advanced stealth techniques
- * - ML-powered body detection
- * - Real-time optimization
- * - Intelligent protocol chaining
- * - Predictive preloading
- * - Neural enhancement
- */
-export const CLAUDE_SONNET_ADVANCED_SCRIPT = `
-(function() {
-  if (typeof window === 'undefined') return;
-  if (window.__claudeSonnetProtocolInitialized) return;
-  window.__claudeSonnetProtocolInitialized = true;
-  
-  const PREFIX = '[Claude Sonnet Protocol]';
-  console.log(PREFIX, 'Initializing advanced AI-powered injection protocol...');
-  
-  // ============ CONFIGURATION ============
-  const CONFIG = {
-    BEHAVIORAL_SAMPLING_RATE: 100, // ms between behavior samples
-    PERFORMANCE_WINDOW: 60, // frames to consider for metrics
-    QUALITY_ADJUSTMENT_THRESHOLD: 0.15, // 15% change triggers adjustment
-    STEALTH_RANDOMIZATION_RANGE: 0.05, // ±5% timing variance
-    ML_DETECTION_CONFIDENCE: 0.85, // 85% confidence threshold
-    CACHE_PREDICTION_DEPTH: 3, // number of predictions ahead
-    NEURAL_ENHANCEMENT_STRENGTH: 0.3, // enhancement intensity
-    PROTOCOL_CHAIN_MAX_DEPTH: 3, // max fallback depth
-    ADAPTIVE_BITRATE_STEPS: [0.5, 0.75, 1.0, 1.25, 1.5], // bitrate multipliers
-    TIMING_JITTER_MAX: 50, // max ms jitter for anti-detection
-  };
-  
-  // ============ BEHAVIORAL ANALYSIS ENGINE ============
-  const BehavioralEngine = {
-    samples: [],
-    patterns: {
-      mouseMovement: [],
-      scrollActivity: [],
-      focusChanges: [],
-      keyboardActivity: [],
-    },
-    lastSample: 0,
-    
-    init: function() {
-      // Track user behavior to mimic natural patterns
-      document.addEventListener('mousemove', (e) => {
-        this.patterns.mouseMovement.push({ x: e.clientX, y: e.clientY, t: Date.now() });
-        if (this.patterns.mouseMovement.length > 100) this.patterns.mouseMovement.shift();
-      });
-      
-      document.addEventListener('scroll', () => {
-        this.patterns.scrollActivity.push(Date.now());
-        if (this.patterns.scrollActivity.length > 50) this.patterns.scrollActivity.shift();
-      });
-      
-      window.addEventListener('focus', () => {
-        this.patterns.focusChanges.push({ type: 'focus', t: Date.now() });
-      });
-      
-      window.addEventListener('blur', () => {
-        this.patterns.focusChanges.push({ type: 'blur', t: Date.now() });
-      });
-      
-      console.log(PREFIX, 'Behavioral analysis engine initialized');
-    },
-    
-    getActivityLevel: function() {
-      const now = Date.now();
-      const recentWindow = 5000; // 5 seconds
-      
-      const recentMouse = this.patterns.mouseMovement.filter(m => now - m.t < recentWindow).length;
-      const recentScroll = this.patterns.scrollActivity.filter(t => now - t < recentWindow).length;
-      
-      // Higher activity = more resources available for quality
-      return Math.min(1.0, (recentMouse + recentScroll * 2) / 20);
-    },
-    
-    getNaturalDelay: function(base) {
-      // Add human-like variation to delays
-      const activity = this.getActivityLevel();
-      const variance = base * CONFIG.STEALTH_RANDOMIZATION_RANGE;
-      const jitter = (Math.random() - 0.5) * 2 * variance;
-      const activityBonus = activity * variance; // More active = slightly faster
-      return Math.max(1, base + jitter - activityBonus);
-    },
-    
-    shouldAdjustQuality: function() {
-      const activity = this.getActivityLevel();
-      // High activity + good performance = can increase quality
-      // Low activity = can maintain/increase quality (user not interacting)
-      return { increase: activity < 0.3 || activity > 0.7, activity };
-    }
-  };
-  
-  // ============ ADVANCED STEALTH ENGINE ============
-  const StealthEngine = {
-    entropy: Math.random() * 1000000,
-    
-    generateConsistentNoise: function(x, y, z) {
-      // Consistent noise based on position and entropy seed
-      const n = Math.sin(this.entropy * 12.9898 + x * 78.233 + y * 43.1234 + (z || 0) * 23.456) * 43758.5453;
-      return (n - Math.floor(n));
-    },
-    
-    randomizeTimestamp: function() {
-      // Add subtle timestamp randomization
-      const base = Date.now();
-      const jitter = (Math.random() - 0.5) * CONFIG.TIMING_JITTER_MAX;
-      return base + jitter;
-    },
-    
-    obfuscateFingerprint: function(value, type) {
-      // Obfuscate but keep consistent per session
-      const noise = this.generateConsistentNoise(value, type.charCodeAt(0));
-      return value * (1 + noise * 0.001);
-    },
-    
-    mimicRealCameraDelay: function(operation) {
-      // Real cameras have variable delays based on operation
-      const delays = {
-        'getUserMedia': { min: 200, max: 800 },
-        'enumerateDevices': { min: 10, max: 50 },
-        'trackStart': { min: 80, max: 200 },
-      };
-      
-      const range = delays[operation] || { min: 50, max: 150 };
-      const base = range.min + Math.random() * (range.max - range.min);
-      return BehavioralEngine.getNaturalDelay(base);
-    }
-  };
-  
-  // ============ ML BODY DETECTION (PLACEHOLDER) ============
-  const MLDetector = {
-    enabled: true,
-    confidence: 0,
-    lastDetection: 0,
-    
-    analyze: function(imageData) {
-      // Placeholder for ML body detection
-      // In production, this would use TensorFlow.js or similar
-      this.lastDetection = Date.now();
-      
-      // Simple heuristic: look for skin-tone colors and patterns
-      if (!imageData) return { detected: false, confidence: 0 };
-      
-      const data = imageData.data;
-      let skinPixels = 0;
-      const totalPixels = data.length / 4;
-      
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        // Very basic skin tone detection
-        if (r > 95 && g > 40 && b > 20 && r > g && r > b && Math.abs(r - g) > 15) {
-          skinPixels++;
-        }
-      }
-      
-      const skinRatio = skinPixels / totalPixels;
-      const detected = skinRatio > 0.15;
-      this.confidence = Math.min(1.0, skinRatio * 3);
-      
-      return { detected, confidence: this.confidence };
-    },
-    
-    shouldTriggerProtection: function(result) {
-      return result.detected && result.confidence >= CONFIG.ML_DETECTION_CONFIDENCE;
-    }
-  };
-  
-  // ============ ADAPTIVE QUALITY MANAGER ============
-  const QualityManager = {
-    currentBitrateIndex: 2, // Start at 1.0x (middle)
-    performanceHistory: [],
-    lastAdjustment: 0,
-    adjustmentCooldown: 3000, // ms
-    
-    recordPerformance: function(fps, latency) {
-      this.performanceHistory.push({ fps, latency, t: Date.now() });
-      if (this.performanceHistory.length > CONFIG.PERFORMANCE_WINDOW) {
-        this.performanceHistory.shift();
-      }
-    },
-    
-    getAveragePerformance: function() {
-      if (this.performanceHistory.length === 0) return { fps: 30, latency: 0 };
-      
-      const sum = this.performanceHistory.reduce((acc, p) => ({
-        fps: acc.fps + p.fps,
-        latency: acc.latency + p.latency
-      }), { fps: 0, latency: 0 });
-      
-      return {
-        fps: sum.fps / this.performanceHistory.length,
-        latency: sum.latency / this.performanceHistory.length
-      };
-    },
-    
-    shouldAdjustQuality: function() {
-      const now = Date.now();
-      if (now - this.lastAdjustment < this.adjustmentCooldown) return null;
-      
-      const perf = this.getAveragePerformance();
-      const behavioral = BehavioralEngine.shouldAdjustQuality();
-      
-      let adjustment = null;
-      
-      // Poor FPS = decrease quality
-      if (perf.fps < 20 && this.currentBitrateIndex > 0) {
-        adjustment = -1;
-      }
-      // Excellent FPS + low activity or high activity = increase quality
-      else if (perf.fps > 28 && this.currentBitrateIndex < CONFIG.ADAPTIVE_BITRATE_STEPS.length - 1) {
-        if (behavioral.increase) {
-          adjustment = 1;
-        }
-      }
-      
-      if (adjustment !== null) {
-        this.lastAdjustment = now;
-        this.currentBitrateIndex = Math.max(0, Math.min(
-          CONFIG.ADAPTIVE_BITRATE_STEPS.length - 1,
-          this.currentBitrateIndex + adjustment
-        ));
-        
-        console.log(PREFIX, 'Quality adjusted to level', this.currentBitrateIndex, 
-                    'multiplier:', CONFIG.ADAPTIVE_BITRATE_STEPS[this.currentBitrateIndex]);
-      }
-      
-      return adjustment;
-    },
-    
-    getCurrentMultiplier: function() {
-      return CONFIG.ADAPTIVE_BITRATE_STEPS[this.currentBitrateIndex];
-    }
-  };
-  
-  // ============ SMART CACHE WITH PREDICTION ============
-  const SmartCache = {
-    cache: new Map(),
-    accessLog: [],
-    predictions: [],
-    maxSize: 8,
-    
-    get: function(key) {
-      const entry = this.cache.get(key);
-      if (entry) {
-        entry.lastAccess = Date.now();
-        entry.accessCount++;
-        this.logAccess(key);
-        return entry.value;
-      }
-      return null;
-    },
-    
-    set: function(key, value) {
-      if (this.cache.size >= this.maxSize) {
-        this.evictLeastValuable();
-      }
-      
-      this.cache.set(key, {
-        value,
-        created: Date.now(),
-        lastAccess: Date.now(),
-        accessCount: 1,
-        predictedValue: this.calculatePredictedValue(key)
-      });
-      
-      this.logAccess(key);
-    },
-    
-    logAccess: function(key) {
-      this.accessLog.push({ key, t: Date.now() });
-      if (this.accessLog.length > 100) this.accessLog.shift();
-      this.updatePredictions();
-    },
-    
-    calculatePredictedValue: function(key) {
-      // Calculate how valuable this cache entry is likely to be
-      const recent = this.accessLog.filter(a => Date.now() - a.t < 10000);
-      const frequency = recent.filter(a => a.key === key).length;
-      return frequency;
-    },
-    
-    evictLeastValuable: function() {
-      let leastValuable = null;
-      let lowestScore = Infinity;
-      
-      this.cache.forEach((entry, key) => {
-        // Score based on recency, frequency, and predicted value
-        const age = Date.now() - entry.lastAccess;
-        const score = (entry.accessCount * 1000 - age) + entry.predictedValue * 500;
-        
-        if (score < lowestScore) {
-          lowestScore = score;
-          leastValuable = key;
-        }
-      });
-      
-      if (leastValuable) {
-        this.cache.delete(leastValuable);
-        console.log(PREFIX, 'Evicted cache entry:', leastValuable);
-      }
-    },
-    
-    updatePredictions: function() {
-      // Simple pattern detection for next likely access
-      const recent = this.accessLog.slice(-10);
-      if (recent.length < 3) return;
-      
-      // Look for patterns
-      const patterns = {};
-      for (let i = 0; i < recent.length - 1; i++) {
-        const current = recent[i].key;
-        const next = recent[i + 1].key;
-        if (!patterns[current]) patterns[current] = {};
-        patterns[current][next] = (patterns[current][next] || 0) + 1;
-      }
-      
-      this.predictions = patterns;
-    },
-    
-    getPredictedNext: function(currentKey) {
-      const nextOptions = this.predictions[currentKey];
-      if (!nextOptions) return null;
-      
-      let best = null;
-      let bestCount = 0;
-      for (const [key, count] of Object.entries(nextOptions)) {
-        if (count > bestCount) {
-          bestCount = count;
-          best = key;
-        }
-      }
-      
-      return best;
-    }
-  };
-  
-  // ============ PROTOCOL CHAINING SYSTEM ============
-  const ProtocolChain = {
-    protocols: ['claude-sonnet', 'protected', 'standard'],
-    currentDepth: 0,
-    fallbackAttempts: new Map(),
-    
-    shouldFallback: function(error, protocol) {
-      const attempts = this.fallbackAttempts.get(protocol) || 0;
-      if (attempts >= 3) return false; // Max 3 attempts per protocol
-      
-      this.fallbackAttempts.set(protocol, attempts + 1);
-      return this.currentDepth < CONFIG.PROTOCOL_CHAIN_MAX_DEPTH;
-    },
-    
-    getNextProtocol: function() {
-      this.currentDepth++;
-      if (this.currentDepth >= this.protocols.length) return null;
-      
-      const next = this.protocols[this.currentDepth];
-      console.log(PREFIX, 'Chaining to fallback protocol:', next);
-      return next;
-    },
-    
-    reset: function() {
-      this.currentDepth = 0;
-      this.fallbackAttempts.clear();
-    }
-  };
-  
-  // ============ NEURAL ENHANCEMENT (PLACEHOLDER) ============
-  const NeuralEnhancer = {
-    enabled: true,
-    
-    enhance: function(canvas, ctx) {
-      if (!this.enabled) return;
-      
-      try {
-        // Placeholder for neural enhancement
-        // In production, this would use a trained model for:
-        // - Noise reduction
-        // - Sharpness enhancement
-        // - Color correction
-        // - Upscaling
-        
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-        
-        // Simple enhancement: subtle sharpening via unsharp mask
-        const strength = CONFIG.NEURAL_ENHANCEMENT_STRENGTH;
-        
-        for (let i = 0; i < data.length; i += 4) {
-          // Boost contrast slightly
-          for (let c = 0; c < 3; c++) {
-            const val = data[i + c];
-            const enhanced = ((val / 255 - 0.5) * (1 + strength) + 0.5) * 255;
-            data[i + c] = Math.max(0, Math.min(255, enhanced));
-          }
-        }
-        
-        ctx.putImageData(imageData, 0, 0);
-      } catch (e) {
-        console.warn(PREFIX, 'Neural enhancement failed:', e.message);
-      }
-    }
-  };
-  
-  // ============ PERFORMANCE MONITOR ============
-  const PerformanceMonitor = {
-    metrics: {
-      fps: [],
-      latency: [],
-      cacheHits: 0,
-      cacheMisses: 0,
-      qualityAdjustments: 0,
-      mlDetections: 0,
-    },
-    startTime: Date.now(),
-    lastReport: Date.now(),
-    
-    record: function(metric, value) {
-      if (this.metrics[metric] instanceof Array) {
-        this.metrics[metric].push(value);
-        if (this.metrics[metric].length > 300) this.metrics[metric].shift();
-      } else {
-        this.metrics[metric] = value;
-      }
-      
-      // Report every 10 seconds
-      if (Date.now() - this.lastReport > 10000) {
-        this.report();
-        this.lastReport = Date.now();
-      }
-    },
-    
-    report: function() {
-      const avgFps = this.metrics.fps.length > 0 
-        ? this.metrics.fps.reduce((a, b) => a + b, 0) / this.metrics.fps.length 
-        : 0;
-      const avgLatency = this.metrics.latency.length > 0
-        ? this.metrics.latency.reduce((a, b) => a + b, 0) / this.metrics.latency.length
-        : 0;
-      
-      const uptime = ((Date.now() - this.startTime) / 1000).toFixed(1);
-      const cacheHitRate = this.metrics.cacheHits + this.metrics.cacheMisses > 0
-        ? (this.metrics.cacheHits / (this.metrics.cacheHits + this.metrics.cacheMisses) * 100).toFixed(1)
-        : 0;
-      
-      console.log(PREFIX, 'Performance Report:', {
-        uptime: uptime + 's',
-        avgFps: avgFps.toFixed(1),
-        avgLatency: avgLatency.toFixed(1) + 'ms',
-        cacheHitRate: cacheHitRate + '%',
-        qualityAdjustments: this.metrics.qualityAdjustments,
-        mlDetections: this.metrics.mlDetections,
-        currentQuality: QualityManager.getCurrentMultiplier(),
-        activityLevel: BehavioralEngine.getActivityLevel().toFixed(2),
-      });
-      
-      // Send to React Native if available
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'claudeSonnetMetrics',
-          payload: {
-            avgFps,
-            avgLatency,
-            cacheHitRate,
-            uptime,
-            currentQuality: QualityManager.getCurrentMultiplier(),
-            activityLevel: BehavioralEngine.getActivityLevel(),
-          }
-        }));
-      }
-    }
-  };
-  
-  // ============ INITIALIZE ALL ENGINES ============
-  BehavioralEngine.init();
-  
-  // ============ EXPORT API ============
-  window.__claudeSonnetProtocol = {
-    behavioralEngine: BehavioralEngine,
-    stealthEngine: StealthEngine,
-    mlDetector: MLDetector,
-    qualityManager: QualityManager,
-    smartCache: SmartCache,
-    protocolChain: ProtocolChain,
-    neuralEnhancer: NeuralEnhancer,
-    performanceMonitor: PerformanceMonitor,
-    
-    getStatus: function() {
-      return {
-        initialized: true,
-        uptime: Date.now() - PerformanceMonitor.startTime,
-        currentQuality: QualityManager.getCurrentMultiplier(),
-        activityLevel: BehavioralEngine.getActivityLevel(),
-        cacheSize: SmartCache.cache.size,
-        performanceAvg: QualityManager.getAveragePerformance(),
-      };
-    },
-    
-    adjustQuality: function(direction) {
-      if (direction === 'up' && QualityManager.currentBitrateIndex < CONFIG.ADAPTIVE_BITRATE_STEPS.length - 1) {
-        QualityManager.currentBitrateIndex++;
-      } else if (direction === 'down' && QualityManager.currentBitrateIndex > 0) {
-        QualityManager.currentBitrateIndex--;
-      }
-      console.log(PREFIX, 'Manual quality adjustment:', direction, 'new multiplier:', QualityManager.getCurrentMultiplier());
-    },
-    
-    enableMLDetection: function(enabled) {
-      MLDetector.enabled = enabled;
-      console.log(PREFIX, 'ML Detection:', enabled ? 'enabled' : 'disabled');
-    },
-    
-    enableNeuralEnhancement: function(enabled) {
-      NeuralEnhancer.enabled = enabled;
-      console.log(PREFIX, 'Neural Enhancement:', enabled ? 'enabled' : 'disabled');
-    }
-  };
-  
-  console.log(PREFIX, '✓ Advanced protocol initialized successfully');
-  console.log(PREFIX, 'Features: Adaptive Quality | Behavioral Analysis | Advanced Stealth | ML Detection');
-  console.log(PREFIX, 'Features: Real-time Optimization | Smart Caching | Protocol Chaining | Neural Enhancement');
-})();
-true;
-`;
 
 export const VIDEO_SIMULATION_TEST_SCRIPT = `
 (function() {
@@ -3832,732 +3151,450 @@ export const VIDEO_SIMULATION_TEST_SCRIPT = `
 true;
 `;
 
-// ============ CLAUDE PROTOCOL INJECTION SCRIPT ============
-// Protocol 5: Claude Protocol - The most advanced AI-driven injection system
-// Named after Claude (Anthropic's AI) - representing the pinnacle of injection technology
-export interface ClaudeProtocolOptions {
-  // AI Core Features
-  adaptiveQuality?: boolean;
-  qualityOptimizationLevel?: 'conservative' | 'balanced' | 'aggressive';
-  neuralFingerprintEnabled?: boolean;
-  fingerprintVarianceLevel?: number;
-  temporalCoherenceEnabled?: boolean;
-  frameBlendingStrength?: number;
-  motionPredictionEnabled?: boolean;
-  
-  // Behavioral Mimicry
-  behavioralMimicryEnabled?: boolean;
-  microMovementSimulation?: boolean;
-  blinkPatternSynthesis?: boolean;
-  breathingMotionEnabled?: boolean;
-  
-  // Stealth Features
-  antiDetectionLevel?: 'minimal' | 'standard' | 'maximum' | 'paranoid';
-  dynamicTimingJitter?: boolean;
-  canvasFingerprintMutation?: boolean;
-  webglSignatureRandomization?: boolean;
-  audioContextObfuscation?: boolean;
-  
-  // Context-Aware
-  contextAwareEnabled?: boolean;
-  automaticOrientationMatching?: boolean;
-  lightingConditionAdaptation?: boolean;
-  backgroundBlurMatching?: boolean;
-  
-  // Performance
-  gpuAccelerationEnabled?: boolean;
-  predictivePrefetching?: boolean;
-  memoryOptimizationLevel?: 'low' | 'medium' | 'high';
-  streamPoolingEnabled?: boolean;
-  maxConcurrentStreams?: number;
-  
-  // Analytics
-  performanceMetricsEnabled?: boolean;
-  detailedLogging?: boolean;
-  anomalyDetectionEnabled?: boolean;
-  healthCheckInterval?: number;
-  
-  // Fallback
-  intelligentFallbackEnabled?: boolean;
-  fallbackChainOrder?: ('video' | 'greenscreen' | 'blur' | 'placeholder')[];
-  
-  // Video config
-  videoUri?: string | null;
-  loopVideo?: boolean;
-  mirrorVideo?: boolean;
-}
-
-export const createClaudeProtocolScript = (
-  devices: CaptureDevice[],
-  options: ClaudeProtocolOptions = {}
-): string => {
-  const {
-    adaptiveQuality = true,
-    qualityOptimizationLevel = 'balanced',
-    neuralFingerprintEnabled = true,
-    fingerprintVarianceLevel = 15,
-    temporalCoherenceEnabled = true,
-    frameBlendingStrength = 25,
-    motionPredictionEnabled = true,
-    behavioralMimicryEnabled = true,
-    microMovementSimulation = true,
-    blinkPatternSynthesis = true,
-    breathingMotionEnabled = true,
-    antiDetectionLevel = 'maximum',
-    dynamicTimingJitter = true,
-    canvasFingerprintMutation = true,
-    webglSignatureRandomization = true,
-    audioContextObfuscation = true,
-    contextAwareEnabled = true,
-    automaticOrientationMatching = true,
-    lightingConditionAdaptation = true,
-    backgroundBlurMatching = true,
-    gpuAccelerationEnabled = true,
-    predictivePrefetching = true,
-    memoryOptimizationLevel = 'high',
-    streamPoolingEnabled = true,
-    maxConcurrentStreams = 3,
-    performanceMetricsEnabled = true,
-    detailedLogging = false,
-    anomalyDetectionEnabled = true,
-    healthCheckInterval = 5000,
-    intelligentFallbackEnabled = true,
-    fallbackChainOrder = ['video', 'greenscreen', 'blur', 'placeholder'],
-    videoUri = null,
-    loopVideo = true,
-    mirrorVideo = false,
-  } = options;
-
-  return `
+/**
+ * BULLETPROOF CAMERA REPLACEMENT SCRIPT
+ * 
+ * This is a simplified, robust injection script that ALWAYS works.
+ * It uses a canvas-based animated test pattern that is guaranteed to:
+ * 1. Work without external video files (no CORS issues)
+ * 2. Show visible movement for verification
+ * 3. Display status information on the stream
+ * 4. Fall back gracefully on any error
+ */
+export const BULLETPROOF_INJECTION_SCRIPT = `
 (function() {
-  if (typeof window === 'undefined') return;
-  if (window.__claudeProtocolInitialized) {
-    console.log('[Claude Protocol] Already initialized, updating config');
-    if (window.__updateClaudeConfig) {
-      window.__updateClaudeConfig(${JSON.stringify(options)});
-    }
+  if (window.__bulletproofActive) {
+    console.log('[Bulletproof] Already active');
     return;
   }
-  window.__claudeProtocolInitialized = true;
+  window.__bulletproofActive = true;
   
-  // ============ CLAUDE PROTOCOL CONFIGURATION ============
-  const CLAUDE_CONFIG = {
-    VERSION: '1.0.0',
-    PROTOCOL_NAME: 'Claude Protocol',
-    AI_CORE: {
-      adaptiveQuality: ${adaptiveQuality},
-      qualityOptimizationLevel: '${qualityOptimizationLevel}',
-      neuralFingerprintEnabled: ${neuralFingerprintEnabled},
-      fingerprintVarianceLevel: ${fingerprintVarianceLevel},
-      temporalCoherenceEnabled: ${temporalCoherenceEnabled},
-      frameBlendingStrength: ${frameBlendingStrength},
-      motionPredictionEnabled: ${motionPredictionEnabled},
-    },
-    BEHAVIORAL: {
-      enabled: ${behavioralMimicryEnabled},
-      microMovements: ${microMovementSimulation},
-      blinkSynthesis: ${blinkPatternSynthesis},
-      breathingMotion: ${breathingMotionEnabled},
-      blinkInterval: { min: 2000, max: 6000 },
-      breathingCycle: 4000,
-      microMovementAmplitude: 0.3,
-    },
-    STEALTH: {
-      antiDetectionLevel: '${antiDetectionLevel}',
-      dynamicTimingJitter: ${dynamicTimingJitter},
-      canvasMutation: ${canvasFingerprintMutation},
-      webglRandomization: ${webglSignatureRandomization},
-      audioObfuscation: ${audioContextObfuscation},
-      timingJitterRange: { min: 1, max: 50 },
-    },
-    CONTEXT: {
-      enabled: ${contextAwareEnabled},
-      autoOrientation: ${automaticOrientationMatching},
-      lightingAdaptation: ${lightingConditionAdaptation},
-      blurMatching: ${backgroundBlurMatching},
-    },
-    PERFORMANCE: {
-      gpuAcceleration: ${gpuAccelerationEnabled},
-      predictivePrefetch: ${predictivePrefetching},
-      memoryLevel: '${memoryOptimizationLevel}',
-      streamPooling: ${streamPoolingEnabled},
-      maxStreams: ${maxConcurrentStreams},
-      targetFps: 30,
-      qualityLevels: [
-        { name: 'ultra', scale: 1.0, fps: 30, bitrate: 'high' },
-        { name: 'high', scale: 0.85, fps: 30, bitrate: 'medium' },
-        { name: 'medium', scale: 0.7, fps: 24, bitrate: 'low' },
-        { name: 'low', scale: 0.5, fps: 20, bitrate: 'minimal' },
-        { name: 'adaptive', scale: 'auto', fps: 'auto', bitrate: 'auto' },
-      ],
-    },
-    ANALYTICS: {
-      metricsEnabled: ${performanceMetricsEnabled},
-      detailedLogging: ${detailedLogging},
-      anomalyDetection: ${anomalyDetectionEnabled},
-      healthInterval: ${healthCheckInterval},
-    },
-    FALLBACK: {
-      intelligent: ${intelligentFallbackEnabled},
-      chain: ${JSON.stringify(fallbackChainOrder)},
-    },
-    VIDEO: {
-      uri: ${JSON.stringify(videoUri)},
-      loop: ${loopVideo},
-      mirror: ${mirrorVideo},
-    },
-    DEVICES: ${JSON.stringify(devices)},
+  console.log('[Bulletproof] ========================================');
+  console.log('[Bulletproof] CAMERA REPLACEMENT SYSTEM INITIALIZING');
+  console.log('[Bulletproof] ========================================');
+  
+  // Configuration
+  const CONFIG = {
+    WIDTH: 1080,
+    HEIGHT: 1920,
+    FPS: 30,
+    SHOW_DEBUG: true,
   };
   
-  // ============ LOGGING SYSTEM ============
-  const Logger = {
-    enabled: CLAUDE_CONFIG.ANALYTICS.detailedLogging,
-    prefix: '[Claude]',
-    
-    log: function(...args) { if (this.enabled) console.log(this.prefix, ...args); },
-    warn: function(...args) { if (this.enabled) console.warn(this.prefix, ...args); },
-    error: function(...args) { console.error(this.prefix, ...args); },
-    info: function(...args) { console.log(this.prefix + ' [INFO]', ...args); },
-    metric: function(name, value, unit) {
-      if (this.enabled) console.log(this.prefix, '[METRIC]', name + ':', value, unit || '');
-    },
-  };
+  // Store originals
+  const _origGUM = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+  const _origEnumerate = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
   
-  Logger.info('======== CLAUDE PROTOCOL INITIALIZING ========');
-  Logger.info('Version:', CLAUDE_CONFIG.VERSION);
-  Logger.info('Devices:', CLAUDE_CONFIG.DEVICES.length);
+  // Animation state
+  let canvas = null;
+  let ctx = null;
+  let isAnimating = false;
+  let animFrame = null;
+  let startTime = 0;
+  let frameNum = 0;
+  const activeStreams = new Set();
   
-  // ============ NEURAL FINGERPRINT SYNTHESIZER ============
-  const NeuralFingerprint = {
-    seed: Date.now() % 1000000,
-    variance: CLAUDE_CONFIG.AI_CORE.fingerprintVarianceLevel,
-    
-    generateDeviceProfile: function() {
-      // Generate a consistent but unique device fingerprint
-      const baseProfile = {
-        hardwareConcurrency: this.varyInt(6, 2),
-        deviceMemory: this.varyInt(8, 2),
-        maxTouchPoints: 5,
-        colorDepth: 24,
-        pixelRatio: this.varyFloat(3.0, 0.5),
-      };
-      return baseProfile;
-    },
-    
-    varyInt: function(base, range) {
-      const variance = (this.variance / 100) * range;
-      return Math.round(base + (this.pseudoRandom() - 0.5) * 2 * variance);
-    },
-    
-    varyFloat: function(base, range) {
-      const variance = (this.variance / 100) * range;
-      return base + (this.pseudoRandom() - 0.5) * 2 * variance;
-    },
-    
-    pseudoRandom: function() {
-      this.seed = (this.seed * 16807) % 2147483647;
-      return this.seed / 2147483647;
-    },
-    
-    getConsistentNoise: function(x, y) {
-      const n = Math.sin(this.seed * 12.9898 + x * 78.233 + y * 43.1234) * 43758.5453;
-      return (n - Math.floor(n)) * 2 - 1;
-    },
-  };
+  // Assigned video URL (from RN config)
+  let assignedVideoUrl = null;
+  let videoElement = null;
+  let useVideoSource = false;
   
-  // ============ TEMPORAL COHERENCE ENGINE ============
-  const TemporalCoherence = {
-    enabled: CLAUDE_CONFIG.AI_CORE.temporalCoherenceEnabled,
-    blendStrength: CLAUDE_CONFIG.AI_CORE.frameBlendingStrength / 100,
-    previousFrame: null,
-    motionVector: { x: 0, y: 0 },
-    
-    blendFrames: function(currentCtx, width, height) {
-      if (!this.enabled || !this.previousFrame) {
-        this.captureFrame(currentCtx, width, height);
-        return;
-      }
-      
-      // Apply temporal blending for smooth transitions
-      try {
-        currentCtx.globalAlpha = 1 - this.blendStrength;
-        currentCtx.drawImage(this.previousFrame, 0, 0);
-        currentCtx.globalAlpha = 1;
-      } catch (e) {
-        Logger.warn('Temporal blend failed:', e.message);
-      }
-      
-      this.captureFrame(currentCtx, width, height);
-    },
-    
-    captureFrame: function(ctx, width, height) {
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const tempCtx = canvas.getContext('2d');
-        if (tempCtx) {
-          tempCtx.drawImage(ctx.canvas, 0, 0);
-          this.previousFrame = canvas;
-        }
-      } catch (e) {}
-    },
-    
-    predictMotion: function() {
-      if (!CLAUDE_CONFIG.AI_CORE.motionPredictionEnabled) return { x: 0, y: 0 };
-      
-      // Simple motion prediction based on previous vectors
-      const decay = 0.8;
-      this.motionVector.x *= decay;
-      this.motionVector.y *= decay;
-      return this.motionVector;
-    },
-  };
-  
-  // ============ BEHAVIORAL MIMICRY SYSTEM ============
-  const BehavioralMimicry = {
-    enabled: CLAUDE_CONFIG.BEHAVIORAL.enabled,
-    lastBlinkTime: Date.now(),
-    nextBlinkTime: Date.now() + 3000,
-    isBlinking: false,
-    blinkProgress: 0,
-    breathingPhase: 0,
-    microOffset: { x: 0, y: 0 },
-    
-    update: function(timestamp) {
-      if (!this.enabled) return;
-      
-      // Blink synthesis
-      if (CLAUDE_CONFIG.BEHAVIORAL.blinkSynthesis) {
-        this.updateBlink(timestamp);
-      }
-      
-      // Breathing motion
-      if (CLAUDE_CONFIG.BEHAVIORAL.breathingMotion) {
-        this.updateBreathing(timestamp);
-      }
-      
-      // Micro movements
-      if (CLAUDE_CONFIG.BEHAVIORAL.microMovements) {
-        this.updateMicroMovements(timestamp);
-      }
-    },
-    
-    updateBlink: function(timestamp) {
-      const now = Date.now();
-      if (now >= this.nextBlinkTime && !this.isBlinking) {
-        this.isBlinking = true;
-        this.blinkProgress = 0;
-      }
-      
-      if (this.isBlinking) {
-        this.blinkProgress += 0.15;
-        if (this.blinkProgress >= 1) {
-          this.isBlinking = false;
-          this.blinkProgress = 0;
-          this.lastBlinkTime = now;
-          const { min, max } = CLAUDE_CONFIG.BEHAVIORAL.blinkInterval;
-          this.nextBlinkTime = now + min + Math.random() * (max - min);
-        }
-      }
-    },
-    
-    updateBreathing: function(timestamp) {
-      const cycle = CLAUDE_CONFIG.BEHAVIORAL.breathingCycle;
-      this.breathingPhase = (timestamp % cycle) / cycle;
-    },
-    
-    updateMicroMovements: function(timestamp) {
-      const amp = CLAUDE_CONFIG.BEHAVIORAL.microMovementAmplitude;
-      const freq = 0.5;
-      this.microOffset.x = Math.sin(timestamp * 0.001 * freq) * amp;
-      this.microOffset.y = Math.cos(timestamp * 0.0013 * freq) * amp;
-    },
-    
-    getBlinkOverlay: function() {
-      if (!this.isBlinking) return 0;
-      // Smooth blink curve
-      return Math.sin(this.blinkProgress * Math.PI) * 0.5;
-    },
-    
-    getBreathingScale: function() {
-      // Subtle breathing expansion
-      return 1 + Math.sin(this.breathingPhase * Math.PI * 2) * 0.003;
-    },
-    
-    getMicroOffset: function() {
-      return this.microOffset;
-    },
-  };
-  
-  // ============ ANTI-DETECTION SYSTEM ============
-  const AntiDetection = {
-    level: CLAUDE_CONFIG.STEALTH.antiDetectionLevel,
-    
-    getTimingJitter: function() {
-      if (!CLAUDE_CONFIG.STEALTH.dynamicTimingJitter) return 0;
-      const { min, max } = CLAUDE_CONFIG.STEALTH.timingJitterRange;
-      
-      // Apply level-based multiplier
-      const multiplier = {
-        minimal: 0.25,
-        standard: 0.5,
-        maximum: 1.0,
-        paranoid: 2.0,
-      }[this.level] || 1.0;
-      
-      return (min + Math.random() * (max - min)) * multiplier;
-    },
-    
-    applyCanvasMutation: function(imageData) {
-      if (!CLAUDE_CONFIG.STEALTH.canvasMutation) return imageData;
-      
-      const data = imageData.data;
-      const intensity = {
-        minimal: 0.001,
-        standard: 0.003,
-        maximum: 0.005,
-        paranoid: 0.008,
-      }[this.level] || 0.005;
-      
-      for (let i = 0; i < data.length; i += 4) {
-        const noise = (NeuralFingerprint.pseudoRandom() - 0.5) * intensity * 255;
-        data[i] = Math.max(0, Math.min(255, data[i] + noise));
-        data[i + 1] = Math.max(0, Math.min(255, data[i + 1] + noise * 0.9));
-        data[i + 2] = Math.max(0, Math.min(255, data[i + 2] + noise * 1.1));
-      }
-      
-      return imageData;
-    },
-    
-    wrapWithJitter: function(fn, context) {
-      const jitter = this.getTimingJitter();
-      return new Promise((resolve) => {
-        setTimeout(async () => {
-          const result = await fn.call(context);
-          resolve(result);
-        }, jitter);
-      });
-    },
-  };
-  
-  // ============ QUALITY OPTIMIZER ============
-  const QualityOptimizer = {
-    currentLevel: 0,
-    fpsHistory: [],
-    lastOptimization: 0,
-    optimizationInterval: 3000,
-    
-    recordFps: function(fps) {
-      this.fpsHistory.push(fps);
-      if (this.fpsHistory.length > 60) this.fpsHistory.shift();
-    },
-    
-    getAverageFps: function() {
-      if (this.fpsHistory.length === 0) return 30;
-      return this.fpsHistory.reduce((a, b) => a + b, 0) / this.fpsHistory.length;
-    },
-    
-    optimize: function() {
-      if (!CLAUDE_CONFIG.AI_CORE.adaptiveQuality) return;
-      
-      const now = Date.now();
-      if (now - this.lastOptimization < this.optimizationInterval) return;
-      if (this.fpsHistory.length < 30) return;
-      
-      const avgFps = this.getAverageFps();
-      const targetFps = CLAUDE_CONFIG.PERFORMANCE.targetFps;
-      const levels = CLAUDE_CONFIG.PERFORMANCE.qualityLevels;
-      
-      const aggressiveness = {
-        conservative: { up: 0.9, down: 0.7 },
-        balanced: { up: 0.85, down: 0.6 },
-        aggressive: { up: 0.8, down: 0.5 },
-      }[CLAUDE_CONFIG.AI_CORE.qualityOptimizationLevel] || { up: 0.85, down: 0.6 };
-      
-      const prevLevel = this.currentLevel;
-      
-      if (avgFps < targetFps * aggressiveness.down && this.currentLevel < levels.length - 2) {
-        this.currentLevel++;
-      } else if (avgFps > targetFps * aggressiveness.up && this.currentLevel > 0) {
-        this.currentLevel--;
-      }
-      
-      if (prevLevel !== this.currentLevel) {
-        this.lastOptimization = now;
-        Logger.log('Quality adapted:', levels[this.currentLevel].name, '| FPS:', avgFps.toFixed(1));
-      }
-    },
-    
-    getCurrentSettings: function() {
-      const level = CLAUDE_CONFIG.PERFORMANCE.qualityLevels[this.currentLevel];
-      return {
-        scale: typeof level.scale === 'number' ? level.scale : 1.0,
-        fps: typeof level.fps === 'number' ? level.fps : 30,
-        name: level.name,
-      };
-    },
-  };
-  
-  // ============ STREAM POOL MANAGER ============
-  const StreamPool = {
-    enabled: CLAUDE_CONFIG.PERFORMANCE.streamPooling,
-    pool: new Map(),
-    maxSize: CLAUDE_CONFIG.PERFORMANCE.maxStreams,
-    
-    acquire: function(key) {
-      if (!this.enabled) return null;
-      const entry = this.pool.get(key);
-      if (entry && entry.stream && entry.stream.active) {
-        entry.lastUsed = Date.now();
-        return entry.stream;
-      }
-      return null;
-    },
-    
-    release: function(key, stream, cleanup) {
-      if (!this.enabled) {
-        if (cleanup) cleanup();
-        if (stream) stream.getTracks().forEach(t => t.stop());
-        return;
-      }
-      
-      if (this.pool.size >= this.maxSize) {
-        this.evictOldest();
-      }
-      
-      this.pool.set(key, {
-        stream,
-        cleanup,
-        lastUsed: Date.now(),
-      });
-    },
-    
-    evictOldest: function() {
-      let oldest = null;
-      let oldestTime = Infinity;
-      
-      this.pool.forEach((entry, key) => {
-        if (entry.lastUsed < oldestTime) {
-          oldestTime = entry.lastUsed;
-          oldest = key;
-        }
-      });
-      
-      if (oldest) {
-        const entry = this.pool.get(oldest);
-        if (entry) {
-          if (entry.cleanup) entry.cleanup();
-          if (entry.stream) entry.stream.getTracks().forEach(t => t.stop());
-        }
-        this.pool.delete(oldest);
-      }
-    },
-    
-    cleanup: function() {
-      this.pool.forEach((entry) => {
-        if (entry.cleanup) entry.cleanup();
-        if (entry.stream) entry.stream.getTracks().forEach(t => t.stop());
-      });
-      this.pool.clear();
-    },
-  };
-  
-  // ============ ANOMALY DETECTOR ============
-  const AnomalyDetector = {
-    enabled: CLAUDE_CONFIG.ANALYTICS.anomalyDetection,
-    fpsThreshold: 10,
-    consecutiveLowFps: 0,
-    maxConsecutive: 5,
-    lastAnomalyReport: 0,
-    anomalyCooldown: 10000,
-    
-    check: function(fps) {
-      if (!this.enabled) return;
-      
-      if (fps < this.fpsThreshold) {
-        this.consecutiveLowFps++;
-        if (this.consecutiveLowFps >= this.maxConsecutive) {
-          this.reportAnomaly('fps_drop', { fps, threshold: this.fpsThreshold });
-        }
-      } else {
-        this.consecutiveLowFps = 0;
-      }
-    },
-    
-    reportAnomaly: function(type, data) {
-      const now = Date.now();
-      if (now - this.lastAnomalyReport < this.anomalyCooldown) return;
-      
-      this.lastAnomalyReport = now;
-      Logger.warn('Anomaly detected:', type, data);
-      
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'claudeAnomaly',
-          payload: { anomalyType: type, data, timestamp: now },
-        }));
-      }
-    },
-  };
-  
-  // ============ METRICS COLLECTOR ============
-  const MetricsCollector = {
-    enabled: CLAUDE_CONFIG.ANALYTICS.metricsEnabled,
-    frameCount: 0,
-    lastFrameTime: 0,
-    startTime: Date.now(),
-    
-    recordFrame: function() {
-      if (!this.enabled) return;
-      
-      const now = performance.now();
-      if (this.lastFrameTime > 0) {
-        const delta = now - this.lastFrameTime;
-        const fps = 1000 / delta;
-        QualityOptimizer.recordFps(fps);
-        AnomalyDetector.check(fps);
-      }
-      this.lastFrameTime = now;
-      this.frameCount++;
-      
-      // Run quality optimization every 60 frames
-      if (this.frameCount % 60 === 0) {
-        QualityOptimizer.optimize();
-      }
-    },
-    
-    getSummary: function() {
-      const avgFps = QualityOptimizer.getAverageFps();
-      const uptime = Date.now() - this.startTime;
-      return {
-        frameCount: this.frameCount,
-        avgFps: avgFps.toFixed(1),
-        uptime: (uptime / 1000).toFixed(1) + 's',
-        qualityLevel: QualityOptimizer.getCurrentSettings().name,
-        poolSize: StreamPool.pool.size,
-      };
-    },
-  };
-  
-  // ============ INTELLIGENT FALLBACK ============
-  const IntelligentFallback = {
-    enabled: CLAUDE_CONFIG.FALLBACK.intelligent,
-    chain: CLAUDE_CONFIG.FALLBACK.chain,
-    currentIndex: 0,
-    failureCount: {},
-    
-    next: function() {
-      if (!this.enabled) return 'placeholder';
-      
-      this.currentIndex++;
-      if (this.currentIndex >= this.chain.length) {
-        this.currentIndex = this.chain.length - 1;
-      }
-      
-      const fallback = this.chain[this.currentIndex];
-      Logger.log('Fallback:', fallback);
-      return fallback;
-    },
-    
-    recordFailure: function(type) {
-      this.failureCount[type] = (this.failureCount[type] || 0) + 1;
-    },
-    
-    reset: function() {
-      this.currentIndex = 0;
-    },
-    
-    getCurrent: function() {
-      return this.chain[this.currentIndex];
-    },
-  };
-  
-  // ============ GLOBAL STATE ============
-  window.__claudeConfig = CLAUDE_CONFIG;
-  
-  window.__updateClaudeConfig = function(config) {
-    Object.assign(CLAUDE_CONFIG, config);
-    Logger.log('Claude config updated');
-  };
-  
-  window.__getClaudeMetrics = function() {
-    return {
-      ...MetricsCollector.getSummary(),
-      behavioral: {
-        blinkActive: BehavioralMimicry.isBlinking,
-        breathingPhase: BehavioralMimicry.breathingPhase.toFixed(2),
-      },
-      quality: QualityOptimizer.getCurrentSettings(),
-      antiDetection: {
-        level: AntiDetection.level,
-        jitterEnabled: CLAUDE_CONFIG.STEALTH.dynamicTimingJitter,
-      },
-    };
-  };
-  
-  window.__cleanupClaudeProtocol = function() {
-    StreamPool.cleanup();
-    Logger.log('Claude Protocol cleanup completed');
-  };
-  
-  // ============ LIFECYCLE HOOKS ============
-  window.addEventListener('beforeunload', function() {
-    StreamPool.cleanup();
-  });
-  
-  document.addEventListener('visibilitychange', function() {
-    if (document.visibilityState === 'hidden') {
-      StreamPool.pool.forEach(function(entry) {
-        if (entry.stream) {
-          entry.stream.getTracks().forEach(function(track) {
-            if (track.enabled) track.enabled = false;
-          });
-        }
-      });
-    }
-  });
-  
-  // ============ HEALTH CHECK ============
-  if (CLAUDE_CONFIG.ANALYTICS.metricsEnabled) {
-    setInterval(function() {
-      const metrics = MetricsCollector.getSummary();
-      Logger.log('Health check:', metrics);
-      
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-        window.ReactNativeWebView.postMessage(JSON.stringify({
-          type: 'claudeHealthCheck',
-          payload: metrics,
-        }));
-      }
-    }, CLAUDE_CONFIG.ANALYTICS.healthInterval);
+  // ============ CANVAS SETUP ============
+  function initCanvas() {
+    if (canvas) return;
+    canvas = document.createElement('canvas');
+    canvas.width = CONFIG.WIDTH;
+    canvas.height = CONFIG.HEIGHT;
+    ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    console.log('[Bulletproof] Canvas initialized:', CONFIG.WIDTH, 'x', CONFIG.HEIGHT);
   }
   
-  // ============ INITIALIZATION COMPLETE ============
-  Logger.info('======== CLAUDE PROTOCOL ACTIVE ========');
-  Logger.info('Anti-Detection Level:', CLAUDE_CONFIG.STEALTH.antiDetectionLevel);
-  Logger.info('Behavioral Mimicry:', CLAUDE_CONFIG.BEHAVIORAL.enabled ? 'ENABLED' : 'DISABLED');
-  Logger.info('Neural Fingerprinting:', CLAUDE_CONFIG.AI_CORE.neuralFingerprintEnabled ? 'ENABLED' : 'DISABLED');
-  Logger.info('Temporal Coherence:', CLAUDE_CONFIG.AI_CORE.temporalCoherenceEnabled ? 'ENABLED' : 'DISABLED');
-  Logger.info('Adaptive Quality:', CLAUDE_CONFIG.AI_CORE.adaptiveQuality ? 'ENABLED' : 'DISABLED');
-  Logger.info('Stream Pooling:', CLAUDE_CONFIG.PERFORMANCE.streamPooling ? 'ENABLED' : 'DISABLED');
-  Logger.info('Anomaly Detection:', CLAUDE_CONFIG.ANALYTICS.anomalyDetection ? 'ENABLED' : 'DISABLED');
+  // ============ ANIMATED TEST PATTERN ============
+  function renderAnimatedPattern(time, frame) {
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    // Animated gradient background
+    const hue = (time * 40) % 360;
+    const grad = ctx.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0, 'hsl(' + hue + ', 55%, 25%)');
+    grad.addColorStop(0.5, 'hsl(' + ((hue + 100) % 360) + ', 55%, 15%)');
+    grad.addColorStop(1, 'hsl(' + ((hue + 200) % 360) + ', 55%, 25%)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, w, h);
+    
+    // MOVING CIRCLES - clearly visible animation
+    for (let i = 0; i < 6; i++) {
+      const angle = time * (1 + i * 0.25) + (i * 1.1);
+      const orbitR = 180 + i * 40;
+      const r = 35 + i * 15;
+      const cx = w / 2 + Math.cos(angle) * orbitR;
+      const cy = h * 0.35 + i * (h * 0.08) + Math.sin(angle * 0.8) * 50;
+      
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = 'hsla(' + ((hue + i * 50) % 360) + ', 65%, 55%, 0.85)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+    
+    // PULSING CENTER INDICATOR
+    const pulse = 1 + Math.sin(time * 5) * 0.2;
+    ctx.save();
+    ctx.translate(w / 2, h * 0.68);
+    ctx.scale(pulse, pulse);
+    
+    // Play triangle
+    ctx.beginPath();
+    ctx.moveTo(-40, -50);
+    ctx.lineTo(-40, 50);
+    ctx.lineTo(50, 0);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.fill();
+    ctx.restore();
+    
+    // STATUS BAR
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(15, h - 155, 520, 140);
+    
+    // Status text
+    ctx.fillStyle = '#00ff88';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText('✓ CAMERA REPLACED', 35, h - 115);
+    
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '20px monospace';
+    ctx.fillText('Frame: ' + String(frame % 10000).padStart(5, '0'), 35, h - 80);
+    ctx.fillText('Time: ' + time.toFixed(2) + 's', 250, h - 80);
+    ctx.fillText(w + 'x' + h + ' @ ' + CONFIG.FPS + 'fps', 35, h - 50);
+    ctx.fillText('Protocol: ACTIVE', 300, h - 50);
+    
+    // SCANNING LINE - proof of movement
+    const scanY = (frame * 18) % h;
+    ctx.fillStyle = 'rgba(0,255,136,0.4)';
+    ctx.fillRect(0, scanY, w, 5);
+    
+    // CORNER MARKERS
+    const cs = 70;
+    ctx.fillStyle = '#00ff88';
+    ctx.fillRect(0, 0, cs, 7);
+    ctx.fillRect(0, 0, 7, cs);
+    ctx.fillRect(w - cs, 0, cs, 7);
+    ctx.fillRect(w - 7, 0, 7, cs);
+    ctx.fillRect(0, h - 7, cs, 7);
+    ctx.fillRect(0, h - cs, 7, cs);
+    ctx.fillRect(w - cs, h - 7, cs, 7);
+    ctx.fillRect(w - 7, h - cs, 7, cs);
+  }
   
+  // ============ VIDEO SOURCE RENDERING ============
+  function renderVideoSource() {
+    if (!videoElement || videoElement.paused || videoElement.ended) {
+      renderAnimatedPattern((Date.now() - startTime) / 1000, frameNum);
+      return;
+    }
+    
+    const w = canvas.width;
+    const h = canvas.height;
+    const vw = videoElement.videoWidth || w;
+    const vh = videoElement.videoHeight || h;
+    
+    // Cover mode - fill canvas
+    const scale = Math.max(w / vw, h / vh);
+    const sw = w / scale;
+    const sh = h / scale;
+    const sx = (vw - sw) / 2;
+    const sy = (vh - sh) / 2;
+    
+    try {
+      ctx.drawImage(videoElement, sx, sy, sw, sh, 0, 0, w, h);
+    } catch (e) {
+      // Fallback to pattern on error
+      renderAnimatedPattern((Date.now() - startTime) / 1000, frameNum);
+    }
+  }
+  
+  // ============ ANIMATION LOOP ============
+  function animate() {
+    if (!isAnimating) return;
+    
+    const elapsed = (Date.now() - startTime) / 1000;
+    
+    if (useVideoSource && videoElement && !videoElement.paused) {
+      renderVideoSource();
+    } else {
+      renderAnimatedPattern(elapsed, frameNum);
+    }
+    
+    frameNum++;
+    animFrame = requestAnimationFrame(animate);
+  }
+  
+  function startAnimation() {
+    if (isAnimating) return;
+    initCanvas();
+    isAnimating = true;
+    startTime = Date.now();
+    frameNum = 0;
+    animate();
+    console.log('[Bulletproof] Animation started');
+  }
+  
+  function stopAnimation() {
+    isAnimating = false;
+    if (animFrame) {
+      cancelAnimationFrame(animFrame);
+      animFrame = null;
+    }
+  }
+  
+  // ============ LOAD VIDEO ============
+  function loadAssignedVideo(url) {
+    if (!url || url === assignedVideoUrl) return;
+    
+    console.log('[Bulletproof] Loading assigned video:', url.substring(0, 60));
+    assignedVideoUrl = url;
+    
+    if (videoElement) {
+      videoElement.pause();
+      videoElement.src = '';
+    }
+    
+    videoElement = document.createElement('video');
+    videoElement.muted = true;
+    videoElement.loop = true;
+    videoElement.playsInline = true;
+    videoElement.setAttribute('playsinline', 'true');
+    videoElement.crossOrigin = 'anonymous';
+    videoElement.preload = 'auto';
+    videoElement.style.cssText = 'position:absolute;top:-9999px;left:-9999px;width:1px;height:1px;';
+    document.body.appendChild(videoElement);
+    
+    videoElement.onloadeddata = function() {
+      console.log('[Bulletproof] Video loaded:', videoElement.videoWidth, 'x', videoElement.videoHeight);
+      useVideoSource = true;
+      videoElement.play().catch(function(e) {
+        console.warn('[Bulletproof] Video autoplay failed:', e);
+        useVideoSource = false;
+      });
+    };
+    
+    videoElement.onerror = function() {
+      console.warn('[Bulletproof] Video load failed, using test pattern');
+      useVideoSource = false;
+    };
+    
+    videoElement.src = url;
+  }
+  
+  // ============ CREATE STREAM ============
+  function createReplacementStream(constraints) {
+    startAnimation();
+    
+    try {
+      const stream = canvas.captureStream(CONFIG.FPS);
+      
+      if (!stream || stream.getVideoTracks().length === 0) {
+        throw new Error('captureStream failed');
+      }
+      
+      const track = stream.getVideoTracks()[0];
+      
+      // Spoof track methods
+      track.getSettings = function() {
+        return {
+          width: CONFIG.WIDTH,
+          height: CONFIG.HEIGHT,
+          frameRate: CONFIG.FPS,
+          facingMode: 'user',
+          deviceId: 'bulletproof-camera',
+          groupId: 'bulletproof-group',
+          aspectRatio: CONFIG.WIDTH / CONFIG.HEIGHT,
+        };
+      };
+      
+      track.getCapabilities = function() {
+        return {
+          width: { min: 1, max: CONFIG.WIDTH },
+          height: { min: 1, max: CONFIG.HEIGHT },
+          frameRate: { min: 1, max: CONFIG.FPS },
+          facingMode: ['user', 'environment'],
+          deviceId: 'bulletproof-camera',
+        };
+      };
+      
+      track.getConstraints = function() {
+        return {
+          width: { ideal: CONFIG.WIDTH },
+          height: { ideal: CONFIG.HEIGHT },
+          facingMode: 'user',
+        };
+      };
+      
+      Object.defineProperty(track, 'label', {
+        get: function() { return 'Bulletproof Test Camera (1080x1920)'; },
+        configurable: true,
+      });
+      
+      // Handle audio
+      if (constraints?.audio) {
+        try {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const osc = audioCtx.createOscillator();
+          const gain = audioCtx.createGain();
+          const dest = audioCtx.createMediaStreamDestination();
+          gain.gain.value = 0;
+          osc.connect(gain);
+          gain.connect(dest);
+          osc.start();
+          dest.stream.getAudioTracks().forEach(function(t) { stream.addTrack(t); });
+        } catch (e) {}
+      }
+      
+      // Track stream for cleanup
+      activeStreams.add(stream);
+      
+      stream.getTracks().forEach(function(t) {
+        const origStop = t.stop.bind(t);
+        t.stop = function() {
+          origStop();
+          activeStreams.delete(stream);
+          if (activeStreams.size === 0) {
+            stopAnimation();
+          }
+        };
+      });
+      
+      console.log('[Bulletproof] Created replacement stream - tracks:', stream.getTracks().length);
+      return stream;
+      
+    } catch (err) {
+      console.error('[Bulletproof] Stream creation failed:', err);
+      throw err;
+    }
+  }
+  
+  // ============ OVERRIDE APIS ============
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.getUserMedia = async function(constraints) {
+      console.log('[Bulletproof] getUserMedia intercepted');
+      
+      if (constraints?.video) {
+        try {
+          return createReplacementStream(constraints);
+        } catch (err) {
+          console.error('[Bulletproof] Replacement failed, trying original');
+          if (_origGUM) {
+            return _origGUM(constraints);
+          }
+          throw err;
+        }
+      }
+      
+      if (_origGUM) {
+        return _origGUM(constraints);
+      }
+      throw new Error('getUserMedia not available');
+    };
+    
+    navigator.mediaDevices.enumerateDevices = async function() {
+      console.log('[Bulletproof] enumerateDevices intercepted');
+      return [
+        {
+          deviceId: 'bulletproof-camera',
+          groupId: 'bulletproof-group',
+          kind: 'videoinput',
+          label: 'Bulletproof Test Camera (1080x1920)',
+          toJSON: function() { return this; },
+        },
+        {
+          deviceId: 'bulletproof-audio',
+          groupId: 'bulletproof-group',
+          kind: 'audioinput',
+          label: 'Bulletproof Audio Input',
+          toJSON: function() { return this; },
+        },
+      ];
+    };
+  }
+  
+  // ============ CONFIG UPDATE ============
+  window.__bulletproofConfig = {
+    setVideoUrl: function(url) {
+      if (url) loadAssignedVideo(url);
+    },
+    useTestPattern: function() {
+      useVideoSource = false;
+    },
+    getStatus: function() {
+      return {
+        active: isAnimating,
+        streamCount: activeStreams.size,
+        usingVideo: useVideoSource,
+        videoUrl: assignedVideoUrl,
+        frame: frameNum,
+      };
+    },
+    forceRefresh: function() {
+      startTime = Date.now();
+      frameNum = 0;
+    },
+  };
+  
+  // Listen for config from RN
+  window.addEventListener('message', function(e) {
+    try {
+      const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+      if (data?.type === 'bulletproof') {
+        if (data.videoUrl) {
+          window.__bulletproofConfig.setVideoUrl(data.videoUrl);
+        }
+      }
+    } catch (err) {}
+  });
+  
+  document.addEventListener('message', function(e) {
+    try {
+      if (typeof e.data !== 'string' || !e.data.startsWith('{')) return;
+      const data = JSON.parse(e.data);
+      if (data?.type === 'bulletproof') {
+        if (data.videoUrl) {
+          window.__bulletproofConfig.setVideoUrl(data.videoUrl);
+        }
+      }
+    } catch (err) {}
+  });
+  
+  console.log('[Bulletproof] ========================================');
+  console.log('[Bulletproof] CAMERA REPLACEMENT SYSTEM ACTIVE');
+  console.log('[Bulletproof] Resolution:', CONFIG.WIDTH, 'x', CONFIG.HEIGHT, '@', CONFIG.FPS, 'fps');
+  console.log('[Bulletproof] ========================================');
+  
+  // Notify RN that we're ready
   if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
     window.ReactNativeWebView.postMessage(JSON.stringify({
-      type: 'claudeProtocolReady',
-      payload: {
-        version: CLAUDE_CONFIG.VERSION,
-        features: {
-          adaptiveQuality: CLAUDE_CONFIG.AI_CORE.adaptiveQuality,
-          neuralFingerprint: CLAUDE_CONFIG.AI_CORE.neuralFingerprintEnabled,
-          temporalCoherence: CLAUDE_CONFIG.AI_CORE.temporalCoherenceEnabled,
-          behavioralMimicry: CLAUDE_CONFIG.BEHAVIORAL.enabled,
-          antiDetectionLevel: CLAUDE_CONFIG.STEALTH.antiDetectionLevel,
-        },
-      },
+      type: 'bulletproofReady',
+      config: { width: CONFIG.WIDTH, height: CONFIG.HEIGHT, fps: CONFIG.FPS }
     }));
   }
+})();
+true;
+`;
+
+/**
+ * Creates a simple bulletproof injection script that uses the built-in test pattern
+ * with optional video URL override. This is more reliable than the complex version.
+ */
+export const createSimplifiedInjectionScript = (videoUrl?: string): string => {
+  const videoConfig = videoUrl ? `window.__bulletproofConfig?.setVideoUrl(${JSON.stringify(videoUrl)});` : '';
+  
+  return BULLETPROOF_INJECTION_SCRIPT + `
+(function() {
+  ${videoConfig}
+  console.log('[SimplifiedInjection] Configured with video:', ${JSON.stringify(videoUrl || 'test pattern')});
 })();
 true;
 `;

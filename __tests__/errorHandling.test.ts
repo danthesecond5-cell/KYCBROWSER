@@ -1,10 +1,3 @@
-// Mock react-native before importing
-jest.mock('react-native', () => ({
-  Alert: { alert: jest.fn() },
-  Platform: { OS: 'ios', select: jest.fn((obj) => obj.ios || obj.default) },
-}));
-
-import { Alert, Platform } from 'react-native';
 import {
   ErrorCode,
   createAppError,
@@ -24,7 +17,10 @@ import {
   validateVideoUrl,
   withErrorLogging,
 } from '@/utils/errorHandling';
+import { Alert, Platform } from 'react-native';
 
+// Mock react-native with Alert and Platform
+const mockAlert = jest.fn();
 jest.mock('react-native', () => {
   return {
     Alert: { alert: jest.fn() },
@@ -32,9 +28,13 @@ jest.mock('react-native', () => {
   };
 });
 
+// Setup mockAlert reference
+beforeAll(() => {
+  (Alert.alert as jest.Mock) = mockAlert;
+});
+
 const setPlatformOS = (os: string) => {
-  // Platform.OS may be read-only in some environments, so redefine it.
-  Object.defineProperty(Platform, 'OS', { value: os, configurable: true });
+  (Platform as { OS: string }).OS = os;
 };
 
 describe('errorHandling utilities', () => {
@@ -46,7 +46,7 @@ describe('errorHandling utilities', () => {
     consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
     consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     consoleLogSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
-    jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockAlert.mockClear();
     setPlatformOS('ios');
   });
 
@@ -54,7 +54,6 @@ describe('errorHandling utilities', () => {
     consoleErrorSpy.mockRestore();
     consoleWarnSpy.mockRestore();
     consoleLogSpy.mockRestore();
-    (Alert.alert as unknown as jest.Mock).mockRestore?.();
     jest.useRealTimers();
   });
 
@@ -127,12 +126,12 @@ describe('errorHandling utilities', () => {
 
   test('showErrorAlert uses default button and handlers', () => {
     showErrorAlert('Title', 'Message');
-    expect(Alert.alert).toHaveBeenCalledWith('Title', 'Message', [{ text: 'OK' }]);
+    expect(mockAlert).toHaveBeenCalledWith('Title', 'Message', [{ text: 'OK' }]);
 
     const onRetry = jest.fn();
     const onCancel = jest.fn();
     showErrorAlert('Oops', 'Try again', onRetry, onCancel);
-    expect(Alert.alert).toHaveBeenCalledWith('Oops', 'Try again', [
+    expect(mockAlert).toHaveBeenCalledWith('Oops', 'Try again', [
       { text: 'Cancel', style: 'cancel', onPress: onCancel },
       { text: 'Retry', onPress: onRetry },
     ]);

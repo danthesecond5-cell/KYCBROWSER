@@ -22,6 +22,7 @@ import { useAccelerometer, useGyroscope, useOrientation, AccelerometerData, Gyro
 import { useDeviceTemplate } from '@/contexts/DeviceTemplateContext';
 import { useVideoLibrary } from '@/contexts/VideoLibraryContext';
 import { useProtocol } from '@/contexts/ProtocolContext';
+import type { ProtocolType } from '@/contexts/ProtocolContext';
 import type { SavedVideo } from '@/utils/videoManager';
 import { PATTERN_PRESETS } from '@/constants/motionPatterns';
 import { 
@@ -31,12 +32,18 @@ import {
   MOTION_INJECTION_SCRIPT,
   CONSOLE_CAPTURE_SCRIPT,
   VIDEO_SIMULATION_TEST_SCRIPT,
+  BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
-  getPerformanceProfilePreset,
-  type PerformanceProfile,
+  createSimplifiedInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
-import { formatVideoUriForWebView } from '@/utils/videoServing';
+import {
+  formatVideoUriForWebView,
+  getDefaultFallbackVideoUri,
+  isBase64VideoUri,
+  isBlobUri,
+  isLocalFileUri,
+} from '@/utils/videoServing';
 import { isBundledSampleVideo } from '@/utils/sampleVideo';
 import { APP_CONFIG } from '@/constants/app';
 import type { SimulationConfig } from '@/types/browser';
@@ -46,9 +53,25 @@ import TemplateModal from '@/components/browser/TemplateModal';
 import TestingWatermark from '@/components/TestingWatermark';
 
 import ControlToolbar, { SiteSettingsModal } from '@/components/browser/ControlToolbar';
-import { ProtocolSettingsModal } from '@/components/browser/modals';
+import {
+  ProtocolSettingsModal,
+  PermissionRequestModal,
+  CameraPermissionPromptModal,
+} from '@/components/browser/modals';
+import type { CameraPermissionPromptResult } from '@/components/browser/modals';
 import SetupRequired from '@/components/SetupRequired';
 
+type CameraPermissionRequest = {
+  requestId: string;
+  url?: string;
+  origin?: string;
+  wantsVideo: boolean;
+  wantsAudio: boolean;
+  requestedFacing?: string | null;
+  requestedDeviceId?: string | null;
+};
+
+type PermissionAction = 'simulate' | 'real' | 'deny';
 export default function MotionBrowserScreen() {
   const webViewRef = useRef<WebView>(null);
 
@@ -99,23 +122,20 @@ export default function MotionBrowserScreen() {
     presentationMode,
     showTestingWatermark,
     activeProtocol,
+    setActiveProtocol,
     protocols,
     standardSettings,
     allowlistSettings,
     protectedSettings,
     harnessSettings,
     gpt52Settings,
-    codexSettings,
     isAllowlisted: checkIsAllowlisted,
     httpsEnforced,
     mlSafetyEnabled,
-    addAllowlistDomain,
-    removeAllowlistDomain,
   } = useProtocol();
 
   const [url, setUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
   const [inputUrl, setInputUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
-  const [currentPageUrl, setCurrentPageUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
   const [canGoBack, setCanGoBack] = useState<boolean>(false);
   const [canGoForward, setCanGoForward] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -139,7 +159,6 @@ export default function MotionBrowserScreen() {
   const isApplyingVideoRef = useRef<boolean>(false);
   const isMountedRef = useRef<boolean>(true);
   const lastInjectionTimeRef = useRef<number>(0);
-  const lastRecoveryAtRef = useRef<number>(0);
   const pendingInjectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -149,19 +168,38 @@ export default function MotionBrowserScreen() {
 
   const [showSiteSettingsModal, setShowSiteSettingsModal] = useState(false);
   const [showProtocolSettingsModal, setShowProtocolSettingsModal] = useState(false);
+  const [permissionQueue, setPermissionQueue] = useState<CameraPermissionRequest[]>([]);
+  const [pendingPermissionRequest, setPendingPermissionRequest] = useState<CameraPermissionRequest | null>(null);
+  const [permissionRequest, setPermissionRequest] = useState<{
+    requestId: string;
+    hostname: string;
+    origin: string;
+  } | null>(null);
+  const [permissionSelectedVideo, setPermissionSelectedVideo] = useState<SavedVideo | null>(null);
+
+  const protocolListForPrompt = useMemo(() => {
+    return [
+      { id: 'standard' as const, name: protocols.standard?.name || 'Standard Injection', enabled: protocols.standard?.enabled ?? true },
+      { id: 'allowlist' as const, name: protocols.allowlist?.name || 'Allowlist Mode', enabled: protocols.allowlist?.enabled ?? true },
+      { id: 'protected' as const, name: protocols.protected?.name || 'Protected Preview', enabled: protocols.protected?.enabled ?? true },
+      { id: 'harness' as const, name: protocols.harness?.name || 'Test Harness', enabled: protocols.harness?.enabled ?? true },
+    ];
+  }, [protocols]);
+
+  const enabledProtocolOptions = useMemo(
+    () => protocolListForPrompt.filter(option => option.enabled),
+    [protocolListForPrompt]
+  );
 
   const isProtocolEnabled = useMemo(
     () => protocols[activeProtocol]?.enabled ?? true,
     [protocols, activeProtocol]
   );
 
-  const codexModeActive = activeProtocol === 'gpt52' && isProtocolEnabled;
-
   // Use protocol context for allowlist (only when allowlist protocol is active/enabled)
   const allowlistModeActive = activeProtocol === 'allowlist' && (protocols.allowlist?.enabled ?? true);
   const allowlistEnabled = allowlistModeActive && allowlistSettings.enabled;
   const allowedDomains = allowlistSettings.domains;
-  const codexModeActive = activeProtocol === 'codex' && isProtocolEnabled;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -201,11 +239,31 @@ export default function MotionBrowserScreen() {
 
   const currentHostname = useMemo(() => {
     try {
-      return new URL(currentPageUrl).hostname.toLowerCase();
+      return new URL(url).hostname.toLowerCase();
     } catch {
       return '';
     }
-  }, [currentPageUrl]);
+  }, [url]);
+
+  const originWhitelist = useMemo(() => {
+    const whitelist = ['https://*', 'file://*', 'blob:*', 'data:*', 'about:blank'];
+    if (!httpsEnforced) {
+      whitelist.unshift('http://*');
+    }
+    return whitelist;
+  }, [httpsEnforced]);
+
+  const requiresFileAccess = useMemo(() => {
+    if (Platform.OS !== 'android') return false;
+    const deviceUris = activeTemplate?.captureDevices
+      .map(device => device.assignedVideoUri)
+      .filter((assignedUri): assignedUri is string => Boolean(assignedUri)) || [];
+    const candidateUris = [fallbackVideoUri, ...deviceUris].filter((uri): uri is string => Boolean(uri));
+
+    return candidateUris.some(uri => (
+      isLocalFileUri(uri) && !isBase64VideoUri(uri) && !isBlobUri(uri)
+    ));
+  }, [activeTemplate, fallbackVideoUri]);
 
   const isAllowlisted = useMemo(() => {
     return checkIsAllowlisted(currentHostname);
@@ -232,96 +290,39 @@ export default function MotionBrowserScreen() {
   ]);
 
   const allowlistBlocked = allowlistEnabled && allowlistSettings.blockUnlisted && !isAllowlisted;
-  const isCodexProtocol = activeProtocol === 'gpt-5-2-codex-high';
-
-  const activeInjectMotionData = useMemo(() => {
-    return activeProtocol === 'gpt52' ? gpt52Settings.injectMotionData : standardSettings.injectMotionData;
-  }, [activeProtocol, gpt52Settings.injectMotionData, standardSettings.injectMotionData]);
-
-  const activeLoopVideo = useMemo(() => {
-    return activeProtocol === 'gpt52' ? gpt52Settings.loopVideo : standardSettings.loopVideo;
-  }, [activeProtocol, gpt52Settings.loopVideo, standardSettings.loopVideo]);
-
-  const activeRespectSiteSettings = useMemo(() => {
-    return activeProtocol === 'gpt52' ? gpt52Settings.respectSiteSettings : standardSettings.respectSiteSettings;
-  }, [activeProtocol, gpt52Settings.respectSiteSettings, standardSettings.respectSiteSettings]);
-
-  useEffect(() => {
-    if (!allowlistEnabled || !allowlistSettings.autoAddCurrentSite) return;
-    if (!currentHostname || isAllowlisted) return;
-    addAllowlistDomain(currentHostname);
-  }, [
-    allowlistEnabled,
-    allowlistSettings.autoAddCurrentSite,
-    currentHostname,
-    isAllowlisted,
-    addAllowlistDomain,
-  ]);
-
-  useEffect(() => {
-    if (!allowlistEnabled || !allowlistSettings.autoAddCurrentSite) return;
-    if (!currentHostname) return;
-    addAllowlistDomain(currentHostname);
-  }, [
-    allowlistEnabled,
-    allowlistSettings.autoAddCurrentSite,
-    currentHostname,
-    addAllowlistDomain,
-  ]);
-
-  const isCodexProtocol = activeProtocol === 'gpt-5.2-codex-high';
-  const performanceProfile: PerformanceProfile = useMemo(() => {
-    if (!isCodexProtocol) return 'standard';
-    return codexSettings.aggressiveTuning ? 'aggressive' : 'advanced';
-  }, [isCodexProtocol, codexSettings.aggressiveTuning]);
-  const performancePreset = useMemo(
-    () => getPerformanceProfilePreset(performanceProfile),
-    [performanceProfile]
-  );
-  const adaptiveQualityEnabled = isCodexProtocol && codexSettings.adaptiveQuality;
 
   const effectiveStealthMode = useMemo(() => {
-    if (activeProtocol === 'protected' || activeProtocol === 'harness' || activeProtocol === 'gpt52') {
+    if (activeProtocol === 'protected' || activeProtocol === 'harness') {
       return true;
     }
     if (activeProtocol === 'gpt52') {
       return true;
     }
-    if (activeProtocol === 'gpt-5-2-codex-high') {
-      return codexSettings.stealthMode;
-    }
     if (!standardSettings.stealthByDefault) {
       return false;
     }
-    if (!activeRespectSiteSettings) {
+    if (!standardSettings.respectSiteSettings) {
       return true;
     }
-    return shouldUseStealthForUrl(currentPageUrl);
+    return shouldUseStealthForUrl(url);
   }, [
     activeProtocol,
-    codexSettings.stealthMode,
     standardSettings.stealthByDefault,
-    activeRespectSiteSettings,
+    standardSettings.respectSiteSettings,
     shouldUseStealthForUrl,
-    currentPageUrl,
+    url,
   ]);
 
   const protocolForceSimulation = isProtocolEnabled && (
     activeProtocol === 'protected'
     || (activeProtocol === 'gpt52' && gpt52Settings.forceSimulation)
     || (activeProtocol === 'harness' && harnessSettings.overlayEnabled)
-    || (activeProtocol === 'gpt-5-2-codex-high' && codexSettings.forceSimulation)
   );
 
   const protocolMirrorVideo = isProtocolEnabled && (
     (activeProtocol === 'harness' && harnessSettings.mirrorVideo) ||
-    (activeProtocol === 'gpt52' && gpt52Settings.mirrorVideo) ||
-    (activeProtocol === 'gpt-5-2-codex-high' && codexSettings.mirrorVideo)
+    (activeProtocol === 'gpt52' && gpt52Settings.mirrorVideo)
   );
-
-  const adaptiveQualityEnabled = codexModeActive && codexSettings.adaptiveQuality;
-  const maxRetryAttempts = codexModeActive && codexSettings.aggressiveRetries ? 8 : 4;
-  const videoLoadTimeoutMs = codexModeActive && codexSettings.aggressiveRetries ? 16000 : 12000;
 
   const protocolOverlayLabel = useMemo(() => {
     if (!isProtocolEnabled) {
@@ -333,24 +334,11 @@ export default function MotionBrowserScreen() {
     if (activeProtocol === 'harness') {
       return harnessSettings.overlayEnabled ? 'Harness Overlay Active' : 'Harness Ready';
     }
-    if (activeProtocol === 'gpt52') {
-      return codexSettings.showOverlayLabel ? 'GPT-5.2 Codex High Active' : '';
-    }
     if (activeProtocol === 'allowlist' && allowlistEnabled) {
       return allowlistBlocked ? 'Allowlist Blocked' : 'Allowlist Active';
     }
-    if (activeProtocol === 'gpt-5-2-codex-high') {
-      return 'GPT-5.2 Codex High';
-    }
     return '';
-  }, [
-    activeProtocol,
-    harnessSettings.overlayEnabled,
-    allowlistEnabled,
-    allowlistBlocked,
-    isProtocolEnabled,
-    gpt52Settings.ultraStealth,
-  ]);
+  }, [activeProtocol, harnessSettings.overlayEnabled, allowlistEnabled, allowlistBlocked, isProtocolEnabled]);
 
   const showProtocolOverlayLabel = useMemo(() => {
     if (!isProtocolEnabled) {
@@ -362,49 +350,32 @@ export default function MotionBrowserScreen() {
     if (activeProtocol === 'harness') {
       return harnessSettings.showDebugInfo || harnessSettings.overlayEnabled;
     }
-    if (activeProtocol === 'gpt-5-2-codex-high') {
-      return codexSettings.showOverlayLabel;
-    }
     return false;
   }, [
     activeProtocol,
     protectedSettings.showProtectedBadge,
     harnessSettings.showDebugInfo,
     harnessSettings.overlayEnabled,
-    codexSettings.showOverlayLabel,
     isProtocolEnabled,
-    gpt52Settings.showOverlayLabel,
   ]);
 
   const autoInjectEnabled = isProtocolEnabled && (
-    (activeProtocol === 'standard' || activeProtocol === 'allowlist' || activeProtocol === 'gpt52')
-      ? standardSettings.autoInject
-      : activeProtocol === 'gpt52'
-        ? gpt52Settings.autoInject
-        : activeProtocol === 'gpt-5-2-codex-high'
-          ? codexSettings.autoInject
-          : true
+    activeProtocol === 'gpt52'
+      ? gpt52Settings.autoInject
+      : (activeProtocol === 'standard' || activeProtocol === 'allowlist')
+        ? standardSettings.autoInject
+        : true
   );
-
-  const effectiveLoopVideo = activeProtocol === 'gpt-5-2-codex-high'
-    ? codexSettings.loopVideo
-    : activeProtocol === 'gpt52'
-      ? gpt52Settings.loopVideo
-      : standardSettings.loopVideo;
 
   const loopVideoEnabled = useMemo(() => {
     if (activeProtocol === 'gpt52') return gpt52Settings.loopVideo;
-    if (activeProtocol === 'gpt-5-2-codex-high') return codexSettings.loopVideo;
     return standardSettings.loopVideo;
-  }, [activeProtocol, gpt52Settings.loopVideo, codexSettings.loopVideo, standardSettings.loopVideo]);
+  }, [activeProtocol, gpt52Settings.loopVideo, standardSettings.loopVideo]);
 
   const motionInjectionEnabled = useMemo(() => {
     if (activeProtocol === 'gpt52') return gpt52Settings.injectMotionData;
     return standardSettings.injectMotionData;
   }, [activeProtocol, gpt52Settings.injectMotionData, standardSettings.injectMotionData]);
-
-  const aggressiveRetries = activeProtocol === 'gpt-5-2-codex-high' && codexSettings.aggressiveRetries;
-  const debugEnabled = developerModeEnabled || (isCodexProtocol && codexSettings.enableTelemetry);
 
   const mediaTuningOptions = useMemo(() => {
     if (activeProtocol !== 'gpt52') return {};
@@ -424,10 +395,14 @@ export default function MotionBrowserScreen() {
     [activeTemplate]
   );
 
-  const motionInjectionEnabled = useMemo(() => (
-    standardSettings.injectMotionData
-    || (activeProtocol === 'gpt-5.2-codex-high' && codexSettings.injectMotionData)
-  ), [standardSettings.injectMotionData, activeProtocol, codexSettings.injectMotionData]);
+  useEffect(() => {
+    if (pendingPermissionRequest || permissionQueue.length === 0) {
+      return;
+    }
+    const [nextRequest, ...remaining] = permissionQueue;
+    setPermissionQueue(remaining);
+    setPendingPermissionRequest(nextRequest);
+  }, [pendingPermissionRequest, permissionQueue]);
 
   const injectMotionData = useCallback((accel: AccelerometerData, gyro: GyroscopeData, orient: OrientationData, active: boolean) => {
     if (!motionInjectionEnabled) return;
@@ -461,44 +436,13 @@ export default function MotionBrowserScreen() {
       return;
     }
 
-    if (!isProtocolEnabled || allowlistBlocked) {
-      console.log('[App] Injection disabled:', {
-        protocol: activeProtocol,
-        allowlistBlocked,
-        protocolEnabled: isProtocolEnabled,
-      });
-      if (webViewRef.current) {
-        const disablePreset = getPerformanceProfilePreset('standard');
-        const disableConfig = {
-          devices: [],
-          stealthMode: false,
-          forceSimulation: false,
-          fallbackVideoUri: null,
-          protocolId: activeProtocol,
-          overlayLabelText: '',
-          showOverlayLabel: false,
-          adaptiveQualityEnabled: false,
-          performanceProfile: 'standard',
-          videoLoadTimeout: disablePreset.videoLoadTimeout,
-          maxRetryAttempts: disablePreset.maxRetryAttempts,
-          initialRetryDelay: disablePreset.initialRetryDelay,
-          healthCheckInterval: disablePreset.healthCheckInterval,
-          minAcceptableFps: disablePreset.minAcceptableFps,
-          qualityAdaptationInterval: disablePreset.qualityAdaptationInterval,
-          performanceSampleSize: disablePreset.performanceSampleSize,
-        };
-        webViewRef.current.injectJavaScript(`
-          (function() {
-            if (window.__updateMediaConfig) {
-              window.__updateMediaConfig(${JSON.stringify(disableConfig)});
-            }
-            if (window.__cleanupAllStreams) {
-              window.__cleanupAllStreams();
-            }
-          })();
-          true;
-        `);
-      }
+    if (!isProtocolEnabled) {
+      console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
+      return;
+    }
+
+    if (allowlistBlocked) {
+      console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
       return;
     }
 
@@ -520,13 +464,12 @@ export default function MotionBrowserScreen() {
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
-      performanceProfile,
       overlayLabelText: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: effectiveLoopVideo,
+      loopVideo: loopVideoEnabled,
       mirrorVideo: protocolMirrorVideo,
-      aggressiveRetries,
-      debugEnabled,
+      debugEnabled: developerModeEnabled,
+      permissionPromptEnabled: true,
       ...mediaTuningOptions,
     };
 
@@ -545,13 +488,12 @@ export default function MotionBrowserScreen() {
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
-      performanceProfile,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: effectiveLoopVideo,
+      loopVideo: loopVideoEnabled,
       mirrorVideo: protocolMirrorVideo,
-      aggressiveRetries,
-      debugEnabled,
+      debugEnabled: developerModeEnabled,
+      permissionPromptEnabled: true,
       ...mediaTuningOptions,
     });
 
@@ -571,20 +513,18 @@ export default function MotionBrowserScreen() {
     effectiveStealthMode,
     allowlistBlocked,
     currentHostname,
-    currentPageUrl,
+    url,
     fallbackVideoUri,
     fallbackVideo?.name,
     protocolForceSimulation,
     activeProtocol,
     isProtocolEnabled,
-    performanceProfile,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
+    loopVideoEnabled,
     protocolMirrorVideo,
-    effectiveLoopVideo,
-    aggressiveRetries,
-    debugEnabled,
     mediaTuningOptions,
+    developerModeEnabled,
   ]);
 
   const injectMediaConfig = useCallback(() => {
@@ -615,6 +555,70 @@ export default function MotionBrowserScreen() {
     injectMediaConfigImmediate();
   }, [injectMediaConfigImmediate]);
 
+  const sendPermissionDecision = useCallback((
+    requestId: string,
+    decision: {
+      action: PermissionAction;
+      protocolId?: ProtocolType;
+      videoUri?: string;
+      videoName?: string;
+    }
+  ) => {
+    if (!webViewRef.current) {
+      console.warn('[App] Unable to send permission decision - no WebView');
+      return;
+    }
+    const requestJson = JSON.stringify(requestId);
+    const decisionJson = JSON.stringify(decision);
+    webViewRef.current.injectJavaScript(`
+      if (window.__resolveCameraPermission) {
+        window.__resolveCameraPermission(${requestJson}, ${decisionJson});
+      }
+      true;
+    `);
+  }, []);
+
+  const handleCameraPermissionPromptResponse = useCallback((result: CameraPermissionPromptResult) => {
+    if (!pendingPermissionRequest) {
+      return;
+    }
+
+    const requestId = pendingPermissionRequest.requestId;
+    if (result.choice === 'simulate') {
+      let protocolToApply = result.protocolId || activeProtocol;
+      if (!protocols[protocolToApply]?.enabled) {
+        protocolToApply = enabledProtocolOptions[0]?.id ?? activeProtocol;
+      }
+
+      if (protocolToApply !== activeProtocol) {
+        void setActiveProtocol(protocolToApply);
+      } else {
+        injectMediaConfig();
+      }
+
+      sendPermissionDecision(requestId, {
+        action: 'simulate',
+        protocolId: protocolToApply,
+        videoUri: result.videoUri ? formatVideoUriForWebView(result.videoUri) : undefined,
+        videoName: result.videoName,
+      });
+    } else if (result.choice === 'allow') {
+      sendPermissionDecision(requestId, { action: 'real' });
+    } else {
+      sendPermissionDecision(requestId, { action: 'deny' });
+    }
+
+    setPendingPermissionRequest(null);
+  }, [
+    activeProtocol,
+    enabledProtocolOptions,
+    injectMediaConfig,
+    pendingPermissionRequest,
+    protocols,
+    sendPermissionDecision,
+    setActiveProtocol,
+  ]);
+
   useEffect(() => {
     if (!autoInjectEnabled) {
       return;
@@ -639,11 +643,30 @@ export default function MotionBrowserScreen() {
   }, [activeTemplate, effectiveStealthMode, injectMediaConfig, autoInjectEnabled]);
 
   useEffect(() => {
-    if (!isMountedRef.current) return;
-    if (allowlistBlocked || !isProtocolEnabled) {
-      injectMediaConfig();
+    if (!isMountedRef.current) {
+      return;
     }
-  }, [allowlistBlocked, isProtocolEnabled, injectMediaConfig]);
+    if (isApplyingVideoRef.current) {
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      if (isMountedRef.current && !isApplyingVideoRef.current) {
+        injectMediaConfig();
+      }
+    }, 120);
+    return () => clearTimeout(timeoutId);
+  }, [
+    activeProtocol,
+    protocolForceSimulation,
+    protocolMirrorVideo,
+    protocolOverlayLabel,
+    showProtocolOverlayLabel,
+    standardSettings.loopVideo,
+    developerModeEnabled,
+    allowlistBlocked,
+    isProtocolEnabled,
+    injectMediaConfig,
+  ]);
 
   // Safety: Reset stuck applying ref on mount and periodically
   useEffect(() => {
@@ -705,7 +728,12 @@ export default function MotionBrowserScreen() {
       console.log('[App] Allowlist settings changed, reloading WebView');
       webViewRef.current.reload();
     }
-  }, [allowlistModeActive, allowlistSettings.enabled, allowlistSettings.domains]);
+  }, [
+    allowlistModeActive,
+    allowlistSettings.enabled,
+    allowlistSettings.domains,
+    allowlistSettings.blockUnlisted,
+  ]);
 
   useEffect(() => {
     if (!motionInjectionEnabled) return;
@@ -738,7 +766,16 @@ export default function MotionBrowserScreen() {
   }, [useRealSensors, realAccelData, realGyroData, realOrientData, injectMotionData]);
 
   useEffect(() => {
-    if (pendingVideoForApply && activeTemplate) {
+    if (pendingVideoForApply) {
+      // If we are handling a permission request, just update the selected video for the modal
+      if (permissionRequest) {
+        console.log('[VideoSim] Pending video selected for permission request:', pendingVideoForApply.name);
+        setPermissionSelectedVideo(pendingVideoForApply);
+        setPendingVideoForApply(null);
+        return;
+      }
+
+      if (activeTemplate) {
       console.log('[VideoSim] ========== PENDING VIDEO EFFECT TRIGGERED ==========');
       console.log('[VideoSim] Timestamp:', new Date().toISOString());
       console.log('[VideoSim] Pending video from my-videos:', {
@@ -856,7 +893,6 @@ export default function MotionBrowserScreen() {
     const normalizedUrl = normalizeUrl(inputUrl);
     setUrl(normalizedUrl);
     setInputUrl(normalizedUrl);
-    setCurrentPageUrl(normalizedUrl);
   }, [inputUrl, normalizeUrl]);
 
   const isWeb = Platform.OS === 'web';
@@ -864,48 +900,47 @@ export default function MotionBrowserScreen() {
     UIManager.getViewManagerConfig?.('RNCWebView') ||
     UIManager.getViewManagerConfig?.('RCTWebView')
   );
-  const webViewOriginWhitelist = useMemo(() => {
-    const origins = httpsEnforced ? ['https://*'] : ['https://*', 'http://*'];
-    return [...origins, 'about:blank', 'blob:*', 'data:*'];
-  }, [httpsEnforced]);
-  const allowLocalFileAccess = Platform.OS === 'android' && isProtocolEnabled && !allowlistBlocked;
-  const mixedContentMode = Platform.OS === 'android'
-    ? (httpsEnforced ? 'never' : 'always')
-    : undefined;
 
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
   const getBeforeLoadScript = useCallback(() => {
+    // Ensure all devices have a video URI - use built-in fallback if none assigned
     const devices = (activeTemplate?.captureDevices || []).map(d => {
       const assignedUri = d.assignedVideoUri
         ? formatVideoUriForWebView(d.assignedVideoUri)
         : null;
-      const resolvedUri = assignedUri || fallbackVideoUri || undefined;
+      const shouldSimulate = d.simulationEnabled || (effectiveStealthMode && d.type === 'camera');
+      const resolvedUri =
+        assignedUri ||
+        fallbackVideoUri ||
+        (shouldSimulate ? getDefaultFallbackVideoUri() : undefined);
+
       return {
         ...d,
         assignedVideoUri: resolvedUri,
         assignedVideoName: d.assignedVideoName || fallbackVideo?.name,
+        // If no video assigned but simulation is enabled, use built-in
+        simulationEnabled: shouldSimulate,
       };
     });
+    
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
-    const shouldCaptureConsole = debugEnabled;
     const injectionOptions = {
       stealthMode: effectiveStealthMode,
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
-      performanceProfile,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: effectiveLoopVideo,
+      loopVideo: loopVideoEnabled,
       mirrorVideo: protocolMirrorVideo,
-      aggressiveRetries,
-      debugEnabled,
+      debugEnabled: developerModeEnabled,
+      permissionPromptEnabled: true,
       ...mediaTuningOptions,
     };
     const script =
-      (shouldCaptureConsole ? CONSOLE_CAPTURE_SCRIPT : '') +
+      CONSOLE_CAPTURE_SCRIPT +
       spoofScript +
       (shouldInjectMedia ? createMediaInjectionScript(devices, injectionOptions) : '') +
       VIDEO_SIMULATION_TEST_SCRIPT;
@@ -926,13 +961,11 @@ export default function MotionBrowserScreen() {
     fallbackVideo?.name,
     protocolForceSimulation,
     activeProtocol,
-    performanceProfile,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
+    loopVideoEnabled,
     protocolMirrorVideo,
-    effectiveLoopVideo,
-    aggressiveRetries,
-    debugEnabled,
+    developerModeEnabled,
     mediaTuningOptions,
     isProtocolEnabled,
   ]);
@@ -940,6 +973,36 @@ export default function MotionBrowserScreen() {
   const getAfterLoadScript = useCallback(() => {
     return motionInjectionEnabled ? MOTION_INJECTION_SCRIPT : '';
   }, [motionInjectionEnabled]);
+
+  const isNavigationAllowed = useCallback((requestUrl: string): boolean => {
+    if (!requestUrl) return false;
+    const lowerUrl = requestUrl.toLowerCase();
+
+    if (lowerUrl.startsWith('about:')) return true;
+    if (isBase64VideoUri(requestUrl) || isBlobUri(requestUrl)) return true;
+    if (
+      lowerUrl.startsWith('data:') ||
+      lowerUrl.startsWith('file:') ||
+      lowerUrl.startsWith('content:') ||
+      lowerUrl.startsWith('ph:')
+    ) {
+      return true;
+    }
+
+    if (allowlistEnabled && allowlistSettings.blockUnlisted) {
+      try {
+        const hostname = new URL(requestUrl).hostname.toLowerCase();
+        if (hostname && !checkIsAllowlisted(hostname)) {
+          console.warn('[App] Navigation blocked by allowlist:', hostname);
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  }, [allowlistEnabled, allowlistSettings.blockUnlisted, checkIsAllowlisted]);
 
   const toggleSafariMode = useCallback(() => {
     setSafariModeEnabled(prev => !prev);
@@ -952,23 +1015,22 @@ export default function MotionBrowserScreen() {
     const testUrl = APP_CONFIG.WEBVIEW.TEST_URL;
     setUrl(testUrl);
     setInputUrl(testUrl);
-    setCurrentPageUrl(testUrl);
     console.log('[App] Navigating to webcam test:', testUrl);
   }, []);
 
   const handleOpenInBrowser = useCallback(async () => {
     try {
-      const canOpen = await Linking.canOpenURL(currentPageUrl);
+      const canOpen = await Linking.canOpenURL(url);
       if (!canOpen) {
         Alert.alert('Unsupported URL', 'This device cannot open the URL.');
         return;
       }
-      await Linking.openURL(currentPageUrl);
+      await Linking.openURL(url);
     } catch (error) {
       console.error('[App] Failed to open browser:', error);
       Alert.alert('Error', 'Unable to open the browser.');
     }
-  }, [currentPageUrl]);
+  }, [url]);
 
 
 
@@ -981,6 +1043,23 @@ export default function MotionBrowserScreen() {
     await deleteWebsiteSettings(id);
     console.log('[App] Website settings deleted:', id);
   }, [deleteWebsiteSettings]);
+
+  const handlePermissionRequestAction = useCallback((requestId: string, action: 'simulate' | 'allow' | 'deny', config?: any) => {
+    if (webViewRef.current) {
+      console.log('[App] Sending permission response:', action, config);
+      webViewRef.current.injectJavaScript(`
+        window.__handlePermissionResponse && window.__handlePermissionResponse(${JSON.stringify({
+          type: 'permissionResponse',
+          requestId,
+          action,
+          config
+        })});
+        true;
+      `);
+    }
+    setPermissionRequest(null);
+    setPermissionSelectedVideo(null);
+  }, []);
 
   if (requiresSetup) {
     return (
@@ -998,7 +1077,7 @@ export default function MotionBrowserScreen() {
       
       {/* Testing Watermark */}
       <TestingWatermark 
-        visible={showTestingWatermark && !presentationMode}
+        visible={showTestingWatermark}
         position="top-right"
         variant="minimal"
         showPulse={true}
@@ -1049,6 +1128,7 @@ export default function MotionBrowserScreen() {
                 source={{ uri: url }}
                 style={styles.webView}
                 userAgent={safariModeEnabled ? SAFARI_USER_AGENT : undefined}
+                originWhitelist={originWhitelist}
                 injectedJavaScriptBeforeContentLoaded={getBeforeLoadScript()}
                 injectedJavaScript={getAfterLoadScript()}
                 onLoadStart={() => setIsLoading(true)}
@@ -1067,7 +1147,6 @@ export default function MotionBrowserScreen() {
                   
                   if (navState.url) {
                     const normalizedUrl = httpsEnforced ? forceHttps(navState.url) : navState.url;
-                    setCurrentPageUrl(normalizedUrl);
                     setInputUrl(normalizedUrl);
                     if (httpsEnforced && navState.url !== normalizedUrl) {
                       setUrl(normalizedUrl);
@@ -1087,6 +1166,22 @@ export default function MotionBrowserScreen() {
                       console.log('[WebView Injection Ready]', data.payload);
                     } else if (data.type === 'mediaAccess') {
                       console.log('[WebView Media Access]', data.device, data.action);
+                    } else if (data.type === 'cameraPermissionRequest') {
+                      const payload = data.payload || {};
+                      if (!payload.requestId) {
+                        console.warn('[App] Permission request missing requestId');
+                        return;
+                      }
+                      const request: CameraPermissionRequest = {
+                        requestId: String(payload.requestId),
+                        url: payload.url,
+                        origin: payload.origin,
+                        wantsVideo: Boolean(payload.wantsVideo),
+                        wantsAudio: Boolean(payload.wantsAudio),
+                        requestedFacing: payload.requestedFacing || null,
+                        requestedDeviceId: payload.requestedDeviceId || null,
+                      };
+                      setPermissionQueue(queue => [...queue, request]);
                     } else if (data.type === 'videoError') {
                       console.error('[WebView Video Error]', data.payload?.error?.message);
                       const errorMsg = data.payload?.error?.message || 'Video failed to load';
@@ -1102,19 +1197,14 @@ export default function MotionBrowserScreen() {
                     } else if (data.type === 'streamHealth') {
                       if (!data.payload?.healthy) {
                         console.warn('[WebView Stream Health] Degraded FPS:', data.payload?.fps);
-                        if (isCodexProtocol && codexSettings.autoRecover && isProtocolEnabled) {
-                          const now = Date.now();
-                          if (now - lastRecoveryAtRef.current > 5000) {
-                            lastRecoveryAtRef.current = now;
-                            setTimeout(() => {
-                              if (isMountedRef.current) {
-                                console.log('[Codex High] Auto-recovery triggered');
-                                injectMediaConfig();
-                              }
-                            }, 250);
-                          }
-                        }
                       }
+                    } else if (data.type === 'permissionRequest') {
+                      console.log('[App] Permission request received:', data.requestId, data.origin);
+                      setPermissionRequest({
+                        requestId: data.requestId,
+                        hostname: new URL(data.origin).hostname,
+                        origin: data.origin
+                      });
                     }
                   } catch {
                     console.log('[WebView Raw Message]', event.nativeEvent.data);
@@ -1129,20 +1219,27 @@ export default function MotionBrowserScreen() {
                   console.error('[WebView HTTP Error]', nativeEvent.statusCode, nativeEvent.url);
                 }}
                 onShouldStartLoadWithRequest={(request) => {
-                  if (httpsEnforced && request.url.toLowerCase().startsWith('http://')) {
-                    const httpsUrl = forceHttps(request.url);
+                  const requestUrl = request.url || '';
+                  const lowerUrl = requestUrl.toLowerCase();
+                  const isTopFrame = request.isTopFrame !== false;
+
+                  if (!isTopFrame) {
+                    return true;
+                  }
+
+                  if (lowerUrl.startsWith('http://') && httpsEnforced) {
+                    const httpsUrl = forceHttps(requestUrl);
                     setUrl(httpsUrl);
                     setInputUrl(httpsUrl);
-                    setCurrentPageUrl(httpsUrl);
                     return false;
                   }
-                  return true;
+
+                  return isNavigationAllowed(requestUrl);
                 }}
                 allowsInlineMediaPlayback
                 javaScriptEnabled
                 domStorageEnabled
                 startInLoadingState
-                originWhitelist={webViewOriginWhitelist}
                 mediaPlaybackRequiresUserAction={false}
                 allowsFullscreenVideo
                 sharedCookiesEnabled
@@ -1151,10 +1248,10 @@ export default function MotionBrowserScreen() {
                 allowsBackForwardNavigationGestures
                 contentMode="mobile"
                 applicationNameForUserAgent="Safari/604.1"
-                allowFileAccess={allowLocalFileAccess}
-                allowFileAccessFromFileURLs={allowLocalFileAccess}
-                allowUniversalAccessFromFileURLs={allowLocalFileAccess}
-                mixedContentMode={mixedContentMode}
+                allowFileAccess={Platform.OS === 'android' && requiresFileAccess}
+                allowFileAccessFromFileURLs={false}
+                allowUniversalAccessFromFileURLs={false}
+                mixedContentMode={Platform.OS === 'android' ? (httpsEnforced ? 'never' : 'always') : undefined}
               />
             )}
           </View>
@@ -1167,7 +1264,7 @@ export default function MotionBrowserScreen() {
             isSimulating={simulatingDevicesCount > 0}
             simulatingDevicesCount={simulatingDevicesCount}
             activeCamerasCount={activeTemplate?.captureDevices.length || 0}
-            currentUrl={currentPageUrl}
+            currentUrl={url}
             currentWebsiteSettings={currentWebsiteSettings}
             onStealthModeToggle={toggleStealthMode}
             onOpenDevices={() => setShowDevicesModal(true)}
@@ -1244,11 +1341,9 @@ export default function MotionBrowserScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
-
-
       <SiteSettingsModal
         visible={showSiteSettingsModal}
-        currentUrl={currentPageUrl}
+        currentUrl={url}
         currentSettings={currentWebsiteSettings}
         globalStealthMode={stealthMode}
         allSiteSettings={websiteSettings}
@@ -1261,6 +1356,29 @@ export default function MotionBrowserScreen() {
         visible={showProtocolSettingsModal}
         currentHostname={currentHostname}
         onClose={() => setShowProtocolSettingsModal(false)}
+      />
+
+      {permissionRequest && (
+        <PermissionRequestModal
+          visible={!!permissionRequest}
+          hostname={permissionRequest.hostname}
+          requestId={permissionRequest.requestId}
+          protocols={protocols}
+          selectedVideo={permissionSelectedVideo || fallbackVideo}
+          onAction={handlePermissionRequestAction}
+          onSelectVideo={() => router.push('/my-videos')}
+        />
+      )}
+
+      <CameraPermissionPromptModal
+        visible={Boolean(pendingPermissionRequest)}
+        requestingUrl={pendingPermissionRequest?.url || pendingPermissionRequest?.origin || url}
+        compatibleVideos={compatibleVideos}
+        protocols={protocolListForPrompt}
+        activeProtocol={activeProtocol}
+        defaultVideoId={fallbackVideo?.id}
+        onResponse={handleCameraPermissionPromptResponse}
+        onClose={() => handleCameraPermissionPromptResponse({ choice: 'deny' })}
       />
 
       {/* Testing Watermark Overlay */}
@@ -1371,5 +1489,120 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600' as const,
     color: '#00ff88',
+  },
+  permissionOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.82)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  permissionCard: {
+    width: '100%',
+    maxWidth: 440,
+    backgroundColor: '#1a1a1a',
+    borderRadius: 18,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  permissionTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#ffffff',
+    marginBottom: 8,
+  },
+  permissionSubtitle: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.7)',
+    lineHeight: 18,
+    marginBottom: 16,
+  },
+  permissionSection: {
+    marginBottom: 16,
+  },
+  permissionSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  permissionSectionHint: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.5)',
+    marginBottom: 10,
+  },
+  permissionDropdown: {
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: '#111111',
+  },
+  permissionDropdownText: {
+    color: '#ffffff',
+    fontSize: 13,
+  },
+  permissionDropdownList: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    borderRadius: 10,
+    backgroundColor: '#101010',
+    overflow: 'hidden',
+  },
+  permissionDropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  permissionDropdownItemActive: {
+    backgroundColor: 'rgba(0,255,136,0.15)',
+  },
+  permissionDropdownItemText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 13,
+  },
+  permissionDropdownItemTextActive: {
+    color: '#00ff88',
+    fontWeight: '600' as const,
+  },
+  permissionActions: {
+    gap: 10,
+  },
+  permissionSimulateButton: {
+    backgroundColor: '#00ff88',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  permissionSimulateText: {
+    color: '#0a0a0a',
+    fontSize: 14,
+    fontWeight: '700' as const,
+  },
+  permissionRealButton: {
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  permissionRealText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600' as const,
+  },
+  permissionDenyButton: {
+    backgroundColor: 'rgba(255,71,87,0.15)',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,71,87,0.4)',
+  },
+  permissionDenyText: {
+    color: '#ff4757',
+    fontSize: 14,
+    fontWeight: '700' as const,
   },
 });

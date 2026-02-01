@@ -120,6 +120,12 @@ jest.mock('expo-crypto', () => ({
   getRandomBytesAsync: jest.fn((length) =>
     Promise.resolve(new Uint8Array(length).fill(0))
   ),
+  digestStringAsync: jest.fn((algorithm, data) =>
+    Promise.resolve(`digest_${algorithm}_${data}`)
+  ),
+  CryptoDigestAlgorithm: {
+    SHA256: 'SHA256',
+  },
 }));
 
 // Mock expo-av

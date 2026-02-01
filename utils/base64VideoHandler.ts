@@ -351,7 +351,9 @@ export async function processBase64Video(
     reportProgress('creating_blob', 0.85, 'Creating video blob...');
 
     // Create blob with proper MIME type
-    const blob = new Blob([binaryData], { type: mimeType || 'video/mp4' });
+    // Use slice to create a copy with ArrayBuffer for Blob compatibility
+    const bufferSlice = binaryData.buffer.slice(binaryData.byteOffset, binaryData.byteOffset + binaryData.byteLength);
+    const blob = new Blob([bufferSlice as ArrayBuffer], { type: mimeType || 'video/mp4' });
     
     // Create object URL for playback
     const objectUrl = URL.createObjectURL(blob);
