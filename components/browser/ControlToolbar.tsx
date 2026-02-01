@@ -682,7 +682,7 @@ interface ProtocolSettingsModalProps {
   onClose: () => void;
 }
 
-export function ProtocolSettingsModal({
+function LegacyProtocolSettingsModal({
   visible,
   allowlistEnabled,
   allowedDomains,
