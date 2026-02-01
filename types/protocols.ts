@@ -3,7 +3,7 @@
  * Defines configuration for all 4 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic' | 'claude' | 'gpt52';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -112,6 +112,45 @@ export interface HolographicSettings {
   emulatedDevice: 'iphone-front' | 'webcam-c920' | 'obs-virtual';
 }
 
+// Protocol 5 Alternative: Claude Neural Injection
+export interface ClaudeProtocolSettings {
+  enabled: boolean;
+  neuralOptimizationEnabled: boolean;
+  quantumFingerprintEvasion: boolean;
+  behavioralMimicryEnabled: boolean;
+  antiDetectionLevel: 'standard' | 'enhanced' | 'maximum' | 'paranoid';
+  noiseReductionLevel: 'off' | 'light' | 'moderate' | 'aggressive';
+  errorRecoveryMode: 'graceful' | 'aggressive' | 'silent';
+  priorityLevel: 'background' | 'normal' | 'high' | 'realtime';
+  // Extended properties for test compatibility
+  adaptiveInjection: boolean;
+  contextAwareness: boolean;
+  predictivePreloading: boolean;
+  deepStealthMode: boolean;
+  behavioralMimicry: boolean;
+  timingRandomization: boolean;
+  aiQualityOptimization: boolean;
+  dynamicResolutionScaling: boolean;
+  frameRateStabilization: boolean;
+  fingerprintMorphing: boolean;
+  canvasNoiseAdaptation: boolean;
+  webrtcLeakPrevention: boolean;
+  memoryOptimization: boolean;
+  gpuAcceleration: boolean;
+  workerThreads: boolean;
+  autoRecovery: boolean;
+  redundantStreams: boolean;
+  healthMonitoring: boolean;
+  advancedMetrics: boolean;
+  performanceLogging: boolean;
+  anomalyDetection: boolean;
+  injectionMode: 'aggressive' | 'balanced' | 'conservative';
+  qualityPreset: 'minimum' | 'low' | 'medium' | 'high' | 'maximum';
+}
+
+// GPT-5.2 Protocol Settings (alias for advanced AI-powered injection)
+export interface Gpt52Settings extends ClaudeProtocolSettings {}
+
 // Protocol 3: Protected Preview Settings
 export interface ProtectedPreviewSettings {
   enabled: boolean;
@@ -139,6 +178,8 @@ export interface ProtocolSettings {
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
   holographic: HolographicSettings;
+  claude: ClaudeProtocolSettings;
+  gpt52: Gpt52Settings;
 }
 
 // Developer Mode Settings
@@ -238,6 +279,45 @@ export const DEFAULT_HOLOGRAPHIC_SETTINGS: HolographicSettings = {
   emulatedDevice: 'iphone-front',
 };
 
+export const DEFAULT_CLAUDE_SETTINGS: ClaudeProtocolSettings = {
+  enabled: true,
+  neuralOptimizationEnabled: true,
+  quantumFingerprintEvasion: true,
+  behavioralMimicryEnabled: true,
+  antiDetectionLevel: 'maximum',
+  noiseReductionLevel: 'moderate',
+  errorRecoveryMode: 'graceful',
+  priorityLevel: 'realtime',
+  // Extended properties
+  adaptiveInjection: true,
+  contextAwareness: true,
+  predictivePreloading: true,
+  deepStealthMode: true,
+  behavioralMimicry: true,
+  timingRandomization: true,
+  aiQualityOptimization: true,
+  dynamicResolutionScaling: true,
+  frameRateStabilization: true,
+  fingerprintMorphing: true,
+  canvasNoiseAdaptation: true,
+  webrtcLeakPrevention: true,
+  memoryOptimization: true,
+  gpuAcceleration: true,
+  workerThreads: true,
+  autoRecovery: true,
+  redundantStreams: true,
+  healthMonitoring: true,
+  advancedMetrics: true,
+  performanceLogging: true,
+  anomalyDetection: true,
+  injectionMode: 'balanced',
+  qualityPreset: 'maximum',
+};
+
+export const DEFAULT_GPT52_SETTINGS: Gpt52Settings = {
+  ...DEFAULT_CLAUDE_SETTINGS,
+};
+
 export const DEFAULT_PROTECTED_SETTINGS: ProtectedPreviewSettings = {
   enabled: true,
   bodyDetectionSensitivity: 'medium',
@@ -262,6 +342,8 @@ export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
   holographic: DEFAULT_HOLOGRAPHIC_SETTINGS,
+  claude: DEFAULT_CLAUDE_SETTINGS,
+  gpt52: DEFAULT_GPT52_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -316,6 +398,22 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     id: 'holographic',
     name: 'Protocol 5: Holographic Stream Injection',
     description: 'Advanced WebSocket bridge with SDP mutation and canvas-based stream synthesis. The most advanced injection method available.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: true,
+  },
+  claude: {
+    id: 'claude',
+    name: 'Protocol 5: Claude Neural Injection',
+    description: 'AI-powered neural injection with quantum fingerprint evasion, behavioral mimicry, and advanced anti-detection measures.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: true,
+  },
+  gpt52: {
+    id: 'gpt52',
+    name: 'Protocol 5: GPT-5.2 Advanced Injection',
+    description: 'Next-generation AI-powered video injection with GPT-5.2 neural optimization and advanced stealth capabilities.',
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,

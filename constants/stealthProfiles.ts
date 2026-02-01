@@ -358,6 +358,202 @@ export function generateConsistentNoise(seed: number, x: number, y: number): num
 }
 
 // ============================================================
+// CLAUDE PROTOCOL EXPORTS FOR TEST COMPATIBILITY
+// Aliases and utility functions expected by test suites
+// ============================================================
+
+// Quantum fingerprint evasion - AI-inspired fingerprint generation
+export const QUANTUM_FINGERPRINT_CONFIG = {
+  enabled: true,
+  entropyBits: 256,
+  quantumNoiseInjection: true,
+  temporalCorrelationMasking: true,
+  spatialDithering: true,
+  frequencyHopping: true,
+  coherenceTime: 1000, // ms
+};
+
+// Behavioral mimicry for human-like interaction patterns
+export const BEHAVIORAL_MIMICRY_CONFIG = {
+  enabled: true,
+  typingPatternSimulation: true,
+  mouseMovementNaturalization: true,
+  scrollBehaviorMimicry: true,
+  pausePatternInjection: true,
+  microMovements: true,
+  readingSpeedVariation: true,
+  attentionShiftSimulation: true,
+};
+
+// Claude timing profile for realistic operation delays
+export const CLAUDE_TIMING_PROFILE = {
+  getUserMediaDelayMs: { min: 180, max: 450 },
+  enumerateDevicesDelayMs: { min: 5, max: 25 },
+  trackStartDelayMs: { min: 50, max: 150 },
+  frameIntervalJitterPercent: 5,
+  apiCallDelayMs: { min: 10, max: 50 },
+  domUpdateDelayMs: { min: 0, max: 16 },
+};
+
+// Neural video enhancement configuration
+export const NEURAL_VIDEO_ENHANCEMENT_CONFIG = {
+  enabled: true,
+  frameInterpolation: true,
+  superResolution: false,
+  noiseReduction: true,
+  colorEnhancement: true,
+  stabilization: true,
+  qualityAdaptation: true,
+};
+
+// Adaptive performance configuration
+export const ADAPTIVE_PERFORMANCE_CONFIG = {
+  enabled: true,
+  targetFps: 30,
+  minFps: 15,
+  maxCpuUsage: 0.6,
+  maxMemoryUsage: 0.5,
+  dynamicQualityScaling: true,
+  batterySaveMode: true,
+};
+
+// Context-aware injection configuration
+export const CONTEXT_AWARE_INJECTION_CONFIG = {
+  enabled: true,
+  siteDetection: true,
+  cameraTypeMatching: true,
+  resolutionAdaptation: true,
+  orientationMatching: true,
+  lightingCompensation: true,
+  faceBlendingMode: 'auto',
+};
+
+// ============================================================
+// NOISE AND RANDOM UTILITY FUNCTIONS
+// ============================================================
+
+/**
+ * 2D Perlin noise implementation
+ */
+export function perlinNoise2D(x: number, y: number, seed = 0): number {
+  const p = new Array(512);
+  const permutation = new Array(256);
+  
+  // Initialize permutation
+  for (let i = 0; i < 256; i++) {
+    permutation[i] = i;
+  }
+  
+  // Shuffle based on seed
+  for (let i = 255; i > 0; i--) {
+    const j = Math.floor(((Math.sin(seed * 9.8 + i * 3.14) + 1) / 2) * (i + 1));
+    [permutation[i], permutation[j]] = [permutation[j], permutation[i]];
+  }
+  
+  for (let i = 0; i < 512; i++) {
+    p[i] = permutation[i % 256];
+  }
+  
+  const X = Math.floor(x) & 255;
+  const Y = Math.floor(y) & 255;
+  
+  const xf = x - Math.floor(x);
+  const yf = y - Math.floor(y);
+  
+  const u = fade(xf);
+  const v = fade(yf);
+  
+  const aa = p[p[X] + Y];
+  const ab = p[p[X] + Y + 1];
+  const ba = p[p[X + 1] + Y];
+  const bb = p[p[X + 1] + Y + 1];
+  
+  const x1 = lerp(grad(aa, xf, yf), grad(ba, xf - 1, yf), u);
+  const x2 = lerp(grad(ab, xf, yf - 1), grad(bb, xf - 1, yf - 1), u);
+  
+  return (lerp(x1, x2, v) + 1) / 2;
+}
+
+function fade(t: number): number {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function lerp(a: number, b: number, t: number): number {
+  return a + t * (b - a);
+}
+
+function grad(hash: number, x: number, y: number): number {
+  const h = hash & 3;
+  const u = h < 2 ? x : y;
+  const v = h < 2 ? y : x;
+  return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+}
+
+/**
+ * Fractal Brownian Motion noise (multiple octaves of Perlin)
+ */
+export function fbmNoise2D(x: number, y: number, octaves = 4, persistence = 0.5, seed = 0): number {
+  let total = 0;
+  let frequency = 1;
+  let amplitude = 1;
+  let maxValue = 0;
+  
+  for (let i = 0; i < octaves; i++) {
+    total += perlinNoise2D(x * frequency, y * frequency, seed + i) * amplitude;
+    maxValue += amplitude;
+    amplitude *= persistence;
+    frequency *= 2;
+  }
+  
+  return total / maxValue;
+}
+
+/**
+ * Gaussian random number generator using Box-Muller transform
+ */
+export function gaussianRandom(mean = 0, stdDev = 1): number {
+  const u1 = Math.random();
+  const u2 = Math.random();
+  const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+  return z0 * stdDev + mean;
+}
+
+/**
+ * Human-like reaction delay generator
+ */
+export function humanReactionDelay(baseDelay = 200, variability = 0.3): number {
+  // Human reaction times follow a roughly log-normal distribution
+  const logMean = Math.log(baseDelay);
+  const logStdDev = variability;
+  const logRandom = gaussianRandom(logMean, logStdDev);
+  return Math.max(50, Math.exp(logRandom));
+}
+
+/**
+ * Hand tremor offset generator for realistic camera shake
+ */
+export function handTremorOffset(time: number, intensity = 1): { x: number; y: number } {
+  // Combine multiple frequencies for realistic hand tremor
+  const f1 = 8; // Hz - primary tremor frequency
+  const f2 = 14; // Hz - secondary frequency
+  const f3 = 3; // Hz - slow drift
+  
+  const x = (
+    Math.sin(time * f1 * 2 * Math.PI) * 0.5 +
+    Math.sin(time * f2 * 2 * Math.PI + 0.7) * 0.3 +
+    Math.sin(time * f3 * 2 * Math.PI + 1.2) * 0.2
+  ) * intensity;
+  
+  const y = (
+    Math.sin(time * f1 * 2 * Math.PI + 1.5) * 0.5 +
+    Math.sin(time * f2 * 2 * Math.PI + 2.1) * 0.3 +
+    Math.sin(time * f3 * 2 * Math.PI + 0.4) * 0.2
+  ) * intensity;
+  
+  return { x, y };
+}
+
+// ============================================================
 // CLAUDE AI PROTOCOL - ADVANCED STEALTH CONFIGURATIONS
 // The most advanced AI-designed stealth profiles
 // ============================================================

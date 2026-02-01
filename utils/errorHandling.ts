@@ -836,6 +836,236 @@ export class ErrorAggregator {
  */
 export const globalErrorAggregator = new ErrorAggregator();
 
+// ============ CLAUDE PROTOCOL VALIDATION ============
+
+import type { ClaudeProtocolSettings } from '@/types/protocols';
+
+/**
+ * Protocol-specific error with additional context
+ */
+export interface ProtocolError extends AppError {
+  protocolId: string;
+  context?: Record<string, unknown>;
+}
+
+/**
+ * Create a protocol-specific error
+ */
+export function createProtocolError(
+  protocolId: string,
+  code: ErrorCode,
+  message: string,
+  context?: Record<string, unknown>,
+  originalError?: Error | unknown
+): ProtocolError {
+  const baseError = createAppError(code, message, originalError);
+  return {
+    ...baseError,
+    protocolId,
+    context,
+  };
+}
+
+/**
+ * Get recovery suggestions for protocol errors
+ */
+export function getProtocolErrorRecovery(error: ProtocolError): {
+  suggestion: string;
+  actions: string[];
+} {
+  const suggestions: Record<ErrorCode, { suggestion: string; actions: string[] }> = {
+    [ErrorCode.NETWORK]: {
+      suggestion: 'Network connection issue detected',
+      actions: ['Check internet connection', 'Retry the operation', 'Switch to offline mode'],
+    },
+    [ErrorCode.PERMISSION_DENIED]: {
+      suggestion: 'Permission was denied',
+      actions: ['Grant camera/microphone permissions', 'Check app settings', 'Restart the app'],
+    },
+    [ErrorCode.VIDEO_LOAD_ERROR]: {
+      suggestion: 'Video could not be loaded',
+      actions: ['Try a different video', 'Check video format compatibility', 'Reduce video quality'],
+    },
+    [ErrorCode.CAMERA_ERROR]: {
+      suggestion: 'Camera access issue',
+      actions: ['Check camera permissions', 'Close other apps using camera', 'Restart device'],
+    },
+    [ErrorCode.WEBVIEW_ERROR]: {
+      suggestion: 'WebView encountered an error',
+      actions: ['Refresh the page', 'Clear browser cache', 'Try a different URL'],
+    },
+    [ErrorCode.INVALID_INPUT]: {
+      suggestion: 'Invalid input provided',
+      actions: ['Check input values', 'Review configuration settings'],
+    },
+    [ErrorCode.UNKNOWN]: {
+      suggestion: 'An unexpected error occurred',
+      actions: ['Restart the operation', 'Check logs for details', 'Contact support if issue persists'],
+    },
+    [ErrorCode.STORAGE]: {
+      suggestion: 'Storage operation failed',
+      actions: ['Free up device storage', 'Clear app cache', 'Check storage permissions'],
+    },
+    [ErrorCode.SENSOR_UNAVAILABLE]: {
+      suggestion: 'Required sensors are not available',
+      actions: ['Check device capabilities', 'Enable sensor permissions', 'Use a different device'],
+    },
+    [ErrorCode.MICROPHONE_ERROR]: {
+      suggestion: 'Microphone access issue',
+      actions: ['Grant microphone permission', 'Close other apps using microphone', 'Restart device'],
+    },
+    [ErrorCode.TEMPLATE_NOT_FOUND]: {
+      suggestion: 'Template not found',
+      actions: ['Create a new template', 'Select a different template', 'Reset to default'],
+    },
+    [ErrorCode.DEVICE_NOT_FOUND]: {
+      suggestion: 'Device not found',
+      actions: ['Refresh device list', 'Check device connection', 'Reconnect device'],
+    },
+  };
+
+  return suggestions[error.code] || suggestions[ErrorCode.UNKNOWN];
+}
+
+/**
+ * Validate Claude protocol settings
+ */
+export function validateClaudeSettings(settings: ClaudeProtocolSettings): {
+  valid: boolean;
+  errors: string[];
+} {
+  const errors: string[] = [];
+
+  if (typeof settings !== 'object' || settings === null) {
+    return { valid: false, errors: ['Settings must be an object'] };
+  }
+
+  // Validate enabled flag
+  if (typeof settings.enabled !== 'boolean') {
+    errors.push('enabled must be a boolean');
+  }
+
+  // Validate anti-detection level
+  const validAntiDetectionLevels = ['standard', 'enhanced', 'maximum', 'paranoid'];
+  if (!validAntiDetectionLevels.includes(settings.antiDetectionLevel)) {
+    errors.push(`antiDetectionLevel must be one of: ${validAntiDetectionLevels.join(', ')}`);
+  }
+
+  // Validate noise reduction level
+  const validNoiseReductionLevels = ['off', 'light', 'moderate', 'aggressive'];
+  if (!validNoiseReductionLevels.includes(settings.noiseReductionLevel)) {
+    errors.push(`noiseReductionLevel must be one of: ${validNoiseReductionLevels.join(', ')}`);
+  }
+
+  // Validate error recovery mode
+  const validErrorRecoveryModes = ['graceful', 'aggressive', 'silent'];
+  if (!validErrorRecoveryModes.includes(settings.errorRecoveryMode)) {
+    errors.push(`errorRecoveryMode must be one of: ${validErrorRecoveryModes.join(', ')}`);
+  }
+
+  // Validate priority level
+  const validPriorityLevels = ['background', 'normal', 'high', 'realtime'];
+  if (!validPriorityLevels.includes(settings.priorityLevel)) {
+    errors.push(`priorityLevel must be one of: ${validPriorityLevels.join(', ')}`);
+  }
+
+  // Validate injection mode
+  const validInjectionModes = ['aggressive', 'balanced', 'conservative'];
+  if (!validInjectionModes.includes(settings.injectionMode)) {
+    errors.push(`injectionMode must be one of: ${validInjectionModes.join(', ')}`);
+  }
+
+  // Validate quality preset
+  const validQualityPresets = ['minimum', 'low', 'medium', 'high', 'maximum'];
+  if (!validQualityPresets.includes(settings.qualityPreset)) {
+    errors.push(`qualityPreset must be one of: ${validQualityPresets.join(', ')}`);
+  }
+
+  // Validate boolean flags
+  const booleanFlags = [
+    'neuralOptimizationEnabled',
+    'quantumFingerprintEvasion',
+    'behavioralMimicryEnabled',
+    'adaptiveInjection',
+    'contextAwareness',
+    'predictivePreloading',
+    'deepStealthMode',
+    'behavioralMimicry',
+    'timingRandomization',
+    'aiQualityOptimization',
+    'dynamicResolutionScaling',
+    'frameRateStabilization',
+    'fingerprintMorphing',
+    'canvasNoiseAdaptation',
+    'webrtcLeakPrevention',
+    'memoryOptimization',
+    'gpuAcceleration',
+    'workerThreads',
+    'autoRecovery',
+    'redundantStreams',
+    'healthMonitoring',
+    'advancedMetrics',
+    'performanceLogging',
+    'anomalyDetection',
+  ];
+
+  for (const flag of booleanFlags) {
+    if (typeof (settings as Record<string, unknown>)[flag] !== 'boolean') {
+      errors.push(`${flag} must be a boolean`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Validate a video URI for injection
+ */
+export function validateInjectionVideoUri(uri: string): {
+  valid: boolean;
+  error?: string;
+  warnings?: string[];
+} {
+  const warnings: string[] = [];
+
+  if (!uri || typeof uri !== 'string') {
+    return { valid: false, error: 'Video URI is required' };
+  }
+
+  const trimmedUri = uri.trim();
+  if (trimmedUri.length === 0) {
+    return { valid: false, error: 'Video URI cannot be empty' };
+  }
+
+  // Check for supported protocols
+  const supportedProtocols = ['http://', 'https://', 'file://', 'blob:', 'data:', 'content://'];
+  const hasValidProtocol = supportedProtocols.some(protocol => 
+    trimmedUri.toLowerCase().startsWith(protocol)
+  );
+
+  if (!hasValidProtocol) {
+    return { valid: false, error: 'Video URI must use a supported protocol (http, https, file, blob, data, content)' };
+  }
+
+  // Check for valid video extensions
+  const videoExtensions = ['.mp4', '.webm', '.mov', '.m4v', '.avi', '.mkv'];
+  const hasVideoExtension = videoExtensions.some(ext => 
+    trimmedUri.toLowerCase().includes(ext)
+  );
+
+  // Data URLs and blobs don't need extensions
+  if (!hasVideoExtension && !trimmedUri.startsWith('data:') && !trimmedUri.startsWith('blob:')) {
+    warnings.push('URI does not have a recognized video extension');
+  }
+
+  // Check for potential issues
+  if (trimmedUri.length > 10000) {
+    warnings.push('Video URI is very long, which may cause performance issues');
+  }
+
+  return { valid: true, warnings: warnings.length > 0 ? warnings : undefined };
+}
+
 /**
  * Enhanced retry with circuit breaker and error aggregation
  */
