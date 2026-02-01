@@ -62,12 +62,14 @@ export default function ProtocolSettingsModal({
     harnessSettings,
     holographicSettings,
     claudeSonnetSettings,
+    sonnetSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
     updateHolographicSettings,
     updateClaudeSonnetSettings,
+    updateSonnetSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
@@ -752,6 +754,240 @@ export default function ProtocolSettingsModal({
           </View>
         );
 
+      case 'sonnet':
+        return (
+          <View style={styles.settingsGroup}>
+            <Text style={styles.advancedProtocolNote}>
+              🤖 Sonnet Advanced AI - Adaptive injection with self-healing
+            </Text>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>AI Model Version</Text>
+                <Text style={styles.settingHint}>Sonnet model identifier</Text>
+              </View>
+              <TextInput
+                style={[styles.pinInput, styles.settingInput]}
+                value={sonnetSettings.aiModelVersion}
+                onChangeText={(value) => updateSonnetSettings({ aiModelVersion: value })}
+                placeholder="sonnet-4.5"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Adaptive Threshold</Text>
+                <Text style={styles.settingHint}>Sensitivity for adaptive injection</Text>
+              </View>
+              <View style={styles.sensitivityButtons}>
+                {[0.5, 0.75, 0.9].map((value) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[
+                      styles.sensitivityBtn,
+                      sonnetSettings.adaptiveThreshold === value && styles.sensitivityBtnActive,
+                    ]}
+                    onPress={() => updateSonnetSettings({ adaptiveThreshold: value })}
+                  >
+                    <Text style={[
+                      styles.sensitivityBtnText,
+                      sonnetSettings.adaptiveThreshold === value && styles.sensitivityBtnTextActive,
+                    ]}>
+                      {value.toString()}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Adaptive Injection</Text>
+                <Text style={styles.settingHint}>Adjust injection strategy dynamically</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.adaptiveInjection}
+                onValueChange={(v) => updateSonnetSettings({ adaptiveInjection: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={sonnetSettings.adaptiveInjection ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Context Awareness</Text>
+                <Text style={styles.settingHint}>Optimize based on page context</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.contextAwareness}
+                onValueChange={(v) => updateSonnetSettings({ contextAwareness: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={sonnetSettings.contextAwareness ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Behavior Analysis</Text>
+                <Text style={styles.settingHint}>Detect and learn usage patterns</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.behaviorAnalysis}
+                onValueChange={(v) => updateSonnetSettings({ behaviorAnalysis: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={sonnetSettings.behaviorAnalysis ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Anomaly Detection</Text>
+                <Text style={styles.settingHint}>Detect unusual performance issues</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.anomalyDetection}
+                onValueChange={(v) => updateSonnetSettings({ anomalyDetection: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={sonnetSettings.anomalyDetection ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Performance Optimization</Text>
+                <Text style={styles.settingHint}>Continuously optimize injection performance</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.performanceOptimization}
+                onValueChange={(v) => updateSonnetSettings({ performanceOptimization: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={sonnetSettings.performanceOptimization ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Predictive Preloading</Text>
+                <Text style={styles.settingHint}>Preload resources ahead of time</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.predictivePreloading}
+                onValueChange={(v) => updateSonnetSettings({ predictivePreloading: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={sonnetSettings.predictivePreloading ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Intelligent Fallback</Text>
+                <Text style={styles.settingHint}>Recover using smart fallback strategy</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.intelligentFallback}
+                onValueChange={(v) => updateSonnetSettings({ intelligentFallback: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={sonnetSettings.intelligentFallback ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>ML Inference</Text>
+                <Text style={styles.settingHint}>Enable on-device ML inference</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.mlInferenceEnabled}
+                onValueChange={(v) => updateSonnetSettings({ mlInferenceEnabled: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={sonnetSettings.mlInferenceEnabled ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>ML Model Path</Text>
+                <Text style={styles.settingHint}>Optional model override</Text>
+              </View>
+              <TextInput
+                style={[styles.pinInput, styles.settingInput]}
+                value={sonnetSettings.mlModelPath ?? ''}
+                onChangeText={(value) => updateSonnetSettings({ mlModelPath: value.trim() ? value : null })}
+                placeholder="models/sonnet-4.5.bin"
+                placeholderTextColor="rgba(255,255,255,0.4)"
+                autoCapitalize="none"
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Self-Healing</Text>
+                <Text style={styles.settingHint}>Recover automatically from errors</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.selfHealing}
+                onValueChange={(v) => updateSonnetSettings({ selfHealing: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={sonnetSettings.selfHealing ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Continuous Learning</Text>
+                <Text style={styles.settingHint}>Learn from previous sessions</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.continuousLearning}
+                onValueChange={(v) => updateSonnetSettings({ continuousLearning: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00aaff' }}
+                thumbColor={sonnetSettings.continuousLearning ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Privacy Preservation</Text>
+                <Text style={styles.settingHint}>Protect sensitive context data</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.privacyPreservation}
+                onValueChange={(v) => updateSonnetSettings({ privacyPreservation: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={sonnetSettings.privacyPreservation ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Cross-Protocol Sync</Text>
+                <Text style={styles.settingHint}>Share intelligence across protocols</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.crossProtocolSync}
+                onValueChange={(v) => updateSonnetSettings({ crossProtocolSync: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#b388ff' }}
+                thumbColor={sonnetSettings.crossProtocolSync ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Advanced Metrics</Text>
+                <Text style={styles.settingHint}>Capture detailed analytics</Text>
+              </View>
+              <Switch
+                value={sonnetSettings.advancedMetrics}
+                onValueChange={(v) => updateSonnetSettings({ advancedMetrics: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={sonnetSettings.advancedMetrics ? '#ffffff' : '#888'}
+              />
+            </View>
+          </View>
+        );
+
       default:
         return null;
     }
@@ -764,6 +1000,7 @@ export default function ProtocolSettingsModal({
     harness: <Monitor size={18} color="#b388ff" />,
     holographic: <ZapOff size={18} color="#00ff88" />,
     'claude-sonnet': <Cpu size={18} color="#ffcc00" />,
+    sonnet: <Activity size={18} color="#ffd93d" />,
   };
 
   return (
@@ -1083,6 +1320,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: '#ffffff',
     fontSize: 14,
+  },
+  settingInput: {
+    flex: 0,
+    minWidth: 120,
+    textAlign: 'right',
   },
   pinButton: {
     backgroundColor: '#00ff88',
