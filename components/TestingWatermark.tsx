@@ -26,27 +26,15 @@ interface TestingWatermarkProps {
   protocolName?: string;
 }
 
-const TestingWatermark = memo(function TestingWatermark(props: TestingWatermarkProps) {
-  const {
-    visible = true,
-    position = 'top-right',
-    showPulse = true,
-    variant = 'minimal',
-    mlSafetyEnabled,
-    httpsEnforced,
-    protocolName,
-  } = props;
-
-  const hasVariantProp = props.variant !== undefined;
-  const showOverlay = !hasVariantProp && (
-    typeof mlSafetyEnabled === 'boolean' ||
-    typeof httpsEnforced === 'boolean' ||
-    typeof protocolName === 'string'
-  );
-
-  const overlayMlSafetyEnabled = mlSafetyEnabled ?? true;
-  const overlayHttpsEnforced = httpsEnforced ?? true;
-
+const TestingWatermark = memo(function TestingWatermark({
+  visible = true,
+  position = 'top-right',
+  showPulse = true,
+  variant = 'minimal',
+  mlSafetyEnabled = false,
+  httpsEnforced = false,
+  protocolName,
+}: TestingWatermarkProps) {
   const pulseAnim = useRef(new Animated.Value(0.7)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -239,31 +227,8 @@ const styles = StyleSheet.create({
     bottom: 100,
     right: 12,
   },
-  topBanner: {
-    backgroundColor: 'rgba(255, 204, 0, 0.15)',
-    paddingVertical: 6,
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(255, 204, 0, 0.3)',
-  },
-  bannerContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  bannerText: {
-    color: '#ffcc00',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 2,
-  },
-  safetyBadges: {
-    position: 'absolute',
-    top: 40,
-    right: 8,
-    flexDirection: 'column',
-    gap: 4,
-  },
+  
+  // Badge styles
   badge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -327,18 +292,28 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: 'rgba(255, 184, 0, 0.7)',
   },
-  mlBadge: {
-    backgroundColor: 'rgba(0, 170, 255, 0.15)',
-    borderColor: 'rgba(0, 170, 255, 0.3)',
-  },
-  badgeText: {
+  httpsBadgeText: {
     color: '#00ff88',
     fontSize: 8,
     fontWeight: '700',
     letterSpacing: 0.5,
   },
-  mlBadgeText: {
+  mlSafetyBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0, 170, 255, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 170, 255, 0.3)',
+  },
+  mlSafetyBadgeText: {
     color: '#00aaff',
+    fontSize: 8,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
   protocolIndicator: {
     position: 'absolute',
