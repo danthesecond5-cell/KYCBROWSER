@@ -129,6 +129,7 @@ export default function TestHarnessScreen() {
     showTestingWatermark,
     mlSafetyEnabled,
     protocols,
+    showTestingWatermark,
   } = useProtocol();
 
   const protocolEnabled = protocols.harness?.enabled ?? true;
@@ -152,7 +153,6 @@ export default function TestHarnessScreen() {
   }, [savedVideos, isVideoReady]);
 
   const webViewOriginWhitelist = useMemo(() => ['about:blank'], []);
-  const allowLocalFileAccess = Platform.OS === 'android' && Boolean(selectedVideo && isLocalFileUri(selectedVideo.uri));
 
   useEffect(() => {
     if (!selectedVideoId && compatibleVideos.length > 0) {
@@ -161,6 +161,7 @@ export default function TestHarnessScreen() {
   }, [selectedVideoId, compatibleVideos]);
 
   const selectedVideo = compatibleVideos.find(video => video.id === selectedVideoId) || null;
+  const allowLocalFileAccess = Platform.OS === 'android' && Boolean(selectedVideo && isLocalFileUri(selectedVideo.uri));
 
   const applyOverlaySettings = useCallback(() => {
     if (!webViewRef.current) return;

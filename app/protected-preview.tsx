@@ -30,6 +30,7 @@ export default function ProtectedPreviewScreen() {
     showTestingWatermark,
     mlSafetyEnabled,
     protocols,
+    showTestingWatermark,
   } = useProtocol();
 
   const protocolEnabled = protocols.protected?.enabled ?? true;

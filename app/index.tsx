@@ -115,6 +115,7 @@ export default function MotionBrowserScreen() {
 
   const [url, setUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
   const [inputUrl, setInputUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
+  const [currentPageUrl, setCurrentPageUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
   const [canGoBack, setCanGoBack] = useState<boolean>(false);
   const [canGoForward, setCanGoForward] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -160,6 +161,7 @@ export default function MotionBrowserScreen() {
   const allowlistModeActive = activeProtocol === 'allowlist' && (protocols.allowlist?.enabled ?? true);
   const allowlistEnabled = allowlistModeActive && allowlistSettings.enabled;
   const allowedDomains = allowlistSettings.domains;
+  const codexModeActive = activeProtocol === 'codex' && isProtocolEnabled;
 
   const compatibleVideos = useMemo(() => {
     return savedVideos.filter(video => {
@@ -199,11 +201,11 @@ export default function MotionBrowserScreen() {
 
   const currentHostname = useMemo(() => {
     try {
-      return new URL(url).hostname.toLowerCase();
+      return new URL(currentPageUrl).hostname.toLowerCase();
     } catch {
       return '';
     }
-  }, [url]);
+  }, [currentPageUrl]);
 
   const isAllowlisted = useMemo(() => {
     return checkIsAllowlisted(currentHostname);
@@ -294,14 +296,14 @@ export default function MotionBrowserScreen() {
     if (!activeRespectSiteSettings) {
       return true;
     }
-    return shouldUseStealthForUrl(url);
+    return shouldUseStealthForUrl(currentPageUrl);
   }, [
     activeProtocol,
     codexSettings.stealthMode,
     standardSettings.stealthByDefault,
     activeRespectSiteSettings,
     shouldUseStealthForUrl,
-    url,
+    currentPageUrl,
   ]);
 
   const protocolForceSimulation = isProtocolEnabled && (
@@ -518,6 +520,7 @@ export default function MotionBrowserScreen() {
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
+      performanceProfile,
       overlayLabelText: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
       loopVideo: effectiveLoopVideo,
@@ -542,6 +545,7 @@ export default function MotionBrowserScreen() {
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
+      performanceProfile,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
       loopVideo: effectiveLoopVideo,
@@ -567,12 +571,13 @@ export default function MotionBrowserScreen() {
     effectiveStealthMode,
     allowlistBlocked,
     currentHostname,
-    url,
+    currentPageUrl,
     fallbackVideoUri,
     fallbackVideo?.name,
     protocolForceSimulation,
     activeProtocol,
     isProtocolEnabled,
+    performanceProfile,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
     protocolMirrorVideo,
@@ -851,6 +856,7 @@ export default function MotionBrowserScreen() {
     const normalizedUrl = normalizeUrl(inputUrl);
     setUrl(normalizedUrl);
     setInputUrl(normalizedUrl);
+    setCurrentPageUrl(normalizedUrl);
   }, [inputUrl, normalizeUrl]);
 
   const isWeb = Platform.OS === 'web';
@@ -889,6 +895,7 @@ export default function MotionBrowserScreen() {
       fallbackVideoUri,
       forceSimulation: protocolForceSimulation,
       protocolId: activeProtocol,
+      performanceProfile,
       protocolLabel: protocolOverlayLabel,
       showOverlayLabel: showProtocolOverlayLabel,
       loopVideo: effectiveLoopVideo,
@@ -919,6 +926,7 @@ export default function MotionBrowserScreen() {
     fallbackVideo?.name,
     protocolForceSimulation,
     activeProtocol,
+    performanceProfile,
     protocolOverlayLabel,
     showProtocolOverlayLabel,
     protocolMirrorVideo,
@@ -944,22 +952,23 @@ export default function MotionBrowserScreen() {
     const testUrl = APP_CONFIG.WEBVIEW.TEST_URL;
     setUrl(testUrl);
     setInputUrl(testUrl);
+    setCurrentPageUrl(testUrl);
     console.log('[App] Navigating to webcam test:', testUrl);
   }, []);
 
   const handleOpenInBrowser = useCallback(async () => {
     try {
-      const canOpen = await Linking.canOpenURL(url);
+      const canOpen = await Linking.canOpenURL(currentPageUrl);
       if (!canOpen) {
         Alert.alert('Unsupported URL', 'This device cannot open the URL.');
         return;
       }
-      await Linking.openURL(url);
+      await Linking.openURL(currentPageUrl);
     } catch (error) {
       console.error('[App] Failed to open browser:', error);
       Alert.alert('Error', 'Unable to open the browser.');
     }
-  }, [url]);
+  }, [currentPageUrl]);
 
 
 
@@ -1058,6 +1067,7 @@ export default function MotionBrowserScreen() {
                   
                   if (navState.url) {
                     const normalizedUrl = httpsEnforced ? forceHttps(navState.url) : navState.url;
+                    setCurrentPageUrl(normalizedUrl);
                     setInputUrl(normalizedUrl);
                     if (httpsEnforced && navState.url !== normalizedUrl) {
                       setUrl(normalizedUrl);
@@ -1123,6 +1133,7 @@ export default function MotionBrowserScreen() {
                     const httpsUrl = forceHttps(request.url);
                     setUrl(httpsUrl);
                     setInputUrl(httpsUrl);
+                    setCurrentPageUrl(httpsUrl);
                     return false;
                   }
                   return true;
@@ -1156,7 +1167,7 @@ export default function MotionBrowserScreen() {
             isSimulating={simulatingDevicesCount > 0}
             simulatingDevicesCount={simulatingDevicesCount}
             activeCamerasCount={activeTemplate?.captureDevices.length || 0}
-            currentUrl={url}
+            currentUrl={currentPageUrl}
             currentWebsiteSettings={currentWebsiteSettings}
             onStealthModeToggle={toggleStealthMode}
             onOpenDevices={() => setShowDevicesModal(true)}
@@ -1237,7 +1248,7 @@ export default function MotionBrowserScreen() {
 
       <SiteSettingsModal
         visible={showSiteSettingsModal}
-        currentUrl={url}
+        currentUrl={currentPageUrl}
         currentSettings={currentWebsiteSettings}
         globalStealthMode={stealthMode}
         allSiteSettings={websiteSettings}
