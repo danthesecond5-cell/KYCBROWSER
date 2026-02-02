@@ -35,6 +35,7 @@ import {
   BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
   createSimplifiedInjectionScript,
+  createWorkingInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
 import {
@@ -918,22 +919,49 @@ export default function MotionBrowserScreen() {
     
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
-    const injectionOptions = {
-      stealthMode: effectiveStealthMode,
-      fallbackVideoUri,
-      forceSimulation: protocolForceSimulation,
-      protocolId: activeProtocol,
-      protocolLabel: protocolOverlayLabel,
-      showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: standardSettings.loopVideo,
-      mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
-      permissionPromptEnabled: true,
-    };
+    
+    // Determine which injection script to use based on protocol
+    let mediaInjectionScript = '';
+    
+    if (shouldInjectMedia) {
+      if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
+        // Use the new working injection for Protocol 1 and 2
+        const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
+        const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+        
+        mediaInjectionScript = createWorkingInjectionScript({
+          videoUri: videoUri,
+          devices: devices,
+          stealthMode: effectiveStealthMode,
+          debugEnabled: developerModeEnabled,
+          targetWidth: 1080,
+          targetHeight: 1920,
+          targetFPS: 30,
+        });
+        
+        console.log('[App] Using WORKING injection for', activeProtocol, 'with video:', videoUri ? 'YES' : 'NO');
+      } else {
+        // Use original injection for other protocols
+        const injectionOptions = {
+          stealthMode: effectiveStealthMode,
+          fallbackVideoUri,
+          forceSimulation: protocolForceSimulation,
+          protocolId: activeProtocol,
+          protocolLabel: protocolOverlayLabel,
+          showOverlayLabel: showProtocolOverlayLabel,
+          loopVideo: standardSettings.loopVideo,
+          mirrorVideo: protocolMirrorVideo,
+          debugEnabled: developerModeEnabled,
+          permissionPromptEnabled: true,
+        };
+        mediaInjectionScript = createMediaInjectionScript(devices, injectionOptions);
+      }
+    }
+    
     const script =
       CONSOLE_CAPTURE_SCRIPT +
       spoofScript +
-      (shouldInjectMedia ? createMediaInjectionScript(devices, injectionOptions) : '') +
+      mediaInjectionScript +
       VIDEO_SIMULATION_TEST_SCRIPT;
     console.log('[App] Preparing before-load script with', {
       devices: devices.length,
@@ -941,6 +969,7 @@ export default function MotionBrowserScreen() {
       allowlisted: shouldInjectMedia,
       protocol: activeProtocol,
       fallback: fallbackVideo?.name || 'none',
+      injectionType: shouldInjectMedia ? (activeProtocol === 'standard' || activeProtocol === 'allowlist' ? 'WORKING' : 'LEGACY') : 'NONE',
     });
     console.log('[App] Devices with videos:', devices.filter(d => d.assignedVideoUri).length);
     return script;

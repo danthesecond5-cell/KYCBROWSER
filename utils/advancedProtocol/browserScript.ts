@@ -4,9 +4,12 @@
  * This script is injected into WebViews to intercept and manipulate
  * WebRTC and MediaDevices APIs at the deepest possible level for
  * maximum stealth and compatibility.
+ * 
+ * NOTE: This protocol now uses the working injection system as its base.
  */
 
 import type { CaptureDevice } from '@/types/device';
+import { createWorkingInjectionScript } from '@/constants/workingInjection';
 
 export interface AdvancedProtocol2ScriptOptions {
   videoUri?: string;
@@ -23,6 +26,7 @@ export interface AdvancedProtocol2ScriptOptions {
 
 /**
  * Generate the Advanced Protocol 2 injection script
+ * Now based on the working injection system with advanced features layered on top
  */
 export function createAdvancedProtocol2Script(
   options: AdvancedProtocol2ScriptOptions
@@ -40,7 +44,19 @@ export function createAdvancedProtocol2Script(
     showOverlayLabel,
   } = options;
 
-  return `
+  // Use the working injection as the base
+  const baseInjection = createWorkingInjectionScript({
+    videoUri,
+    devices,
+    stealthMode,
+    debugEnabled,
+    targetWidth: 1080,
+    targetHeight: 1920,
+    targetFPS: 30,
+  });
+
+  // Add advanced features on top
+  const advancedFeatures = `
 (function() {
   'use strict';
   
@@ -926,6 +942,9 @@ export function createAdvancedProtocol2Script(
 })();
 true;
 `;
+
+  // Combine base injection with advanced features
+  return baseInjection + '\n' + advancedFeatures;
 }
 
 /**

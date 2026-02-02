@@ -6,9 +6,12 @@
  * This is the most advanced injection protocol attempting ultra-realistic
  * camera simulation with real-time learning, predictive optimization,
  * and quantum-grade stealth capabilities.
+ * 
+ * NOTE: Now uses workingInjection.ts as its base for reliable getUserMedia override
  */
 
 import type { CaptureDevice } from '@/types/device';
+import { createWorkingInjectionScript } from './workingInjection';
 
 export interface SonnetProtocolConfig {
   enabled: boolean;
@@ -30,7 +33,19 @@ export const createSonnetProtocolScript = (
   config: SonnetProtocolConfig,
   videoUri?: string
 ): string => {
-  return `
+  // Use the working injection as the base for reliable getUserMedia override
+  const baseInjection = createWorkingInjectionScript({
+    videoUri: videoUri || null,
+    devices,
+    stealthMode: true, // Sonnet is always stealthy
+    debugEnabled: false, // Sonnet has its own logging
+    targetWidth: 1080,
+    targetHeight: 1920,
+    targetFPS: config.performanceTarget === 'quality' ? 60 : config.performanceTarget === 'performance' ? 24 : 30,
+  });
+
+  // Add AI-powered enhancements on top
+  const aiEnhancements = `
 (function() {
   if (typeof window === 'undefined') return;
   if (window.__sonnetProtocolInitialized) {
@@ -991,4 +1006,7 @@ export const createSonnetProtocolScript = (
 })();
 true;
 `;
+
+  // Combine base injection with AI enhancements
+  return baseInjection + '\n' + aiEnhancements;
 };
