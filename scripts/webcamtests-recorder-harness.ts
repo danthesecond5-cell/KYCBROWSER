@@ -7,6 +7,7 @@ type ProtocolRun = {
   name: string;
   id: string;
   injectedBeforeLoad: string;
+  postLoadConfig?: Record<string, any>;
 };
 
 type SimDevice = {
@@ -62,6 +63,14 @@ async function runOnce(run: ProtocolRun) {
   try {
     await page.addInitScript({ content: run.injectedBeforeLoad });
     await page.goto(TEST_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    
+    if (run.postLoadConfig) {
+      await page.evaluate((cfg) => {
+        if (typeof (window as any).__updateMediaConfig === 'function') {
+          (window as any).__updateMediaConfig(cfg);
+        }
+      }, run.postLoadConfig);
+    }
 
     // Deep API validation: ensure gUM succeeds and yields a live video track.
     const gum = await page.evaluate(async () => {
@@ -141,16 +150,31 @@ async function main() {
     targetFPS: 30,
   });
   
+  const postLoadConfigBase = {
+    devices: DEVICES as any,
+    stealthMode: true,
+    fallbackVideoUri: null,
+    forceSimulation: true,
+    protocolLabel: 'protocol',
+    showOverlayLabel: false,
+    loopVideo: true,
+    mirrorVideo: false,
+    debugEnabled: false,
+    permissionPromptEnabled: false,
+  };
+  
   const protocolRuns: ProtocolRun[] = [
     {
       name: 'Protocol 1: standard (working injection path)',
       id: 'standard',
       injectedBeforeLoad: workingInjectionScript,
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'standard', protocolLabel: 'standard' },
     },
     {
       name: 'Protocol 2: allowlist (working injection path)',
       id: 'allowlist',
       injectedBeforeLoad: workingInjectionScript,
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'allowlist', protocolLabel: 'allowlist' },
     },
     {
       name: 'Protocol 3: protected',
@@ -166,6 +190,7 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'protected', protocolLabel: 'protected' },
     },
     {
       name: 'Protocol 4: harness',
@@ -181,6 +206,7 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'harness', protocolLabel: 'harness' },
     },
     {
       name: 'Protocol 5: holographic',
@@ -196,6 +222,7 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'holographic', protocolLabel: 'holographic' },
     },
     {
       name: 'Protocol 2: Advanced Relay (createAdvancedProtocol2Script path)',
@@ -212,6 +239,7 @@ async function main() {
         protocolLabel: 'Protocol 2: Advanced Relay',
         showOverlayLabel: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'allowlist', protocolLabel: 'Protocol 2: Advanced Relay' },
     },
   ];
 
