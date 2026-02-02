@@ -11,7 +11,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "webcamtests:check": "node -r ts-node/register -r tsconfig-paths/register scripts/webcamtests-recorder-check.ts"
+    "webcamtests:check": "TS_NODE_COMPILER_OPTIONS='{ \"module\": \"CommonJS\" }' node -r ts-node/register -r tsconfig-paths/register scripts/webcamtests-recorder-check.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
