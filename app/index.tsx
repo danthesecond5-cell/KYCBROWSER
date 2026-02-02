@@ -922,13 +922,14 @@ export default function MotionBrowserScreen() {
     
     // Determine which injection script to use based on protocol
     let mediaInjectionScript = '';
+    let injectionType = 'NONE';
     
     if (shouldInjectMedia) {
+      const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
+      const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+      
       if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
         // Use the new working injection for Protocol 1 and 2
-        const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
-        const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
-        
         mediaInjectionScript = createWorkingInjectionScript({
           videoUri: videoUri,
           devices: devices,
@@ -938,10 +939,30 @@ export default function MotionBrowserScreen() {
           targetHeight: 1920,
           targetFPS: 30,
         });
-        
+        injectionType = 'WORKING';
         console.log('[App] Using WORKING injection for', activeProtocol, 'with video:', videoUri ? 'YES' : 'NO');
+      } else if (activeProtocol === 'sonnet' || activeProtocol === 'claude-sonnet') {
+        // Use Sonnet Protocol for Protocol 5
+        const { createSonnetProtocolScript } = require('@/constants/sonnetProtocol');
+        const sonnetConfig = {
+          enabled: true,
+          aiAdaptiveQuality: true,
+          behavioralMimicry: true,
+          neuralStyleTransfer: false,
+          predictiveFrameOptimization: true,
+          quantumTimingRandomness: true,
+          biometricSimulation: true,
+          realTimeProfiler: true,
+          adaptiveStealth: true,
+          performanceTarget: 'balanced' as const,
+          stealthIntensity: 'maximum' as const,
+          learningMode: true,
+        };
+        mediaInjectionScript = createSonnetProtocolScript(devices, sonnetConfig, videoUri);
+        injectionType = 'SONNET';
+        console.log('[App] Using SONNET Protocol injection with video:', videoUri ? 'YES' : 'NO');
       } else {
-        // Use original injection for other protocols
+        // Use original injection for other protocols (protected, harness, holographic)
         const injectionOptions = {
           stealthMode: effectiveStealthMode,
           fallbackVideoUri,
@@ -955,6 +976,7 @@ export default function MotionBrowserScreen() {
           permissionPromptEnabled: true,
         };
         mediaInjectionScript = createMediaInjectionScript(devices, injectionOptions);
+        injectionType = 'LEGACY';
       }
     }
     
@@ -969,7 +991,7 @@ export default function MotionBrowserScreen() {
       allowlisted: shouldInjectMedia,
       protocol: activeProtocol,
       fallback: fallbackVideo?.name || 'none',
-      injectionType: shouldInjectMedia ? (activeProtocol === 'standard' || activeProtocol === 'allowlist' ? 'WORKING' : 'LEGACY') : 'NONE',
+      injectionType,
     });
     console.log('[App] Devices with videos:', devices.filter(d => d.assignedVideoUri).length);
     return script;
