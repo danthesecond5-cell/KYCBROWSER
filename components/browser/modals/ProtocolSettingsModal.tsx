@@ -61,11 +61,13 @@ export default function ProtocolSettingsModal({
     protectedSettings,
     harnessSettings,
     holographicSettings,
+    webrtcLoopbackSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
     updateHolographicSettings,
+    updateWebRtcLoopbackSettings,
     addAllowlistDomain,
     removeAllowlistDomain,
     isAllowlisted,
@@ -412,6 +414,71 @@ export default function ProtocolSettingsModal({
           </View>
         );
 
+      case 'webrtc-loopback':
+        return (
+          <View style={styles.settingsGroup}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Wifi size={12} color="#00aaff" />
+                  <Text style={styles.settingLabel}>Auto Start</Text>
+                </View>
+                <Text style={styles.settingHint}>Automatically start loopback when injected</Text>
+              </View>
+              <Switch
+                value={webrtcLoopbackSettings.autoStart}
+                onValueChange={(v) => updateWebRtcLoopbackSettings({ autoStart: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#00ff88' }}
+                thumbColor={webrtcLoopbackSettings.autoStart ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Shield size={12} color="#ff6b35" />
+                  <Text style={styles.settingLabel}>Require Native Bridge</Text>
+                </View>
+                <Text style={styles.settingHint}>Fail fast when native WebRTC provider is missing</Text>
+              </View>
+              <Switch
+                value={webrtcLoopbackSettings.requireNativeBridge}
+                onValueChange={(v) => updateWebRtcLoopbackSettings({ requireNativeBridge: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff6b35' }}
+                thumbColor={webrtcLoopbackSettings.requireNativeBridge ? '#ffffff' : '#888'}
+              />
+            </View>
+
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <View style={styles.settingLabelRow}>
+                  <Activity size={12} color="#ffcc00" />
+                  <Text style={styles.settingLabel}>Signaling Timeout (ms)</Text>
+                </View>
+                <Text style={styles.settingHint}>How long to wait for a native answer</Text>
+              </View>
+              <TextInput
+                style={styles.numberInput}
+                value={String(webrtcLoopbackSettings.signalingTimeoutMs)}
+                keyboardType="number-pad"
+                onChangeText={(value) => {
+                  const parsed = Number(value.replace(/[^0-9]/g, ''));
+                  if (!Number.isNaN(parsed) && parsed > 0) {
+                    updateWebRtcLoopbackSettings({ signalingTimeoutMs: parsed });
+                  }
+                }}
+              />
+            </View>
+
+            <View style={styles.infoNotice}>
+              <AlertTriangle size={14} color="#ffcc00" />
+              <Text style={styles.infoNoticeText}>
+                Requires a native iOS WebRTC provider. JavaScript-only injection cannot work on WKWebView.
+              </Text>
+            </View>
+          </View>
+        );
+
       case 'protected':
         return (
           <View style={styles.settingsGroup}>
@@ -561,6 +628,7 @@ export default function ProtocolSettingsModal({
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
     holographic: <ZapOff size={18} color="#00ff88" />,
+    'webrtc-loopback': <Wifi size={18} color="#00aaff" />,
   };
 
   return (
@@ -1130,6 +1198,32 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     color: '#ffffff',
     fontSize: 13,
+  },
+  numberInput: {
+    minWidth: 90,
+    textAlign: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    color: '#ffffff',
+    fontSize: 12,
+  },
+  infoNotice: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,204,0,0.12)',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,204,0,0.35)',
+  },
+  infoNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.8)',
   },
   addButton: {
     backgroundColor: '#00ff88',

@@ -144,6 +144,19 @@ export const PROTOCOL_VERSIONS: Record<string, ProtocolVersion[]> = {
       deprecated: false,
     },
   ],
+  'webrtc-loopback': [
+    {
+      version: '1.0.0',
+      releaseDate: '2026-02-02',
+      protocolId: 'webrtc-loopback',
+      changes: [
+        'Initial release',
+        'Native WebRTC loopback bridge integration',
+      ],
+      breakingChanges: false,
+      deprecated: false,
+    },
+  ],
   'claude-sonnet': [
     {
       version: '1.0.0',
@@ -281,6 +294,9 @@ export class ProtocolVersionManager {
         break;
       case 'holographic':
         result.warnings.push('Holographic protocol is new - using default settings');
+        break;
+      case 'webrtc-loopback':
+        result.warnings.push('WebRTC loopback protocol is new - using default settings');
         break;
       case 'claude-sonnet':
         result.warnings.push('Claude Sonnet protocol is new - using default settings');

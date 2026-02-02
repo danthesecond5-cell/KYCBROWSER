@@ -4,7 +4,7 @@ import createContextHook from '@nkzw/create-context-hook';
 import * as Crypto from 'expo-crypto';
 
 // Protocol Types
-export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
+export type ProtocolType = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic' | 'webrtc-loopback';
 
 export interface ProtocolConfig {
   id: ProtocolType;
@@ -113,6 +113,13 @@ export interface HarnessProtocolSettings {
   testPatternOnNoVideo: boolean;
 }
 
+export interface WebRtcLoopbackProtocolSettings {
+  enabled: boolean;
+  autoStart: boolean;
+  signalingTimeoutMs: number;
+  requireNativeBridge: boolean;
+}
+
 export interface ProtocolContextValue {
   // Developer Mode
   developerModeEnabled: boolean;
@@ -144,6 +151,7 @@ export interface ProtocolContextValue {
   protectedSettings: ProtectedProtocolSettings;
   harnessSettings: HarnessProtocolSettings;
   holographicSettings: HolographicProtocolSettings;
+  webrtcLoopbackSettings: WebRtcLoopbackProtocolSettings;
 
   // Settings Updaters
   updateStandardSettings: (settings: Partial<StandardProtocolSettings>) => Promise<void>;
@@ -151,6 +159,7 @@ export interface ProtocolContextValue {
   updateProtectedSettings: (settings: Partial<ProtectedProtocolSettings>) => Promise<void>;
   updateHarnessSettings: (settings: Partial<HarnessProtocolSettings>) => Promise<void>;
   updateHolographicSettings: (settings: Partial<HolographicProtocolSettings>) => Promise<void>;
+  updateWebRtcLoopbackSettings: (settings: Partial<WebRtcLoopbackProtocolSettings>) => Promise<void>;
   
   // Allowlist helpers
   addAllowlistDomain: (domain: string) => Promise<void>;
@@ -181,6 +190,7 @@ const STORAGE_KEYS = {
   PROTECTED_SETTINGS: '@protocol_protected_settings',
   HARNESS_SETTINGS: '@protocol_harness_settings',
   HOLOGRAPHIC_SETTINGS: '@protocol_holographic_settings',
+  WEBRTC_LOOPBACK_SETTINGS: '@protocol_webrtc_loopback_settings',
   HTTPS_ENFORCED: '@protocol_https_enforced',
   ML_SAFETY: '@protocol_ml_safety',
   TESTING_WATERMARK: '@protocol_testing_watermark',
@@ -299,6 +309,13 @@ const DEFAULT_HARNESS_SETTINGS: HarnessProtocolSettings = {
   testPatternOnNoVideo: true,
 };
 
+const DEFAULT_WEBRTC_LOOPBACK_SETTINGS: WebRtcLoopbackProtocolSettings = {
+  enabled: true,
+  autoStart: true,
+  signalingTimeoutMs: 12000,
+  requireNativeBridge: true,
+};
+
 const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
   standard: {
     id: 'standard',
@@ -335,10 +352,17 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
     enabled: true,
     settings: {},
   },
+  'webrtc-loopback': {
+    id: 'webrtc-loopback',
+    name: 'Protocol 6: WebRTC Loopback (iOS)',
+    description: 'iOS-only loopback that relies on a native WebRTC bridge for a fake camera track.',
+    enabled: true,
+    settings: {},
+  },
 };
 
 const isProtocolType = (value: string): value is ProtocolType => {
-  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness' || value === 'holographic';
+  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness' || value === 'holographic' || value === 'webrtc-loopback';
 };
 
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {
@@ -358,6 +382,9 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
   const [protectedSettings, setProtectedSettings] = useState<ProtectedProtocolSettings>(DEFAULT_PROTECTED_SETTINGS);
   const [harnessSettings, setHarnessSettings] = useState<HarnessProtocolSettings>(DEFAULT_HARNESS_SETTINGS);
   const [holographicSettings, setHolographicSettings] = useState<HolographicProtocolSettings>(DEFAULT_HOLOGRAPHIC_SETTINGS);
+  const [webrtcLoopbackSettings, setWebrtcLoopbackSettings] = useState<WebRtcLoopbackProtocolSettings>(
+    DEFAULT_WEBRTC_LOOPBACK_SETTINGS
+  );
 
   // Load all settings on mount
   useEffect(() => {
@@ -375,6 +402,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           protected_,
           harness,
           holographic,
+          webrtcLoopback,
           https,
           mlSafety,
         ] = await Promise.all([
@@ -389,6 +417,7 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
           AsyncStorage.getItem(STORAGE_KEYS.PROTECTED_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HARNESS_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HOLOGRAPHIC_SETTINGS),
+          AsyncStorage.getItem(STORAGE_KEYS.WEBRTC_LOOPBACK_SETTINGS),
           AsyncStorage.getItem(STORAGE_KEYS.HTTPS_ENFORCED),
           AsyncStorage.getItem(STORAGE_KEYS.ML_SAFETY),
         ]);
@@ -457,6 +486,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
             setHolographicSettings({ ...DEFAULT_HOLOGRAPHIC_SETTINGS, ...JSON.parse(holographic) });
           } catch (e) {
             console.warn('[Protocol] Failed to parse holographic settings:', e);
+          }
+        }
+        if (webrtcLoopback) {
+          try {
+            setWebrtcLoopbackSettings({ ...DEFAULT_WEBRTC_LOOPBACK_SETTINGS, ...JSON.parse(webrtcLoopback) });
+          } catch (e) {
+            console.warn('[Protocol] Failed to parse WebRTC loopback settings:', e);
           }
         }
         if (https !== null) setHttpsEnforcedState(https === 'true');
@@ -581,6 +617,12 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     await AsyncStorage.setItem(STORAGE_KEYS.HOLOGRAPHIC_SETTINGS, JSON.stringify(newSettings));
   }, [holographicSettings]);
 
+  const updateWebRtcLoopbackSettings = useCallback(async (settings: Partial<WebRtcLoopbackProtocolSettings>) => {
+    const newSettings = { ...webrtcLoopbackSettings, ...settings };
+    setWebrtcLoopbackSettings(newSettings);
+    await AsyncStorage.setItem(STORAGE_KEYS.WEBRTC_LOOPBACK_SETTINGS, JSON.stringify(newSettings));
+  }, [webrtcLoopbackSettings]);
+
   // Allowlist helpers
   const addAllowlistDomain = useCallback(async (domain: string) => {
     const normalized = domain.trim().toLowerCase().replace(/^www\./, '');
@@ -632,11 +674,13 @@ export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContext
     protectedSettings,
     harnessSettings,
     holographicSettings,
+    webrtcLoopbackSettings,
     updateStandardSettings,
     updateAllowlistSettings,
     updateProtectedSettings,
     updateHarnessSettings,
     updateHolographicSettings,
+    updateWebRtcLoopbackSettings,
     // allowlist helpers
     addAllowlistDomain,
     removeAllowlistDomain,

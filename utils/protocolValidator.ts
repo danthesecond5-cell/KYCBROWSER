@@ -13,6 +13,7 @@ import {
   ProtectedPreviewSettings,
   TestHarnessSettings,
   HolographicSettings,
+  WebRtcLoopbackSettings,
   DEFAULT_PROTOCOL_SETTINGS,
 } from '@/types/protocols';
 
@@ -325,6 +326,42 @@ export function validateHolographicSettings(settings: Partial<HolographicSetting
 }
 
 /**
+ * Validate WebRTC Loopback Settings
+ */
+export function validateWebRtcLoopbackSettings(settings: Partial<WebRtcLoopbackSettings>): ValidationResult {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+  const suggestions: string[] = [];
+
+  if (settings.signalingTimeoutMs !== undefined) {
+    if (settings.signalingTimeoutMs < 1000) {
+      warnings.push({
+        code: 'LOW_SIGNAL_TIMEOUT',
+        field: 'signalingTimeoutMs',
+        message: 'Timeout < 1000ms may not allow enough time for WebRTC negotiation',
+      });
+    } else if (settings.signalingTimeoutMs > 60000) {
+      warnings.push({
+        code: 'HIGH_SIGNAL_TIMEOUT',
+        field: 'signalingTimeoutMs',
+        message: 'Timeout > 60000ms may delay failure feedback',
+      });
+    }
+  }
+
+  if (settings.requireNativeBridge === false) {
+    suggestions.push('Disable requireNativeBridge only if a custom bridge is available');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    suggestions,
+  };
+}
+
+/**
  * Validate all protocol settings
  */
 export function validateProtocolSettings(settings: Partial<ProtocolSettings>): Record<ProtocolId, ValidationResult> {
@@ -334,6 +371,7 @@ export function validateProtocolSettings(settings: Partial<ProtocolSettings>): R
     protected: validateProtectedSettings(settings.protected || {}),
     harness: validateHarnessSettings(settings.harness || {}),
     holographic: validateHolographicSettings(settings.holographic || {}),
+    'webrtc-loopback': validateWebRtcLoopbackSettings(settings.webrtcLoopback || {}),
   };
 }
 
@@ -391,6 +429,16 @@ export function getProtocolCapabilities(protocolId: ProtocolId): ProtocolCapabil
         requiresNetwork: true,
         stealthLevel: 'maximum',
         performanceImpact: 'high',
+      };
+    case 'webrtc-loopback':
+      return {
+        supportsVideo: true,
+        supportsAudio: true,
+        supportsMotion: false,
+        requiresCamera: false,
+        requiresNetwork: true,
+        stealthLevel: 'advanced',
+        performanceImpact: 'medium',
       };
   }
 }
@@ -646,13 +694,16 @@ export function checkProtocolCompatibility(protocolId: ProtocolId): {
     }
   }
 
-  // Check for canvas support
-  if (typeof HTMLCanvasElement === 'undefined') {
-    missingFeatures.push('Canvas API');
-  } else {
-    const canvas = document.createElement?.('canvas');
-    if (canvas && !canvas.captureStream && !(canvas as any).mozCaptureStream) {
-      missingFeatures.push('Canvas captureStream');
+  const requiresCanvasCapture = protocolId !== 'webrtc-loopback';
+  if (requiresCanvasCapture) {
+    // Check for canvas support
+    if (typeof HTMLCanvasElement === 'undefined') {
+      missingFeatures.push('Canvas API');
+    } else {
+      const canvas = document.createElement?.('canvas');
+      if (canvas && !canvas.captureStream && !(canvas as any).mozCaptureStream) {
+        missingFeatures.push('Canvas captureStream');
+      }
     }
   }
 
@@ -674,6 +725,14 @@ export function checkProtocolCompatibility(protocolId: ProtocolId): {
     }
     if (typeof WebSocket === 'undefined') {
       missingFeatures.push('WebSocket API');
+    }
+  }
+  if (protocolId === 'webrtc-loopback') {
+    if (typeof RTCPeerConnection === 'undefined') {
+      missingFeatures.push('WebRTC RTCPeerConnection');
+    }
+    if (!(window as any).ReactNativeWebView) {
+      recommendations.push('ReactNativeWebView bridge missing - native loopback required');
     }
   }
 

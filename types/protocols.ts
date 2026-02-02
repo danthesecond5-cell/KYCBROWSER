@@ -3,7 +3,7 @@
  * Defines configuration for all 4 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic' | 'webrtc-loopback';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -132,6 +132,14 @@ export interface TestHarnessSettings {
   testPatternOnNoVideo: boolean;
 }
 
+// Protocol 6: WebRTC Loopback (Native bridge)
+export interface WebRtcLoopbackSettings {
+  enabled: boolean;
+  autoStart: boolean;
+  signalingTimeoutMs: number;
+  requireNativeBridge: boolean;
+}
+
 // Combined Protocol Settings
 export interface ProtocolSettings {
   standard: StandardInjectionSettings;
@@ -139,6 +147,7 @@ export interface ProtocolSettings {
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
   holographic: HolographicSettings;
+  webrtcLoopback: WebRtcLoopbackSettings;
 }
 
 // Developer Mode Settings
@@ -256,12 +265,20 @@ export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
   testPatternOnNoVideo: true,
 };
 
+export const DEFAULT_WEBRTC_LOOPBACK_SETTINGS: WebRtcLoopbackSettings = {
+  enabled: true,
+  autoStart: true,
+  signalingTimeoutMs: 12000,
+  requireNativeBridge: true,
+};
+
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   standard: DEFAULT_STANDARD_SETTINGS,
   allowlist: DEFAULT_ALLOWLIST_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
   holographic: DEFAULT_HOLOGRAPHIC_SETTINGS,
+  webrtcLoopback: DEFAULT_WEBRTC_LOOPBACK_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -316,6 +333,14 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     id: 'holographic',
     name: 'Protocol 5: Holographic Stream Injection',
     description: 'Advanced WebSocket bridge with SDP mutation and canvas-based stream synthesis. The most advanced injection method available.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: true,
+  },
+  'webrtc-loopback': {
+    id: 'webrtc-loopback',
+    name: 'Protocol 6: WebRTC Loopback (iOS)',
+    description: 'iOS-only WebRTC loopback that relies on a native bridge to provide a fake camera track.',
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,

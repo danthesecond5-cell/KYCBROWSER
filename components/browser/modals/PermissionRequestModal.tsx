@@ -16,7 +16,8 @@ import {
   X,
   Zap,
   EyeOff,
-  Monitor
+  Monitor,
+  Wifi
 } from 'lucide-react-native';
 import type { ProtocolType } from '@/contexts/ProtocolContext';
 import type { SavedVideo } from '@/utils/videoManager';
@@ -49,6 +50,7 @@ export default function PermissionRequestModal({
     protected: <EyeOff size={18} color="#ff6b35" />,
     harness: <Monitor size={18} color="#b388ff" />,
     holographic: <VideoIcon size={18} color="#ff00ff" />,
+    'webrtc-loopback': <Wifi size={18} color="#00aaff" />,
   };
 
   const handleSimulate = () => {
