@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import renderer from 'react-test-renderer';
+import renderer, { act } from 'react-test-renderer';
 import TestingWatermark from '@/components/TestingWatermark';
 
 describe('TestingWatermark', () => {
@@ -24,16 +24,19 @@ describe('TestingWatermark', () => {
   });
 
   it('renders fullscreen position with all elements', () => {
-    const tree = renderer.create(
-      <TestingWatermark
-        visible={true}
-        position="fullscreen"
-        showPulse={false}
-        mlSafetyEnabled={true}
-        httpsEnforced={true}
-        protocolName="TEST-PROTOCOL"
-      />
-    ).toJSON();
-    expect(tree).toMatchSnapshot();
+    let tree: renderer.ReactTestRenderer;
+    act(() => {
+      tree = renderer.create(
+        <TestingWatermark
+          visible={true}
+          position="fullscreen"
+          showPulse={false}
+          mlSafetyEnabled={true}
+          httpsEnforced={true}
+          protocolName="TEST-PROTOCOL"
+        />
+      );
+    });
+    expect(tree!.toJSON()).toMatchSnapshot();
   });
 });
