@@ -65,17 +65,9 @@ export function createAdvancedProtocol2Script(
   // ============================================================================
   
   if (typeof window === 'undefined') return;
-  if (window.__advancedProtocol2Initialized) {
-    console.log('[AdvP2] Already initialized');
-    return;
-  }
-  window.__advancedProtocol2Initialized = true;
   
-  // ============================================================================
-  // CONFIGURATION
-  // ============================================================================
-  
-  const CONFIG = {
+  // Prepare config for updates or first init
+  const NEXT_CONFIG = {
     DEBUG: ${debugEnabled},
     STEALTH_MODE: ${stealthMode},
     VIDEO_URI: ${JSON.stringify(videoUri)},
@@ -91,6 +83,21 @@ export function createAdvancedProtocol2Script(
     TARGET_FPS: 30,
   };
   
+  if (window.__advancedProtocol2Initialized) {
+    if (window.__advancedProtocol2 && typeof window.__advancedProtocol2.updateConfig === 'function') {
+      window.__advancedProtocol2.updateConfig(NEXT_CONFIG);
+    }
+    console.log('[AdvP2] Already initialized');
+    return;
+  }
+  window.__advancedProtocol2Initialized = true;
+  
+  // ============================================================================
+  // CONFIGURATION
+  // ============================================================================
+  
+  const CONFIG = NEXT_CONFIG;
+  
   // ============================================================================
   // LOGGING
   // ============================================================================
@@ -101,6 +108,17 @@ export function createAdvancedProtocol2Script(
     log: function(...args) { if (this.enabled) console.log(this.prefix, ...args); },
     warn: function(...args) { if (this.enabled) console.warn(this.prefix, ...args); },
     error: function(...args) { console.error(this.prefix, ...args); },
+  };
+
+  const CaptureSupport = {
+    canvas: !!(window.HTMLCanvasElement &&
+      (HTMLCanvasElement.prototype.captureStream ||
+        HTMLCanvasElement.prototype.mozCaptureStream ||
+        HTMLCanvasElement.prototype.webkitCaptureStream)),
+    video: !!(window.HTMLVideoElement &&
+      (HTMLVideoElement.prototype.captureStream ||
+        HTMLVideoElement.prototype.mozCaptureStream ||
+        HTMLVideoElement.prototype.webkitCaptureStream)),
   };
   
   Logger.log('========================================');
@@ -680,6 +698,31 @@ export function createAdvancedProtocol2Script(
     const wantsVideo = !!constraints?.video;
     const wantsAudio = !!constraints?.audio;
     
+    if (wantsVideo && !CaptureSupport.canvas && !CaptureSupport.video) {
+      Logger.error('captureStream not supported in this WebView');
+      if (typeof window.__nativeMediaBridgeRequest === 'function') {
+        Logger.warn('Using native bridge fallback for video');
+        try {
+          const nativeStream = await window.__nativeMediaBridgeRequest(constraints);
+          if (nativeStream) {
+            if (wantsAudio) addSilentAudio(nativeStream);
+            spoofTrackMetadata(nativeStream, constraints);
+            return nativeStream;
+          }
+        } catch (e) {
+          Logger.warn('Native bridge fallback failed:', e);
+        }
+      }
+      notifyReactNative('unsupported', {
+        reason: 'captureStream not supported in this WebView',
+        protocol: 'advancedProtocol2',
+      });
+      if (!CONFIG.STEALTH_MODE && originalGetUserMedia) {
+        return originalGetUserMedia(constraints);
+      }
+      throw new DOMException('captureStream not supported', 'NotSupportedError');
+    }
+    
     // Get recommended resolution from ASI
     const recommendedRes = ASIModule.getRecommendedResolution();
     
@@ -758,6 +801,12 @@ export function createAdvancedProtocol2Script(
     
     throw new DOMException('getUserMedia not supported', 'NotSupportedError');
   };
+  
+  // Expose injected handlers for early override/debugging
+  try {
+    navigator.mediaDevices._originalGetUserMedia = originalGetUserMedia;
+    navigator.mediaDevices._injectedGetUserMedia = navigator.mediaDevices.getUserMedia;
+  } catch (e) {}
   
   // ============================================================================
   // HELPER FUNCTIONS
@@ -930,6 +979,107 @@ export function createAdvancedProtocol2Script(
       });
     }
   }
+
+  function updateOverlayBadge() {
+    const badge = document.getElementById('__advP2Badge');
+    if (!CONFIG.SHOW_OVERLAY) {
+      if (badge) badge.style.display = 'none';
+      return;
+    }
+    if (!badge) {
+      createOverlayBadge();
+      return;
+    }
+    badge.style.display = 'block';
+    badge.textContent = CONFIG.PROTOCOL_LABEL;
+  }
+  
+  function resolveVideoUriFromConfig(nextConfig) {
+    if (!nextConfig || typeof nextConfig !== 'object') return CONFIG.VIDEO_URI;
+    if (nextConfig.videoUri !== undefined) return nextConfig.videoUri;
+    if (nextConfig.fallbackVideoUri !== undefined) return nextConfig.fallbackVideoUri;
+    if (Array.isArray(nextConfig.devices)) {
+      const primary = nextConfig.devices.find(d => d.type === 'camera' && d.simulationEnabled && d.assignedVideoUri) ||
+        nextConfig.devices.find(d => d.type === 'camera' && d.assignedVideoUri);
+      if (primary && primary.assignedVideoUri) return primary.assignedVideoUri;
+    }
+    return CONFIG.VIDEO_URI;
+  }
+  
+  async function applyVideoSourceUpdate(nextVideoUri) {
+    if (nextVideoUri) {
+      const currentPrimary = VideoSourceManager.sources.get('primary');
+      const isSame = currentPrimary && currentPrimary.uri === nextVideoUri;
+      if (!isSame) {
+        VideoSourceManager.sources.delete('primary');
+        const source = await VideoSourceManager.addSource('primary', nextVideoUri, 'local_file');
+        if (source?.video) {
+          await source.video.play().catch(e => Logger.warn('Video autoplay blocked:', e));
+        }
+      }
+      VideoSourceManager.switchSource('primary');
+      return;
+    }
+    
+    if (!VideoSourceManager.sources.has('synthetic')) {
+      await VideoSourceManager.addSource('synthetic', null, 'synthetic');
+    }
+    VideoSourceManager.switchSource('synthetic');
+  }
+  
+  function updateConfig(nextConfig) {
+    if (!nextConfig || typeof nextConfig !== 'object') return;
+    
+    if (typeof nextConfig.debugEnabled === 'boolean') {
+      CONFIG.DEBUG = nextConfig.debugEnabled;
+      Logger.enabled = CONFIG.DEBUG;
+    }
+    if (typeof nextConfig.stealthMode === 'boolean') {
+      CONFIG.STEALTH_MODE = nextConfig.stealthMode;
+    }
+    if (Array.isArray(nextConfig.devices)) {
+      CONFIG.DEVICES = nextConfig.devices;
+    }
+    if (typeof nextConfig.enableWebRTCRelay === 'boolean') {
+      CONFIG.ENABLE_WEBRTC_RELAY = nextConfig.enableWebRTCRelay;
+      WebRTCRelayModule.enabled = CONFIG.ENABLE_WEBRTC_RELAY;
+      if (CONFIG.ENABLE_WEBRTC_RELAY) WebRTCRelayModule.init();
+    }
+    if (typeof nextConfig.enableASI === 'boolean') {
+      CONFIG.ENABLE_ASI = nextConfig.enableASI;
+      ASIModule.enabled = CONFIG.ENABLE_ASI;
+      if (CONFIG.ENABLE_ASI) ASIModule.init();
+    }
+    if (typeof nextConfig.enableGPU === 'boolean') {
+      CONFIG.ENABLE_GPU = nextConfig.enableGPU;
+      GPUModule.enabled = CONFIG.ENABLE_GPU;
+      if (CONFIG.ENABLE_GPU) GPUModule.init(CONFIG.PORTRAIT_WIDTH, CONFIG.PORTRAIT_HEIGHT);
+    }
+    if (typeof nextConfig.enableCrypto === 'boolean') {
+      CONFIG.ENABLE_CRYPTO = nextConfig.enableCrypto;
+      CryptoModule.enabled = CONFIG.ENABLE_CRYPTO;
+    }
+    if (typeof nextConfig.protocolLabel === 'string') {
+      CONFIG.PROTOCOL_LABEL = nextConfig.protocolLabel;
+    } else if (typeof nextConfig.overlayLabelText === 'string') {
+      CONFIG.PROTOCOL_LABEL = nextConfig.overlayLabelText;
+    }
+    if (typeof nextConfig.showOverlayLabel === 'boolean') {
+      CONFIG.SHOW_OVERLAY = nextConfig.showOverlayLabel;
+    }
+    if (typeof nextConfig.targetFPS === 'number') {
+      CONFIG.TARGET_FPS = nextConfig.targetFPS;
+    }
+    
+    const nextVideoUri = resolveVideoUriFromConfig(nextConfig);
+    if (nextVideoUri !== CONFIG.VIDEO_URI) {
+      CONFIG.VIDEO_URI = nextVideoUri;
+      applyVideoSourceUpdate(nextVideoUri).catch(e => Logger.warn('Video source update failed:', e));
+    }
+    
+    updateOverlayBadge();
+    Logger.log('Config updated - devices:', CONFIG.DEVICES.length);
+  }
   
   // ============================================================================
   // PUBLIC API
@@ -938,6 +1088,7 @@ export function createAdvancedProtocol2Script(
   window.__advancedProtocol2 = {
     getState: function() { return State; },
     getMetrics: function() { return State.metrics; },
+    updateConfig: function(nextConfig) { updateConfig(nextConfig); },
     
     addVideoSource: async function(uri) {
       const id = 'source_' + Date.now();
@@ -967,6 +1118,13 @@ export function createAdvancedProtocol2Script(
       StreamGenerator.start();
       Logger.log('Protocol restarted');
     },
+  };
+  
+  window.__updateMediaConfig = function(nextConfig) {
+    updateConfig(nextConfig);
+    if (window.__workingInjection && typeof window.__workingInjection.updateConfig === 'function') {
+      window.__workingInjection.updateConfig(nextConfig);
+    }
   };
   
   // ============================================================================

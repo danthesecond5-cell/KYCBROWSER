@@ -1264,6 +1264,32 @@ export const createMediaInjectionScript = (
     }
   };
 
+  // ============ CAPTURESTREAM SUPPORT CHECK ============
+  const CaptureSupport = {
+    canvas: !!(window.HTMLCanvasElement &&
+      (HTMLCanvasElement.prototype.captureStream ||
+        HTMLCanvasElement.prototype.mozCaptureStream ||
+        HTMLCanvasElement.prototype.webkitCaptureStream)),
+    video: !!(window.HTMLVideoElement &&
+      (HTMLVideoElement.prototype.captureStream ||
+        HTMLVideoElement.prototype.mozCaptureStream ||
+        HTMLVideoElement.prototype.webkitCaptureStream)),
+  };
+  
+  if (!CaptureSupport.canvas && !CaptureSupport.video) {
+    Logger.error('captureStream not supported in this WebView');
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'mediaInjectionUnsupported',
+        payload: {
+          reason: 'captureStream not supported in this WebView',
+          protocol: CONFIG.PROTOCOL_ID,
+          timestamp: Date.now(),
+        },
+      }));
+    }
+  }
+
   function notifyReady(source) {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
       window.ReactNativeWebView.postMessage(JSON.stringify({
@@ -1693,7 +1719,8 @@ export const createMediaInjectionScript = (
     protocolId: CONFIG.PROTOCOL_ID,
     overlayLabelText: CONFIG.PROTOCOL_LABEL,
     showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL,
-    permissionPromptEnabled: CONFIG.PERMISSION_PROMPT_ENABLED
+    permissionPromptEnabled: CONFIG.PERMISSION_PROMPT_ENABLED,
+    captureSupport: CaptureSupport
   };
 
   // ============ PROTOCOL OVERLAY BADGE ============
@@ -2321,6 +2348,12 @@ export const createMediaInjectionScript = (
       return canvasStream;
     };
 
+    // Expose injected handlers for early override/debugging
+    try {
+      mediaDevices._originalGetUserMedia = _origGetUserMedia;
+      mediaDevices._injectedGetUserMedia = mediaDevices.getUserMedia;
+    } catch (e) {}
+
     // Register override functions as native-looking
     __nativeFunctions.add(navigator.mediaDevices.getUserMedia);
     __nativeFunctions.add(navigator.mediaDevices.enumerateDevices);
@@ -2935,7 +2968,17 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
+          let stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
+          if (!stream && CaptureSupport.video) {
+            const capture = video.captureStream || video.mozCaptureStream || video.webkitCaptureStream;
+            if (capture) {
+              try {
+                stream = capture.call(video, CONFIG.TARGET_FPS);
+              } catch (e) {
+                try { stream = capture.call(video); } catch (e2) {}
+              }
+            }
+          }
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('captureStream failed'));
             return;

@@ -45,6 +45,19 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   // ============================================================================
   
   if (window.__workingInjectionActive) {
+    console.log('[WorkingInject] Already active');
+    if (window.__updateMediaConfig) {
+      window.__updateMediaConfig({
+        videoUri: ${JSON.stringify(videoUri)},
+        devices: ${JSON.stringify(devices)},
+        stealthMode: ${stealthMode},
+        debugEnabled: ${debugEnabled},
+        targetWidth: ${targetWidth},
+        targetHeight: ${targetHeight},
+        targetFPS: ${targetFPS},
+      });
+      return;
+    }
     // Allow dynamic re-injection (e.g. when user changes selected video/device in RN):
     // destroy the previous instance and continue booting a fresh one.
     try {
@@ -72,10 +85,97 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     AUDIO_ENABLED: true,
   };
   
-  const log = CONFIG.DEBUG 
-    ? (...args) => console.log('[WorkingInject]', ...args)
-    : () => {};
+  const log = (...args) => {
+    if (CONFIG.DEBUG) console.log('[WorkingInject]', ...args);
+  };
   const error = (...args) => console.error('[WorkingInject]', ...args);
+  const notifyUnsupported = (reason) => {
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      try {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'mediaInjectionUnsupported',
+          payload: {
+            reason: reason,
+            protocol: 'working',
+            timestamp: Date.now(),
+          },
+        }));
+      } catch (e) {}
+    }
+  };
+  
+  function safeRemoveElement(el) {
+    if (!el) return;
+    try {
+      if (typeof el.remove === 'function') {
+        el.remove();
+        return;
+      }
+    } catch (e) {}
+    try {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    } catch (e) {}
+  }
+  
+  function computeVideoUriFromConfig(config) {
+    if (!config) return CONFIG.VIDEO_URI || null;
+    if (config.videoUri !== undefined) return config.videoUri;
+    if (Array.isArray(config.devices)) {
+      const primary = config.devices.find(d => d.type === 'camera' && d.simulationEnabled && d.assignedVideoUri) ||
+        config.devices.find(d => d.type === 'camera' && d.assignedVideoUri);
+      if (primary && primary.assignedVideoUri) return primary.assignedVideoUri;
+    }
+    if (config.fallbackVideoUri) return config.fallbackVideoUri;
+    return CONFIG.VIDEO_URI || null;
+  }
+  
+  function updateConfig(newConfig) {
+    if (!newConfig || typeof newConfig !== 'object') return;
+    
+    if (typeof newConfig.stealthMode === 'boolean') {
+      CONFIG.STEALTH = newConfig.stealthMode;
+    }
+    if (typeof newConfig.debugEnabled === 'boolean') {
+      CONFIG.DEBUG = newConfig.debugEnabled;
+    }
+    if (Array.isArray(newConfig.devices)) {
+      CONFIG.DEVICES = newConfig.devices;
+    }
+    if (typeof newConfig.targetWidth === 'number') {
+      CONFIG.TARGET_WIDTH = newConfig.targetWidth;
+    }
+    if (typeof newConfig.targetHeight === 'number') {
+      CONFIG.TARGET_HEIGHT = newConfig.targetHeight;
+    }
+    if (typeof newConfig.targetFPS === 'number') {
+      CONFIG.TARGET_FPS = newConfig.targetFPS;
+    }
+    
+    const nextVideoUri = computeVideoUriFromConfig(newConfig);
+    if (nextVideoUri !== CONFIG.VIDEO_URI) {
+      CONFIG.VIDEO_URI = nextVideoUri;
+      State.videoLoaded = false;
+      State.mode = nextVideoUri ? 'video' : 'canvas';
+      if (State.videoElement) {
+        try { State.videoElement.pause(); } catch (e) {}
+        safeRemoveElement(State.videoElement);
+      }
+      State.videoElement = null;
+      State.stream = null;
+      
+      if (nextVideoUri) {
+        initVideoStream().then(videoOk => {
+          State.mode = videoOk ? 'video' : 'canvas';
+        }).catch(() => {});
+      }
+    }
+    
+    // Resize canvas if dimensions changed
+    if (State.canvasElement) {
+      State.canvasElement.width = CONFIG.TARGET_WIDTH;
+      State.canvasElement.height = CONFIG.TARGET_HEIGHT;
+    }
+  }
   
   log('========================================');
   log('WORKING VIDEO INJECTION - INITIALIZING');
@@ -98,6 +198,12 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     mode: 'canvas', // 'video' or 'canvas'
     // Optional WebCodecs/TrackGenerator pipeline (more native-like than canvas.captureStream).
     generators: new Set(), // Set<{ track: MediaStreamTrack, writer: any }>
+    lastConstraints: null,
+    unsupportedReason: null,
+    capabilities: {
+      canvasCaptureStream: false,
+      videoCaptureStream: false,
+    },
   };
 
   function supportsTrackGenerator() {
@@ -107,6 +213,188 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       typeof window.VideoFrame === 'function'
     );
   }
+
+  // ============================================================================
+  // CAPABILITY DETECTION
+  // ============================================================================
+  
+  function detectCaptureSupport() {
+    try {
+      State.capabilities.canvasCaptureStream = !!(window.HTMLCanvasElement &&
+        (HTMLCanvasElement.prototype.captureStream ||
+          HTMLCanvasElement.prototype.mozCaptureStream ||
+          HTMLCanvasElement.prototype.webkitCaptureStream));
+    } catch (e) {
+      State.capabilities.canvasCaptureStream = false;
+    }
+    
+    try {
+      State.capabilities.videoCaptureStream = !!(window.HTMLVideoElement &&
+        (HTMLVideoElement.prototype.captureStream ||
+          HTMLVideoElement.prototype.mozCaptureStream ||
+          HTMLVideoElement.prototype.webkitCaptureStream));
+    } catch (e) {
+      State.capabilities.videoCaptureStream = false;
+    }
+    
+    if (!State.capabilities.canvasCaptureStream && !State.capabilities.videoCaptureStream) {
+      State.unsupportedReason = 'captureStream not supported on this WebView';
+      error('captureStream not supported - injection cannot create MediaStream');
+      notifyUnsupported(State.unsupportedReason);
+    }
+  }
+
+  detectCaptureSupport();
+  
+  // ============================================================================
+  // NATIVE MEDIA BRIDGE (iOS fallback)
+  // ============================================================================
+  
+  const NativeBridge = {
+    pending: {},
+    
+    canUse: function() {
+      return !!(window.ReactNativeWebView && window.ReactNativeWebView.postMessage && window.RTCPeerConnection);
+    },
+    
+    requestStream: function(constraints) {
+      const self = this;
+      if (!self.canUse()) {
+        return Promise.reject(new DOMException('Native bridge not available', 'NotSupportedError'));
+      }
+      
+      const requestId = 'native_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+      
+      return new Promise(function(resolve, reject) {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        const entry = { pc: pc, resolve: resolve, reject: reject, completed: false };
+        self.pending[requestId] = entry;
+        
+        pc.onicecandidate = function(event) {
+          if (event && event.candidate) {
+            try {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'nativeGumIce',
+                payload: { requestId: requestId, candidate: event.candidate }
+              }));
+            } catch (e) {}
+          }
+        };
+        
+        pc.ontrack = function(event) {
+          if (!event) return;
+          const stream = (event.streams && event.streams[0])
+            ? event.streams[0]
+            : new MediaStream([event.track]);
+          
+          // Ensure cleanup when tracks stop
+          try {
+            stream.getTracks().forEach(function(track) {
+              const origStop = track.stop;
+              track.stop = function() {
+                try { if (origStop) origStop.call(track); } catch (e) {}
+                NativeBridge.cleanup(requestId);
+              };
+            });
+          } catch (e) {}
+          
+          entry.completed = true;
+          resolve(stream);
+        };
+        
+        pc.onconnectionstatechange = function() {
+          if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+            if (!entry.completed) {
+              reject(new DOMException('Native bridge connection failed', 'NotReadableError'));
+            }
+            NativeBridge.cleanup(requestId);
+          }
+        };
+        
+        pc.createOffer({ offerToReceiveVideo: true, offerToReceiveAudio: false })
+          .then(function(offer) { return pc.setLocalDescription(offer); })
+          .then(function() {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'nativeGumOffer',
+              payload: {
+                requestId: requestId,
+                offer: pc.localDescription,
+                constraints: constraints || null
+              }
+            }));
+          })
+          .catch(function(err) {
+            delete self.pending[requestId];
+            reject(err);
+          });
+        
+        setTimeout(function() {
+          if (self.pending[requestId] && !self.pending[requestId].completed) {
+            self.pending[requestId].reject(new DOMException('Native bridge timeout', 'NotReadableError'));
+            self.cleanup(requestId);
+          }
+        }, 15000);
+      });
+    },
+    
+    handleAnswer: function(payload) {
+      const entry = payload && this.pending[payload.requestId];
+      if (!entry) return;
+      try {
+        const desc = new RTCSessionDescription(payload.answer);
+        entry.pc.setRemoteDescription(desc);
+      } catch (e) {
+        entry.reject(e);
+        this.cleanup(payload.requestId);
+      }
+    },
+    
+    handleIce: function(payload) {
+      const entry = payload && this.pending[payload.requestId];
+      if (!entry || !payload.candidate) return;
+      try {
+        entry.pc.addIceCandidate(payload.candidate);
+      } catch (e) {}
+    },
+    
+    handleError: function(payload) {
+      const entry = payload && this.pending[payload.requestId];
+      if (!entry) return;
+      entry.reject(new Error(payload.message || 'Native bridge error'));
+      this.cleanup(payload.requestId);
+    },
+    
+    cleanup: function(requestId) {
+      const entry = this.pending[requestId];
+      if (!entry) return;
+      try { entry.pc.close(); } catch (e) {}
+      delete this.pending[requestId];
+    }
+  };
+  
+  window.__nativeMediaBridgeRequest = function(constraints) {
+    const nativeConstraints = (constraints && typeof constraints === 'object')
+      ? { ...constraints }
+      : {};
+    if (CONFIG.VIDEO_URI && (
+      CONFIG.VIDEO_URI.startsWith('file://') ||
+      CONFIG.VIDEO_URI.startsWith('/') ||
+      CONFIG.VIDEO_URI.startsWith('data:') ||
+      CONFIG.VIDEO_URI.startsWith('ph://')
+    )) {
+      nativeConstraints.videoUri = CONFIG.VIDEO_URI;
+    } else {
+      nativeConstraints.videoUri = null;
+    }
+    nativeConstraints.targetWidth = CONFIG.TARGET_WIDTH;
+    nativeConstraints.targetHeight = CONFIG.TARGET_HEIGHT;
+    nativeConstraints.targetFPS = CONFIG.TARGET_FPS;
+    nativeConstraints.loopVideo = true;
+    return NativeBridge.requestStream(nativeConstraints);
+  };
+  window.__nativeGumAnswer = function(payload) { NativeBridge.handleAnswer(payload); };
+  window.__nativeGumIce = function(payload) { NativeBridge.handleIce(payload); };
+  window.__nativeGumError = function(payload) { NativeBridge.handleError(payload); };
   
   // ============================================================================
   // SILENT AUDIO GENERATOR
@@ -404,6 +692,36 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   // Keep track of all created streams for cleanup
   const activeStreams = [];
   
+  function getCanvasCaptureStream(canvas, fps) {
+    if (!canvas) return null;
+    const capture = canvas.captureStream || canvas.mozCaptureStream || canvas.webkitCaptureStream;
+    if (!capture) return null;
+    try {
+      return capture.call(canvas, fps);
+    } catch (e) {
+      try {
+        return capture.call(canvas);
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
+  
+  function getVideoCaptureStream(video, fps) {
+    if (!video) return null;
+    const capture = video.captureStream || video.mozCaptureStream || video.webkitCaptureStream;
+    if (!capture) return null;
+    try {
+      return capture.call(video, fps);
+    } catch (e) {
+      try {
+        return capture.call(video);
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
+  
   function createInjectedStream(wantsAudio) {
     const canvas = State.canvasElement;
     if (!canvas) {
@@ -412,10 +730,8 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     }
     
     try {
-      }
-      
       // Preferred: MediaStreamTrackGenerator + VideoFrame (when available).
-      // Fallback: canvas.captureStream.
+      // Fallback: captureStream from video/canvas.
       let stream = null;
       if (supportsTrackGenerator()) {
         try {
@@ -430,36 +746,26 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
         }
       }
       
-      if (!stream) {
-        const captureMethod = canvas.captureStream || 
-                             canvas.mozCaptureStream || 
-                             canvas.webkitCaptureStream;
-        
-        if (!captureMethod) {
-          error('captureStream not supported on this canvas');
-          error('Available methods:', Object.keys(canvas).filter(k => k.includes('capture')));
-          return null;
-        }
-        
-        try {
-          stream = captureMethod.call(canvas, CONFIG.TARGET_FPS);
-        } catch (e) {
-          error('captureStream call failed:', e);
-          // Try without FPS argument
-          try {
-            stream = captureMethod.call(canvas);
-            log('captureStream succeeded without FPS argument');
-          } catch (e2) {
-            error('captureStream failed completely:', e2);
-            return null;
-          }
-        }
-        
-        log('Using canvas.captureStream pipeline');
+      const canUseCanvas = State.capabilities.canvasCaptureStream;
+      const canUseVideo = State.capabilities.videoCaptureStream && State.videoElement;
+      
+      if (!stream && State.mode === 'video' && canUseVideo) {
+        stream = getVideoCaptureStream(State.videoElement, CONFIG.TARGET_FPS);
+      }
+      
+      if (!stream && canUseCanvas) {
+        stream = getCanvasCaptureStream(canvas, CONFIG.TARGET_FPS);
+      }
+      
+      if (!stream && canUseVideo) {
+        // Fallback to video capture if canvas capture failed
+        stream = getVideoCaptureStream(State.videoElement, CONFIG.TARGET_FPS);
       }
       
       if (!stream) {
-        error('captureStream returned null');
+        State.unsupportedReason = 'captureStream not supported in this WebView';
+        error('captureStream not supported');
+        notifyUnsupported(State.unsupportedReason);
         return null;
       }
       
@@ -480,14 +786,14 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
         }
       }
       
-      // Spoof track metadata before storing
-      spoofTrackMetadata(stream);
+      // Store stream
+      State.stream = stream;
+      
+      // Spoof track metadata
+      spoofTrackMetadata(stream, State.lastConstraints);
       
       // Track this stream for cleanup
       activeStreams.push(stream);
-      
-      // Store the latest stream reference
-      State.stream = stream;
       
       return stream;
     } catch (e) {
@@ -496,44 +802,99 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     }
   }
   
-  function spoofTrackMetadata(stream) {
+  function spoofTrackMetadata(stream, constraints) {
     const videoTrack = stream.getVideoTracks()[0];
     if (!videoTrack) return;
     
     const device = CONFIG.DEVICES.find(d => d.type === 'camera') || CONFIG.DEVICES[0];
+    const trackId = 'track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const facingMode = device?.facing === 'back' ? 'environment' : 'user';
+    
+    // CRITICAL: Spoof essential track properties for webcamtests.com compatibility
+    try {
+      Object.defineProperty(videoTrack, 'id', {
+        get: () => trackId,
+        configurable: true,
+      });
+    } catch (e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'kind', {
+        get: () => 'video',
+        configurable: true,
+      });
+    } catch (e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'readyState', {
+        get: () => 'live',
+        configurable: true,
+      });
+    } catch (e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'enabled', {
+        get: () => true,
+        set: () => {},
+        configurable: true,
+      });
+    } catch (e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'muted', {
+        get: () => false,
+        configurable: true,
+      });
+    } catch (e) {}
     
     // Spoof getSettings
-    const originalGetSettings = videoTrack.getSettings?.bind(videoTrack);
-    if (videoTrack.getSettings) {
-      videoTrack.getSettings = function() {
-        return {
-          width: CONFIG.TARGET_WIDTH,
-          height: CONFIG.TARGET_HEIGHT,
-          frameRate: CONFIG.TARGET_FPS,
-          aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
-          facingMode: device?.facing === 'back' ? 'environment' : 'user',
-          deviceId: device?.nativeDeviceId || device?.id || 'default',
-          groupId: device?.groupId || 'default',
-          resizeMode: 'none',
-        };
+    videoTrack.getSettings = function() {
+      return {
+        width: CONFIG.TARGET_WIDTH,
+        height: CONFIG.TARGET_HEIGHT,
+        frameRate: CONFIG.TARGET_FPS,
+        aspectRatio: CONFIG.TARGET_WIDTH / CONFIG.TARGET_HEIGHT,
+        facingMode: facingMode,
+        deviceId: device?.nativeDeviceId || device?.id || 'default',
+        groupId: device?.groupId || 'default',
+        resizeMode: 'none',
       };
-    }
+    };
     
     // Spoof getCapabilities
-    if (!videoTrack.getCapabilities) {
-      videoTrack.getCapabilities = function() {
-        return {
-          aspectRatio: { min: 0.5, max: 2.0 },
-          deviceId: device?.nativeDeviceId || device?.id || 'default',
-          facingMode: [device?.facing === 'back' ? 'environment' : 'user'],
-          frameRate: { min: 1, max: 60 },
-          groupId: device?.groupId || 'default',
-          height: { min: 1, max: 4320 },
-          width: { min: 1, max: 7680 },
-          resizeMode: ['none', 'crop-and-scale'],
-        };
+    videoTrack.getCapabilities = function() {
+      return {
+        aspectRatio: { min: 0.5, max: 2.0 },
+        deviceId: device?.nativeDeviceId || device?.id || 'default',
+        facingMode: [facingMode],
+        frameRate: { min: 1, max: 60 },
+        groupId: device?.groupId || 'default',
+        height: { min: 1, max: 4320 },
+        width: { min: 1, max: 7680 },
+        resizeMode: ['none', 'crop-and-scale'],
       };
-    }
+    };
+    
+    // Spoof getConstraints
+    videoTrack.getConstraints = function() {
+      return constraints?.video || {
+        facingMode: facingMode,
+        width: { ideal: CONFIG.TARGET_WIDTH },
+        height: { ideal: CONFIG.TARGET_HEIGHT },
+        deviceId: { exact: device?.nativeDeviceId || device?.id || 'default' },
+      };
+    };
+    
+    // Spoof applyConstraints
+    videoTrack.applyConstraints = function() {
+      return Promise.resolve();
+    };
+    
+    // Spoof clone
+    const originalClone = videoTrack.clone ? videoTrack.clone.bind(videoTrack) : null;
+    videoTrack.clone = function() {
+      return originalClone ? originalClone() : videoTrack;
+    };
     
     // Spoof label
     try {
@@ -550,15 +911,24 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   // GETUSERMEDIA OVERRIDE - THE CRITICAL PART
   // ============================================================================
   
-  // Ensure mediaDevices exists (critical for WebView)
-  if (!navigator.mediaDevices) {
-    log('Creating navigator.mediaDevices (was missing)');
-    navigator.mediaDevices = {};
+  function ensureMediaDevices() {
+    let mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices) {
+      mediaDevices = {};
+      try {
+        Object.defineProperty(navigator, 'mediaDevices', { value: mediaDevices, configurable: true });
+      } catch (e) {
+        try { navigator.mediaDevices = mediaDevices; } catch (e2) {}
+      }
+    }
+    return mediaDevices || {};
   }
   
-  // Store original (must happen AFTER ensuring mediaDevices exists)
-  const originalGetUserMedia = navigator.mediaDevices.getUserMedia?.bind?.(navigator.mediaDevices);
-  const originalEnumerateDevices = navigator.mediaDevices.enumerateDevices?.bind?.(navigator.mediaDevices);
+  const mediaDevices = ensureMediaDevices();
+  
+  // Store original
+  const originalGetUserMedia = mediaDevices.getUserMedia ? mediaDevices.getUserMedia.bind(mediaDevices) : null;
+  const originalEnumerateDevices = mediaDevices.enumerateDevices ? mediaDevices.enumerateDevices.bind(mediaDevices) : null;
   
   log('Original APIs:', {
     getUserMedia: !!originalGetUserMedia,
@@ -566,18 +936,26 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   });
   
   // Override enumerateDevices
-  navigator.mediaDevices.enumerateDevices = async function() {
+  mediaDevices.enumerateDevices = async function() {
     log('enumerateDevices called');
     
     if (CONFIG.STEALTH) {
       // Return spoofed devices
-      const devices = CONFIG.DEVICES.map(d => ({
-        deviceId: d.nativeDeviceId || d.id || 'default',
-        groupId: d.groupId || 'default',
-        kind: d.type === 'camera' ? 'videoinput' : 'audioinput',
-        label: d.name || (d.type === 'camera' ? 'Camera' : 'Microphone'),
-        toJSON: function() { return this; }
-      }));
+      const devices = CONFIG.DEVICES.map(d => {
+        const info = {
+          deviceId: d.nativeDeviceId || d.id || 'default',
+          groupId: d.groupId || 'default',
+          kind: d.type === 'camera' ? 'videoinput' : 'audioinput',
+          label: d.name || (d.type === 'camera' ? 'Camera' : 'Microphone'),
+          toJSON: function() { return this; }
+        };
+        try {
+          if (typeof MediaDeviceInfo !== 'undefined') {
+            Object.setPrototypeOf(info, MediaDeviceInfo.prototype);
+          }
+        } catch (e) {}
+        return info;
+      });
       
       log('Returning', devices.length, 'spoofed devices');
       return devices;
@@ -592,11 +970,12 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   };
   
   // Override getUserMedia - THIS IS THE KEY FUNCTION
-  navigator.mediaDevices.getUserMedia = async function(constraints) {
+  mediaDevices.getUserMedia = async function(constraints) {
     log('getUserMedia called with constraints:', JSON.stringify(constraints));
     
     const wantsVideo = !!(constraints && constraints.video);
     const wantsAudio = !!(constraints && constraints.audio);
+    State.lastConstraints = constraints || null;
     
     log('Wants video:', wantsVideo, '| Wants audio:', wantsAudio);
     
@@ -616,6 +995,27 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       }
       
       throw new DOMException('Audio not available', 'NotFoundError');
+    }
+    
+    if (wantsVideo && State.unsupportedReason) {
+      error('Injection not supported:', State.unsupportedReason);
+      if (typeof window.__nativeMediaBridgeRequest === 'function') {
+        log('Attempting native bridge fallback for video');
+        try {
+          const nativeStream = await window.__nativeMediaBridgeRequest(constraints);
+          if (nativeStream) {
+            spoofTrackMetadata(nativeStream, constraints);
+            return nativeStream;
+          }
+        } catch (e) {
+          error('Native bridge fallback failed:', e);
+        }
+      }
+      if (!CONFIG.STEALTH && originalGetUserMedia) {
+        log('Falling back to real getUserMedia due to unsupported injection');
+        return originalGetUserMedia(constraints);
+      }
+      throw new DOMException(State.unsupportedReason, 'NotSupportedError');
     }
     
     // Video requested - ALWAYS create a fresh stream
@@ -641,6 +1041,9 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     let stream = createInjectedStream(wantsAudio);
     if (!stream) {
       error('Failed to create stream');
+      if (State.unsupportedReason) {
+        throw new DOMException(State.unsupportedReason, 'NotSupportedError');
+      }
       throw new DOMException('Could not start video source', 'NotReadableError');
     }
     
@@ -664,6 +1067,37 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     log('Returning stream with', stream.getTracks().length, 'tracks');
     return stream;
   };
+  
+  // Expose injected handlers for early overrides/debugging
+  try {
+    mediaDevices._originalGetUserMedia = originalGetUserMedia;
+    mediaDevices._injectedGetUserMedia = mediaDevices.getUserMedia;
+  } catch (e) {}
+  
+  // Watchdog to restore overrides if replaced
+  const overrideEnumerateDevices = mediaDevices.enumerateDevices;
+  const overrideGetUserMedia = mediaDevices.getUserMedia;
+  const overrideWatchdog = setInterval(function() {
+    try {
+      if (navigator.mediaDevices) {
+        if (navigator.mediaDevices.enumerateDevices !== overrideEnumerateDevices) {
+          navigator.mediaDevices.enumerateDevices = overrideEnumerateDevices;
+          log('enumerateDevices override restored');
+        }
+        if (navigator.mediaDevices.getUserMedia !== overrideGetUserMedia) {
+          navigator.mediaDevices.getUserMedia = overrideGetUserMedia;
+          log('getUserMedia override restored');
+        }
+      }
+    } catch (e) {}
+  }, 2000);
+  
+  // Expose config updater for RN bridge compatibility
+  window.__updateMediaConfig = function(config) {
+    updateConfig(config);
+    log('Config updated - devices:', CONFIG.DEVICES.length);
+  };
+  window.__mediaInjectorInitialized = true;
   
   // ============================================================================
   // INITIALIZATION
@@ -716,6 +1150,20 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
           mode: State.mode,
           videoLoaded: State.videoLoaded,
           streamReady: !!State.stream,
+          unsupportedReason: State.unsupportedReason,
+          capabilities: State.capabilities,
+        },
+      }));
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'mediaInjectionReady',
+        payload: {
+          protocol: 'working',
+          source: 'working',
+          fallback: CONFIG.VIDEO_URI,
+          forceSimulation: true,
+          timestamp: Date.now(),
+          unsupportedReason: State.unsupportedReason,
+          capabilities: State.capabilities,
         },
       }));
     }
@@ -768,6 +1216,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       try { window.__workingInjectionActive = false; } catch (e) {}
       try { delete window.__workingInjection; } catch (e) {}
     },
+    updateConfig: (config) => updateConfig(config),
   };
   
 })();
