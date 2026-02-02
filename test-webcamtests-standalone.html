@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcamtests.com Protocol Test - Standalone</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: #00ff88;
+            margin-bottom: 20px;
+        }
+        
+        .protocol-test {
+            background: #1a1a1a;
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .protocol-test h2 {
+            font-size: 18px;
+            margin-bottom: 12px;
+            color: #00aaff;
+        }
+        
+        .test-button {
+            background: #00ff88;
+            color: #0a0a0a;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        .test-button:disabled {
+            background: #333;
+            cursor: not-allowed;
+        }
+        
+        .results {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .success {
+            color: #00ff88;
+        }
+        
+        .error {
+            color: #ff4757;
+        }
+        
+        .info {
+            color: #00aaff;
+        }
+        
+        #videoPreview {
+            width: 640px;
+            height: 480px;
+            background: #000;
+            border: 2px solid #00ff88;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .log-entry {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎥 Webcamtests.com Protocol Test Suite</h1>
+        <p style="color: rgba(255,255,255,0.6); margin-bottom: 20px;">
+            This page tests each video capture injection protocol to verify compatibility with webcamtests.com/recorder
+        </p>
+        
+        <div class="protocol-test">
+            <h2>Test 1: Working Injection Protocol</h2>
+            <p style="color: rgba(255,255,255,0.6); margin-bottom: 12px;">
+                Bulletproof canvas-based injection with immediate getUserMedia override
+            </p>
+            <button class="test-button" onclick="testProtocol('working')">Run Test</button>
+            <button class="test-button" onclick="clearResults('working')">Clear</button>
+            <div id="results-working" class="results" style="display: none;"></div>
+        </div>
+        
+        <div class="protocol-test">
+            <h2>Test 2: Standard Injection (Protocol 1)</h2>
+            <p style="color: rgba(255,255,255,0.6); margin-bottom: 12px;">
+                Standard media injection with comprehensive track spoofing
+            </p>
+            <button class="test-button" onclick="testProtocol('protocol1')">Run Test</button>
+            <button class="test-button" onclick="clearResults('protocol1')">Clear</button>
+            <div id="results-protocol1" class="results" style="display: none;"></div>
+        </div>
+        
+        <div class="protocol-test">
+            <h2>Test 3: Advanced Protocol 2</h2>
+            <p style="color: rgba(255,255,255,0.6); margin-bottom: 12px;">
+                Advanced injection with WebRTC relay, ASI, and GPU processing
+            </p>
+            <button class="test-button" onclick="testProtocol('protocol2')">Run Test</button>
+            <button class="test-button" onclick="clearResults('protocol2')">Clear</button>
+            <div id="results-protocol2" class="results" style="display: none;"></div>
+        </div>
+        
+        <div class="protocol-test">
+            <h2>Test 4: Sonnet Protocol</h2>
+            <p style="color: rgba(255,255,255,0.6); margin-bottom: 12px;">
+                AI-powered adaptive injection with behavioral mimicry
+            </p>
+            <button class="test-button" onclick="testProtocol('sonnet')">Run Test</button>
+            <button class="test-button" onclick="clearResults('sonnet')">Clear</button>
+            <div id="results-sonnet" class="results" style="display: none;"></div>
+        </div>
+        
+        <div class="protocol-test">
+            <h2>Live Video Preview</h2>
+            <video id="videoPreview" autoplay playsinline muted></video>
+            <p style="margin-top: 8px; color: rgba(255,255,255,0.6); font-size: 12px;">
+                The test stream will appear here when getUserMedia is called
+            </p>
+        </div>
+    </div>
+    
+    <script>
+        // Test configuration
+        const TEST_DEVICES = [
+            {
+                id: 'test_camera_front',
+                nativeDeviceId: 'test_camera_front_native',
+                name: 'Test Camera (Front)',
+                type: 'camera',
+                facing: 'front',
+                isDefault: true,
+                isPrimary: true,
+                groupId: 'group_1',
+                simulationEnabled: true,
+                capabilities: {
+                    videoResolutions: [
+                        { width: 1920, height: 1080, fps: 30 },
+                        { width: 1280, height: 720, fps: 30 },
+                    ],
+                },
+            },
+        ];
+        
+        function log(protocolId, message, type = 'info') {
+            const resultsDiv = document.getElementById(`results-${protocolId}`);
+            if (!resultsDiv) return;
+            
+            resultsDiv.style.display = 'block';
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            resultsDiv.appendChild(entry);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+            
+            console.log(`[${protocolId}]`, message);
+        }
+        
+        function clearResults(protocolId) {
+            const resultsDiv = document.getElementById(`results-${protocolId}`);
+            if (resultsDiv) {
+                resultsDiv.innerHTML = '';
+                resultsDiv.style.display = 'none';
+            }
+        }
+        
+        async function testProtocol(protocolId) {
+            log(protocolId, '========================================', 'info');
+            log(protocolId, `Starting test for: ${protocolId}`, 'info');
+            log(protocolId, '========================================', 'info');
+            
+            // First, check if protocol is already loaded
+            const state = {
+                hasWorkingInjection: !!window.__workingInjectionActive,
+                hasMediaInjector: !!window.__mediaInjectorInitialized,
+                hasAdvancedProtocol2: !!window.__advancedProtocol2Initialized,
+                hasSonnetProtocol: !!window.__sonnetProtocolInitialized,
+            };
+            
+            log(protocolId, `Current state: ${JSON.stringify(state)}`, 'info');
+            
+            // Test 1: Check enumerateDevices
+            log(protocolId, 'Test 1: Checking enumerateDevices...', 'info');
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                if (videoDevices.length > 0) {
+                    log(protocolId, `✓ Found ${videoDevices.length} video device(s)`, 'success');
+                    videoDevices.forEach(d => {
+                        log(protocolId, `  - ${d.label} (${d.deviceId})`, 'info');
+                    });
+                } else {
+                    log(protocolId, `✗ No video devices found`, 'error');
+                }
+            } catch (e) {
+                log(protocolId, `✗ enumerateDevices failed: ${e.message}`, 'error');
+            }
+            
+            // Test 2: Check getUserMedia
+            log(protocolId, 'Test 2: Requesting camera via getUserMedia...', 'info');
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30 },
+                    },
+                    audio: false,
+                });
+                
+                log(protocolId, `✓ Stream created! ID: ${stream.id}`, 'success');
+                log(protocolId, `  Active: ${stream.active}`, 'info');
+                
+                // Test 3: Check tracks
+                const videoTracks = stream.getVideoTracks();
+                log(protocolId, `Test 3: Checking video tracks (${videoTracks.length} found)...`, 'info');
+                
+                if (videoTracks.length > 0) {
+                    const track = videoTracks[0];
+                    log(protocolId, `✓ Video track found`, 'success');
+                    log(protocolId, `  ID: ${track.id}`, 'info');
+                    log(protocolId, `  Label: ${track.label}`, 'info');
+                    log(protocolId, `  ReadyState: ${track.readyState}`, 'info');
+                    log(protocolId, `  Enabled: ${track.enabled}`, 'info');
+                    log(protocolId, `  Muted: ${track.muted}`, 'info');
+                    
+                    // Test 4: Check getSettings
+                    log(protocolId, 'Test 4: Checking track.getSettings()...', 'info');
+                    if (typeof track.getSettings === 'function') {
+                        const settings = track.getSettings();
+                        log(protocolId, `✓ getSettings() works`, 'success');
+                        log(protocolId, `  Width: ${settings.width}`, 'info');
+                        log(protocolId, `  Height: ${settings.height}`, 'info');
+                        log(protocolId, `  FrameRate: ${settings.frameRate}`, 'info');
+                        log(protocolId, `  FacingMode: ${settings.facingMode}`, 'info');
+                        log(protocolId, `  DeviceId: ${settings.deviceId}`, 'info');
+                        
+                        if (!settings.width || !settings.height) {
+                            log(protocolId, `⚠ Missing width/height in settings`, 'error');
+                        }
+                    } else {
+                        log(protocolId, `✗ getSettings() not available`, 'error');
+                    }
+                    
+                    // Test 5: Check getCapabilities
+                    log(protocolId, 'Test 5: Checking track.getCapabilities()...', 'info');
+                    if (typeof track.getCapabilities === 'function') {
+                        const capabilities = track.getCapabilities();
+                        log(protocolId, `✓ getCapabilities() works`, 'success');
+                        log(protocolId, `  Capabilities: ${JSON.stringify(capabilities, null, 2).substring(0, 200)}...`, 'info');
+                    } else {
+                        log(protocolId, `⚠ getCapabilities() not available`, 'error');
+                    }
+                    
+                    // Test 6: Display in video element
+                    log(protocolId, 'Test 6: Displaying stream in video element...', 'info');
+                    const video = document.getElementById('videoPreview');
+                    video.srcObject = stream;
+                    
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const timeout = setTimeout(() => reject(new Error('Video load timeout')), 5000);
+                            video.onloadedmetadata = () => {
+                                clearTimeout(timeout);
+                                resolve();
+                            };
+                            video.onerror = (e) => {
+                                clearTimeout(timeout);
+                                reject(e);
+                            };
+                        });
+                        
+                        log(protocolId, `✓ Video element loaded`, 'success');
+                        log(protocolId, `  videoWidth: ${video.videoWidth}`, 'info');
+                        log(protocolId, `  videoHeight: ${video.videoHeight}`, 'info');
+                        log(protocolId, `  readyState: ${video.readyState}`, 'info');
+                        
+                        if (video.videoWidth === 0 || video.videoHeight === 0) {
+                            log(protocolId, `⚠ Video dimensions are 0!`, 'error');
+                        }
+                    } catch (e) {
+                        log(protocolId, `✗ Video element error: ${e.message}`, 'error');
+                    }
+                    
+                    log(protocolId, '========================================', 'success');
+                    log(protocolId, `✓ ALL TESTS PASSED FOR ${protocolId}`, 'success');
+                    log(protocolId, '========================================', 'success');
+                    
+                } else {
+                    log(protocolId, `✗ No video tracks in stream`, 'error');
+                }
+                
+            } catch (e) {
+                log(protocolId, `✗ getUserMedia failed: ${e.message}`, 'error');
+                log(protocolId, `  Error name: ${e.name}`, 'error');
+                log(protocolId, `  Error stack: ${e.stack}`, 'error');
+            }
+        }
+        
+        // On page load, show instructions
+        window.addEventListener('load', () => {
+            console.log('Webcamtests.com Protocol Test Suite loaded');
+            console.log('This page tests video capture injection protocols');
+            console.log('Click a "Run Test" button to start testing');
+        });
+    </script>
+</body>
+</html>
