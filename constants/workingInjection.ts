@@ -61,10 +61,25 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     AUDIO_ENABLED: true,
   };
   
-  const log = CONFIG.DEBUG 
-    ? (...args) => console.log('[WorkingInject]', ...args)
-    : () => {};
+  const log = (...args) => {
+    if (CONFIG.DEBUG) {
+      console.log('[WorkingInject]', ...args);
+    }
+  };
   const error = (...args) => console.error('[WorkingInject]', ...args);
+  
+  // Basic polyfills for environments that throttle rAF
+  if (!window.performance) {
+    window.performance = { now: function() { return Date.now(); } };
+  } else if (typeof window.performance.now !== 'function') {
+    window.performance.now = function() { return Date.now(); };
+  }
+  if (!window.requestAnimationFrame) {
+    window.requestAnimationFrame = function(cb) { return setTimeout(function() { cb(Date.now()); }, 16); };
+  }
+  if (!window.cancelAnimationFrame) {
+    window.cancelAnimationFrame = function(id) { clearTimeout(id); };
+  }
   
   log('========================================');
   log('WORKING VIDEO INJECTION - INITIALIZING');
@@ -85,6 +100,11 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     stream: null,
     videoLoaded: false,
     mode: 'canvas', // 'video' or 'canvas'
+    audioTrack: null,
+    audioContext: null,
+    audioOscillator: null,
+    audioGain: null,
+    audioDestination: null,
   };
   
   // ============================================================================
@@ -93,13 +113,13 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   
   function createSilentAudioTrack() {
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) {
         log('AudioContext not available');
         return null;
       }
       
-      const audioContext = new AudioContext();
+      const audioContext = new AudioContextCtor();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       const destination = audioContext.createMediaStreamDestination();
@@ -110,8 +130,17 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       gainNode.connect(destination);
       oscillator.start();
       
+      if (typeof audioContext.resume === 'function' && audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => {});
+      }
+      
       const audioTracks = destination.stream.getAudioTracks();
       if (audioTracks.length > 0) {
+        State.audioContext = audioContext;
+        State.audioOscillator = oscillator;
+        State.audioGain = gainNode;
+        State.audioDestination = destination;
+        State.audioTrack = audioTracks[0];
         log('Silent audio track created');
         return audioTracks[0];
       }
@@ -119,6 +148,43 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       error('Failed to create audio track:', e);
     }
     return null;
+  }
+  
+  function cleanupAudio() {
+    if (State.audioTrack) {
+      try { State.audioTrack.stop(); } catch (e) {}
+    }
+    if (State.audioOscillator) {
+      try { State.audioOscillator.stop(); } catch (e) {}
+    }
+    if (State.audioContext && State.audioContext.state !== 'closed') {
+      try { State.audioContext.close(); } catch (e) {}
+    }
+    State.audioTrack = null;
+    State.audioContext = null;
+    State.audioOscillator = null;
+    State.audioGain = null;
+    State.audioDestination = null;
+  }
+  
+  function removeAudioTracks(stream) {
+    if (!stream) return;
+    const tracks = stream.getAudioTracks();
+    tracks.forEach(function(track) {
+      try { stream.removeTrack(track); } catch (e) {}
+      try { track.stop(); } catch (e) {}
+    });
+    cleanupAudio();
+  }
+  
+  function ensureAudioTrack(stream) {
+    if (!stream) return;
+    if (stream.getAudioTracks().length > 0) return;
+    const audioTrack = createSilentAudioTrack();
+    if (audioTrack) {
+      stream.addTrack(audioTrack);
+      log('Added audio track');
+    }
   }
   
   // ============================================================================
@@ -250,6 +316,50 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     });
   }
   
+  function resolveVideoUriFromConfig(config) {
+    const cfgDevices = Array.isArray(config?.devices) ? config.devices : CONFIG.DEVICES;
+    const preferred = cfgDevices.find(d => d.type === 'camera' && d.simulationEnabled && d.assignedVideoUri)
+      || cfgDevices.find(d => d.type === 'camera' && d.assignedVideoUri)
+      || cfgDevices.find(d => d.assignedVideoUri);
+    if (preferred && preferred.assignedVideoUri) {
+      return preferred.assignedVideoUri;
+    }
+    if (config && config.fallbackVideoUri) {
+      return config.fallbackVideoUri;
+    }
+    return CONFIG.VIDEO_URI || null;
+  }
+  
+  function updateVideoSource(nextUri) {
+    const normalized = nextUri || null;
+    if (normalized === CONFIG.VIDEO_URI) {
+      return;
+    }
+    CONFIG.VIDEO_URI = normalized;
+    State.videoLoaded = false;
+    
+    if (State.videoElement) {
+      try { State.videoElement.pause(); } catch (e) {}
+      try {
+        if (State.videoElement.parentNode) {
+          State.videoElement.parentNode.removeChild(State.videoElement);
+        }
+      } catch (e) {}
+    }
+    State.videoElement = null;
+    
+    if (CONFIG.VIDEO_URI) {
+      initVideoStream().then((ok) => {
+        State.mode = ok ? 'video' : 'canvas';
+        log('Video source updated - mode:', State.mode);
+      }).catch(() => {
+        State.mode = 'canvas';
+      });
+    } else {
+      State.mode = 'canvas';
+    }
+  }
+  
   // ============================================================================
   // RENDER LOOP
   // ============================================================================
@@ -338,7 +448,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   // STREAM CREATION
   // ============================================================================
   
-  function createInjectedStream() {
+  function createInjectedStream(includeAudio) {
     const canvas = State.canvasElement;
     if (!canvas) {
       error('Cannot create stream: canvas not initialized');
@@ -372,13 +482,9 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       
       log('Stream created with', videoTracks.length, 'video track(s)');
       
-      // Add silent audio if enabled
-      if (CONFIG.AUDIO_ENABLED) {
-        const audioTrack = createSilentAudioTrack();
-        if (audioTrack) {
-          stream.addTrack(audioTrack);
-          log('Added audio track');
-        }
+      // Add silent audio only when requested
+      if (includeAudio) {
+        ensureAudioTrack(stream);
       }
       
       // Store stream
@@ -519,19 +625,28 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       await initializeSync();
     }
     
-    // Try to create stream if not already created
-    if (!State.stream) {
+    // Ensure we have a stream that matches audio constraints
+    let stream = State.stream;
+    const needsAudio = wantsAudio === true;
+    const hasAudio = stream && stream.getAudioTracks().length > 0;
+    
+    if (!stream) {
       log('Creating stream on demand...');
-      const stream = createInjectedStream();
+      stream = createInjectedStream(needsAudio);
       if (!stream) {
         error('Failed to create stream');
         throw new DOMException('Could not start video source', 'NotReadableError');
       }
+      State.stream = stream;
+    } else if (needsAudio && !hasAudio) {
+      ensureAudioTrack(stream);
+    } else if (!needsAudio && hasAudio) {
+      removeAudioTracks(stream);
     }
     
     // Return the stream
-    log('Returning stream with', State.stream.getTracks().length, 'tracks');
-    return State.stream;
+    log('Returning stream with', stream.getTracks().length, 'tracks');
+    return stream;
   };
   
   // ============================================================================
@@ -565,8 +680,8 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     // Start rendering
     startRenderLoop();
     
-    // Create initial stream
-    const stream = createInjectedStream();
+    // Create initial stream (video-only; audio added on demand)
+    const stream = createInjectedStream(false);
     if (stream) {
       log('Initial stream created successfully');
     } else {
@@ -605,6 +720,27 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     getState: () => State,
     getStream: () => State.stream,
     reinitialize: () => initializeSync(),
+  };
+  
+  // Keep parity with media injection updates from RN
+  window.__updateMediaConfig = function(config) {
+    if (!config || typeof config !== 'object') return;
+    if (typeof config.stealthMode === 'boolean') {
+      CONFIG.STEALTH = config.stealthMode;
+    }
+    if (typeof config.debugEnabled === 'boolean') {
+      CONFIG.DEBUG = config.debugEnabled;
+    }
+    if (Array.isArray(config.devices)) {
+      CONFIG.DEVICES = config.devices;
+    }
+    
+    const nextVideoUri = resolveVideoUriFromConfig(config);
+    updateVideoSource(nextVideoUri);
+    
+    if (State.stream) {
+      spoofTrackMetadata(State.stream);
+    }
   };
   
 })();

@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
+import { createWorkingInjectionScript } from '../constants/workingInjection';
+import { createSonnetProtocolScript, type SonnetProtocolConfig } from '../constants/sonnetProtocol';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
 
 type ProtocolRun = {
@@ -132,33 +134,29 @@ async function runOnce(run: ProtocolRun) {
 async function main() {
   const protocolRuns: ProtocolRun[] = [
     {
-      name: 'Protocol 1: standard',
+      name: 'Protocol 1: standard (working injection)',
       id: 'standard',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'standard',
-        protocolLabel: 'standard',
+      injectedBeforeLoad: createWorkingInjectionScript({
+        videoUri: null,
+        devices: DEVICES as any,
         stealthMode: true,
-        forceSimulation: true,
         debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
       }),
     },
     {
-      name: 'Protocol 2: allowlist (createMediaInjectionScript path)',
+      name: 'Protocol 2: allowlist (working injection)',
       id: 'allowlist',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'allowlist',
-        protocolLabel: 'allowlist',
+      injectedBeforeLoad: createWorkingInjectionScript({
+        videoUri: null,
+        devices: DEVICES as any,
         stealthMode: true,
-        forceSimulation: true,
         debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
       }),
     },
     {
@@ -192,7 +190,7 @@ async function main() {
       }),
     },
     {
-      name: 'Protocol 5: holographic',
+      name: 'Protocol 5: holographic (media injection fallback)',
       id: 'holographic',
       injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
         protocolId: 'holographic',
@@ -205,6 +203,28 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+    },
+    {
+      name: 'Protocol 5: sonnet (AI-powered)',
+      id: 'sonnet',
+      injectedBeforeLoad: createSonnetProtocolScript(
+        DEVICES as any,
+        {
+          enabled: true,
+          aiAdaptiveQuality: true,
+          behavioralMimicry: true,
+          neuralStyleTransfer: false,
+          predictiveFrameOptimization: true,
+          quantumTimingRandomness: true,
+          biometricSimulation: true,
+          realTimeProfiler: true,
+          adaptiveStealth: true,
+          performanceTarget: 'balanced',
+          stealthIntensity: 'maximum',
+          learningMode: true,
+        } as SonnetProtocolConfig,
+        undefined
+      ),
     },
     {
       name: 'Protocol 2: Advanced Relay (createAdvancedProtocol2Script path)',

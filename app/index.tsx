@@ -35,8 +35,8 @@ import {
   BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
   createSimplifiedInjectionScript,
-  createWorkingInjectionScript,
 } from '@/constants/browserScripts';
+import { createWorkingInjectionScript } from '@/constants/workingInjection';
 import { clearAllDebugLogs } from '@/utils/logger';
 import {
   formatVideoUriForWebView,
