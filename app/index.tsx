@@ -1009,6 +1009,10 @@ export default function MotionBrowserScreen() {
     console.log('[App] Navigating to webcam test:', testUrl);
   }, []);
 
+  const handleProtocolTester = useCallback(() => {
+    router.push('/protocol-tester');
+  }, []);
+
   const handleOpenInBrowser = useCallback(async () => {
     try {
       const canOpen = await Linking.canOpenURL(url);
