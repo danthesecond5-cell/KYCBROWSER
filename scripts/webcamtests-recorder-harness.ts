@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
+import { createWorkingInjectionScript } from '../constants/workingInjection';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
 
 type ProtocolRun = {
@@ -130,36 +131,26 @@ async function runOnce(run: ProtocolRun) {
 }
 
 async function main() {
+  const workingInjectionScript = createWorkingInjectionScript({
+    videoUri: null,
+    devices: DEVICES as any,
+    stealthMode: true,
+    debugEnabled: false,
+    targetWidth: 1080,
+    targetHeight: 1920,
+    targetFPS: 30,
+  });
+  
   const protocolRuns: ProtocolRun[] = [
     {
-      name: 'Protocol 1: standard',
+      name: 'Protocol 1: standard (working injection path)',
       id: 'standard',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'standard',
-        protocolLabel: 'standard',
-        stealthMode: true,
-        forceSimulation: true,
-        debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
-      }),
+      injectedBeforeLoad: workingInjectionScript,
     },
     {
-      name: 'Protocol 2: allowlist (createMediaInjectionScript path)',
+      name: 'Protocol 2: allowlist (working injection path)',
       id: 'allowlist',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'allowlist',
-        protocolLabel: 'allowlist',
-        stealthMode: true,
-        forceSimulation: true,
-        debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
-      }),
+      injectedBeforeLoad: workingInjectionScript,
     },
     {
       name: 'Protocol 3: protected',

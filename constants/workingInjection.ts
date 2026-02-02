@@ -49,6 +49,8 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     return;
   }
   window.__workingInjectionActive = true;
+  // Prevent legacy injector from overwriting this implementation
+  window.__mediaInjectorInitialized = true;
   
   const CONFIG = {
     DEBUG: ${debugEnabled},
@@ -61,10 +63,17 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     AUDIO_ENABLED: true,
   };
   
-  const log = CONFIG.DEBUG 
+  let log = CONFIG.DEBUG 
     ? (...args) => console.log('[WorkingInject]', ...args)
     : () => {};
   const error = (...args) => console.error('[WorkingInject]', ...args);
+  
+  function setDebug(enabled) {
+    CONFIG.DEBUG = !!enabled;
+    log = CONFIG.DEBUG
+      ? (...args) => console.log('[WorkingInject]', ...args)
+      : () => {};
+  }
   
   log('========================================');
   log('WORKING VIDEO INJECTION - INITIALIZING');
@@ -86,6 +95,25 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     videoLoaded: false,
     mode: 'canvas', // 'video' or 'canvas'
   };
+  
+  function syncMediaSimConfig(partial) {
+    if (!window.__mediaSimConfig) {
+      window.__mediaSimConfig = {};
+    }
+    if (partial && typeof partial === 'object') {
+      try {
+        Object.assign(window.__mediaSimConfig, partial);
+      } catch (e) {}
+    }
+  }
+  
+  syncMediaSimConfig({
+    devices: CONFIG.DEVICES,
+    stealthMode: CONFIG.STEALTH,
+    fallbackVideoUri: CONFIG.VIDEO_URI,
+    debugEnabled: CONFIG.DEBUG,
+    protocolId: 'standard',
+  });
   
   // ============================================================================
   // SILENT AUDIO GENERATOR
@@ -248,6 +276,64 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       video.src = CONFIG.VIDEO_URI;
       video.load();
     });
+  }
+  
+  function cleanupVideoElement() {
+    if (!State.videoElement) return;
+    try {
+      State.videoElement.pause();
+      State.videoElement.src = '';
+    } catch (e) {}
+    try {
+      if (State.videoElement.parentNode) {
+        State.videoElement.parentNode.removeChild(State.videoElement);
+      }
+    } catch (e) {}
+    State.videoElement = null;
+    State.videoLoaded = false;
+  }
+  
+  function resolveVideoUriFromConfig(config) {
+    if (!config || typeof config !== 'object') return CONFIG.VIDEO_URI;
+    if (typeof config.videoUri === 'string') return config.videoUri;
+    if (Array.isArray(config.devices)) {
+      const camera =
+        config.devices.find(d => d.type === 'camera' && d.simulationEnabled) ||
+        config.devices.find(d => d.type === 'camera') ||
+        config.devices[0];
+      if (camera && camera.assignedVideoUri) {
+        return camera.assignedVideoUri;
+      }
+    }
+    if (typeof config.fallbackVideoUri === 'string') {
+      return config.fallbackVideoUri;
+    }
+    return CONFIG.VIDEO_URI;
+  }
+  
+  async function applyVideoUri(nextUri) {
+    const normalized = nextUri || null;
+    if (!normalized) {
+      CONFIG.VIDEO_URI = null;
+      cleanupVideoElement();
+      State.mode = 'canvas';
+      return;
+    }
+    
+    if (CONFIG.VIDEO_URI === normalized && State.videoLoaded) {
+      return;
+    }
+    
+    CONFIG.VIDEO_URI = normalized;
+    cleanupVideoElement();
+    State.mode = 'video';
+    
+    const videoOk = await initVideoStream();
+    if (videoOk) {
+      State.mode = 'video';
+    } else {
+      State.mode = 'canvas';
+    }
   }
   
   // ============================================================================
@@ -577,6 +663,44 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     log('Initialization complete - mode:', State.mode);
   }
   
+  // Allow runtime updates without swapping injectors
+  window.__updateMediaConfig = function(config) {
+    if (!config || typeof config !== 'object') return;
+    
+    syncMediaSimConfig(config);
+    
+    if (config.devices) {
+      CONFIG.DEVICES = config.devices;
+    }
+    if (typeof config.stealthMode === 'boolean') {
+      CONFIG.STEALTH = config.stealthMode;
+    }
+    if (typeof config.debugEnabled === 'boolean') {
+      setDebug(config.debugEnabled);
+    }
+    if (typeof config.targetWidth === 'number' && config.targetWidth > 0) {
+      CONFIG.TARGET_WIDTH = config.targetWidth;
+      if (State.canvasElement) State.canvasElement.width = config.targetWidth;
+    }
+    if (typeof config.targetHeight === 'number' && config.targetHeight > 0) {
+      CONFIG.TARGET_HEIGHT = config.targetHeight;
+      if (State.canvasElement) State.canvasElement.height = config.targetHeight;
+    }
+    if (typeof config.targetFPS === 'number' && config.targetFPS > 0) {
+      CONFIG.TARGET_FPS = config.targetFPS;
+    }
+    
+    const nextVideoUri = resolveVideoUriFromConfig(config);
+    applyVideoUri(nextVideoUri).then(() => {
+      if (State.stream) {
+        spoofTrackMetadata(State.stream);
+      }
+      log('Config updated - devices:', CONFIG.DEVICES.length, '| mode:', State.mode);
+    }).catch(err => {
+      error('Config update failed:', err);
+    });
+  };
+  
   // Start initialization immediately
   initializeSync().then(() => {
     log('========================================');
@@ -605,6 +729,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     getState: () => State,
     getStream: () => State.stream,
     reinitialize: () => initializeSync(),
+    updateConfig: (config) => window.__updateMediaConfig && window.__updateMediaConfig(config),
   };
   
 })();
