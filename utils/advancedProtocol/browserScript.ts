@@ -472,6 +472,7 @@ export function createAdvancedProtocol2Script(
     outputStream: null,
     lastFrameTime: 0,
     frameCount: 0,
+    activeStreams: [], // Track all created streams
     
     init: function(width, height) {
       this.outputCanvas = document.createElement('canvas');
@@ -485,8 +486,9 @@ export function createAdvancedProtocol2Script(
       Logger.log('StreamGenerator: Initialized', width, 'x', height);
     },
     
-    start: function() {
-      if (this.isRunning) return this.outputStream;
+    // Start the render loop (only starts once)
+    startRenderLoop: function() {
+      if (this.isRunning) return;
       
       this.isRunning = true;
       this.lastFrameTime = performance.now();
@@ -547,16 +549,41 @@ export function createAdvancedProtocol2Script(
       }
       
       requestAnimationFrame(render);
+      Logger.log('StreamGenerator: Render loop started');
+    },
+    
+    // CRITICAL: Create a fresh stream from the canvas
+    // This must be called for EACH getUserMedia request to avoid "track ended" issues
+    createFreshStream: function() {
+      if (!this.outputCanvas) {
+        Logger.error('StreamGenerator: Canvas not initialized');
+        return null;
+      }
       
-      // Create output stream
       try {
-        this.outputStream = this.outputCanvas.captureStream(CONFIG.TARGET_FPS);
-        Logger.log('StreamGenerator: Started, tracks:', this.outputStream.getTracks().length);
-        return this.outputStream;
+        // Always create a NEW stream from the canvas
+        const stream = this.outputCanvas.captureStream(CONFIG.TARGET_FPS);
+        if (!stream || stream.getVideoTracks().length === 0) {
+          Logger.error('StreamGenerator: captureStream returned no video tracks');
+          return null;
+        }
+        
+        // Track this stream
+        this.activeStreams.push(stream);
+        this.outputStream = stream;
+        
+        Logger.log('StreamGenerator: Fresh stream created, tracks:', stream.getTracks().length);
+        return stream;
       } catch (e) {
         Logger.error('StreamGenerator: captureStream failed', e);
         return null;
       }
+    },
+    
+    // Start render loop and create first stream
+    start: function() {
+      this.startRenderLoop();
+      return this.createFreshStream();
     },
     
     drawGreenScreen: function(ctx, width, height, timestamp) {
@@ -641,14 +668,14 @@ export function createAdvancedProtocol2Script(
     const recommendedRes = ASIModule.getRecommendedResolution();
     
     if (wantsVideo && (CONFIG.STEALTH_MODE || CONFIG.VIDEO_URI)) {
-      Logger.log('getUserMedia: Returning simulated stream');
+      Logger.log('getUserMedia: Creating fresh simulated stream');
       
       // Ensure stream generator is initialized
       if (!StreamGenerator.outputCanvas) {
         StreamGenerator.init(recommendedRes.width, recommendedRes.height);
       }
       
-      // Add video source if configured
+      // Add video source if configured (only once)
       if (CONFIG.VIDEO_URI && !VideoSourceManager.sources.has('primary')) {
         await VideoSourceManager.addSource('primary', CONFIG.VIDEO_URI, 'local_file');
         
@@ -661,12 +688,28 @@ export function createAdvancedProtocol2Script(
         await VideoSourceManager.addSource('synthetic', null, 'synthetic');
       }
       
-      // Start stream generation
-      let stream = StreamGenerator.start();
+      // Ensure render loop is running
+      StreamGenerator.startRenderLoop();
+      
+      // CRITICAL: Create a FRESH stream for each getUserMedia call
+      // This prevents "track ended" issues when sites call getUserMedia multiple times
+      let stream = StreamGenerator.createFreshStream();
       
       if (!stream) {
         Logger.error('getUserMedia: Failed to create stream');
         throw new DOMException('Could not start video source', 'NotReadableError');
+      }
+      
+      // Verify the track is live
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.readyState !== 'live') {
+        Logger.warn('getUserMedia: Track not live, retrying...');
+        // Try one more time
+        stream = StreamGenerator.createFreshStream();
+        if (!stream || stream.getVideoTracks()[0]?.readyState !== 'live') {
+          Logger.error('getUserMedia: Retry failed');
+          throw new DOMException('Could not start video source', 'NotReadableError');
+        }
       }
       
       // Set stream for WebRTC relay
@@ -688,6 +731,7 @@ export function createAdvancedProtocol2Script(
         resolution: recommendedRes,
       });
       
+      Logger.log('getUserMedia: Returning stream with', stream.getTracks().length, 'tracks');
       return stream;
     }
     
