@@ -85,7 +85,17 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     stream: null,
     videoLoaded: false,
     mode: 'canvas', // 'video' or 'canvas'
+    // Optional WebCodecs/TrackGenerator pipeline (more native-like than canvas.captureStream).
+    generators: new Set(), // Set<{ track: MediaStreamTrack, writer: any }>
   };
+
+  function supportsTrackGenerator() {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.MediaStreamTrackGenerator === 'function' &&
+      typeof window.VideoFrame === 'function'
+    );
+  }
   
   // ============================================================================
   // SILENT AUDIO GENERATOR
@@ -298,6 +308,30 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
         // Canvas mode - draw animated green screen
         drawGreenScreen(ctx, canvas.width, canvas.height, timestamp);
       }
+
+      // If using TrackGenerators, push a frame into each generator.
+      if (State.generators && State.generators.size > 0) {
+        try {
+          State.generators.forEach((entry) => {
+            try {
+              // VideoFrame can be constructed from a canvas in Chromium/WebView builds that support WebCodecs.
+              const frame = new window.VideoFrame(canvas, { timestamp: Math.floor(timestamp * 1000) }); // microseconds-ish
+              entry.writer.write(frame);
+              frame.close();
+            } catch (e) {
+              // If any generator fails, drop it to keep the render loop healthy.
+              try {
+                entry.track?.stop?.();
+              } catch {}
+              try {
+                State.generators.delete(entry);
+              } catch {}
+            }
+          });
+        } catch (e) {
+          // Never let generator failures break the render loop.
+        }
+      }
       
       State.animationFrameId = requestAnimationFrame(render);
     }
@@ -342,17 +376,35 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     }
     
     try {
-      // Create video stream from canvas
-      let stream;
-      if (canvas.captureStream) {
-        stream = canvas.captureStream(CONFIG.TARGET_FPS);
-      } else if (canvas.mozCaptureStream) {
-        stream = canvas.mozCaptureStream(CONFIG.TARGET_FPS);
-      } else if (canvas.webkitCaptureStream) {
-        stream = canvas.webkitCaptureStream(CONFIG.TARGET_FPS);
-      } else {
-        error('captureStream not supported');
-        return null;
+      // Preferred: MediaStreamTrackGenerator + VideoFrame (when available).
+      // Fallback: canvas.captureStream.
+      let stream = null;
+      if (supportsTrackGenerator()) {
+        try {
+          const gen = new window.MediaStreamTrackGenerator({ kind: 'video' });
+          const writer = gen.writable.getWriter();
+          const track = gen;
+          stream = new MediaStream([track]);
+          State.generators.add({ track, writer });
+          log('Using MediaStreamTrackGenerator pipeline');
+        } catch (e) {
+          stream = null;
+        }
+      }
+
+      if (!stream) {
+        // Create video stream from canvas
+        if (canvas.captureStream) {
+          stream = canvas.captureStream(CONFIG.TARGET_FPS);
+        } else if (canvas.mozCaptureStream) {
+          stream = canvas.mozCaptureStream(CONFIG.TARGET_FPS);
+        } else if (canvas.webkitCaptureStream) {
+          stream = canvas.webkitCaptureStream(CONFIG.TARGET_FPS);
+        } else {
+          error('captureStream not supported');
+          return null;
+        }
+        log('Using canvas.captureStream pipeline');
       }
       
       if (!stream) {
