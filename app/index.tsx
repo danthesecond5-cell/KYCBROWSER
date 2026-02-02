@@ -31,6 +31,7 @@ import {
   NO_SPOOFING_SCRIPT, 
   MOTION_INJECTION_SCRIPT,
   CONSOLE_CAPTURE_SCRIPT,
+  MEDIARECORDER_POLYFILL_SCRIPT,
   VIDEO_SIMULATION_TEST_SCRIPT,
   BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
@@ -960,6 +961,7 @@ export default function MotionBrowserScreen() {
     
     const script =
       CONSOLE_CAPTURE_SCRIPT +
+      MEDIARECORDER_POLYFILL_SCRIPT +
       spoofScript +
       mediaInjectionScript +
       VIDEO_SIMULATION_TEST_SCRIPT;

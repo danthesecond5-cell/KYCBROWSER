@@ -21,6 +21,7 @@ export interface DiagnosticResult {
     captureStream: boolean;
     canvasCaptureStream: boolean;
     audioContext: boolean;
+    mediaRecorder: boolean;
   };
   injection: {
     detected: boolean;
@@ -85,6 +86,7 @@ export const createDiagnosticScript = (): string => {
       captureStream: false,
       canvasCaptureStream: false,
       audioContext: false,
+      mediaRecorder: false,
     },
     injection: {
       detected: false,
@@ -127,6 +129,7 @@ export const createDiagnosticScript = (): string => {
          HTMLCanvasElement.prototype.webkitCaptureStream);
     results.apiAvailable.canvasCaptureStream = results.apiAvailable.captureStream;
     results.apiAvailable.audioContext = !!(window.AudioContext || window.webkitAudioContext);
+    results.apiAvailable.mediaRecorder = typeof MediaRecorder !== 'undefined';
     
     console.log('[Diagnostics] API Availability:');
     console.log('[Diagnostics]   mediaDevices:', results.apiAvailable.mediaDevices);
@@ -134,6 +137,7 @@ export const createDiagnosticScript = (): string => {
     console.log('[Diagnostics]   enumerateDevices:', results.apiAvailable.enumerateDevices);
     console.log('[Diagnostics]   captureStream:', results.apiAvailable.captureStream);
     console.log('[Diagnostics]   AudioContext:', results.apiAvailable.audioContext);
+    console.log('[Diagnostics]   MediaRecorder:', results.apiAvailable.mediaRecorder);
     
     // Detailed canvas captureStream check
     if (typeof HTMLCanvasElement !== 'undefined') {

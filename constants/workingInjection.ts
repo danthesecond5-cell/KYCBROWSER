@@ -152,6 +152,17 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       canvas.width = CONFIG.TARGET_WIDTH;
       canvas.height = CONFIG.TARGET_HEIGHT;
       canvas.style.cssText = 'position:fixed;top:-9999px;left:-9999px;';
+
+      // Expose injection canvas for diagnostics / MediaRecorder polyfills
+      try {
+        window.__mediaSimInternal = window.__mediaSimInternal || {};
+        window.__mediaSimInternal.lastCanvas = canvas;
+        window.__mediaSimInternal.lastCanvasMeta = {
+          width: canvas.width,
+          height: canvas.height,
+          source: 'workingInjection'
+        };
+      } catch (e) {}
       
       const ctx = canvas.getContext('2d', { 
         alpha: false,

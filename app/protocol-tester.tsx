@@ -11,7 +11,7 @@ import { router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 
 import { createDiagnosticScript, createGuaranteedInjection } from '@/utils/webcamTestDiagnostics';
-import { createMediaInjectionScript } from '@/constants/browserScripts';
+import { createMediaInjectionScript, MEDIARECORDER_POLYFILL_SCRIPT } from '@/constants/browserScripts';
 import { createAdvancedProtocol2Script } from '@/utils/advancedProtocol/browserScript';
 import { createSonnetProtocolScript } from '@/constants/sonnetProtocol';
 import { useDeviceTemplate } from '@/contexts/DeviceTemplateContext';
@@ -98,13 +98,13 @@ export default function ProtocolTesterScreen() {
     
     switch (testId) {
       case 'diagnostic':
-        return createDiagnosticScript();
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createDiagnosticScript();
       
       case 'guaranteed':
-        return createGuaranteedInjection();
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createGuaranteedInjection();
       
       case 'protocol1':
-        return createMediaInjectionScript(normalizedDevices, {
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createMediaInjectionScript(normalizedDevices, {
           stealthMode: true,
           fallbackVideoUri,
           forceSimulation: true,
@@ -118,7 +118,7 @@ export default function ProtocolTesterScreen() {
         });
       
       case 'protocol2':
-        return createAdvancedProtocol2Script({
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createAdvancedProtocol2Script({
           videoUri: fallbackVideoUri,
           devices: normalizedDevices,
           enableWebRTCRelay: true,
@@ -134,7 +134,7 @@ export default function ProtocolTesterScreen() {
       case 'protocol5':
         // Holographic protocol - not yet implemented in browserScript
         // For now, use guaranteed injection as placeholder
-        return createGuaranteedInjection();
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createGuaranteedInjection();
       
       case 'sonnet':
         const sonnetConfig: SonnetProtocolConfig = {
@@ -152,7 +152,7 @@ export default function ProtocolTesterScreen() {
           learningMode: true,
         };
         
-        return createSonnetProtocolScript(normalizedDevices, sonnetConfig, fallbackVideoUri);
+        return MEDIARECORDER_POLYFILL_SCRIPT + '\n' + createSonnetProtocolScript(normalizedDevices, sonnetConfig, fallbackVideoUri);
       
       default:
         return '';
