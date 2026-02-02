@@ -37,6 +37,7 @@ import {
   createMediaInjectionScript,
   createSimplifiedInjectionScript,
   createWorkingInjectionScript,
+  createProtocol0Script,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
 import {
@@ -922,41 +923,32 @@ export default function MotionBrowserScreen() {
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
     
     // Determine which injection script to use based on protocol
+    // PROTOCOL 0 is now the PRIMARY injection method for all protocols
     let mediaInjectionScript = '';
     
     if (shouldInjectMedia) {
-      if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
-        // Use the new working injection for Protocol 1 and 2
-        const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
-        const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
-        
-        mediaInjectionScript = createWorkingInjectionScript({
-          videoUri: videoUri,
-          devices: devices,
-          stealthMode: effectiveStealthMode,
-          debugEnabled: developerModeEnabled,
-          targetWidth: 1080,
-          targetHeight: 1920,
-          targetFPS: 30,
-        });
-        
-        console.log('[App] Using WORKING injection for', activeProtocol, 'with video:', videoUri ? 'YES' : 'NO');
-      } else {
-        // Use original injection for other protocols
-        const injectionOptions = {
-          stealthMode: effectiveStealthMode,
-          fallbackVideoUri,
-          forceSimulation: protocolForceSimulation,
-          protocolId: activeProtocol,
-          protocolLabel: protocolOverlayLabel,
-          showOverlayLabel: showProtocolOverlayLabel,
-          loopVideo: standardSettings.loopVideo,
-          mirrorVideo: protocolMirrorVideo,
-          debugEnabled: developerModeEnabled,
-          permissionPromptEnabled: true,
-        };
-        mediaInjectionScript = createMediaInjectionScript(devices, injectionOptions);
-      }
+      // Get video URI from primary camera device
+      const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
+      const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+      
+      // Use Protocol 0 (Ultra-Early Deep Hook) as the primary injection method
+      // This is the most reliable method tested against webcamtests.com/recorder
+      mediaInjectionScript = createProtocol0Script({
+        devices: devices,
+        videoUri: videoUri,
+        fallbackVideoUri: fallbackVideoUri,
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        showDebugOverlay: developerModeEnabled,
+        stealthMode: effectiveStealthMode,
+        loopVideo: standardSettings.loopVideo,
+        mirrorVideo: protocolMirrorVideo,
+      });
+      
+      console.log('[App] Using PROTOCOL 0 (Ultra-Early Deep Hook) for', activeProtocol);
+      console.log('[App] Video URI:', videoUri ? 'YES' : 'NO (green screen)');
+      console.log('[App] Devices:', devices.length);
     }
     
     const script =

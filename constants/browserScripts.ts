@@ -4278,5 +4278,9 @@ true;
  */
 
 // Re-export deep injection protocols for convenience
-export { DEEP_INJECTION_PROTOCOLS } from '@/utils/deepInjectionProtocols';
-export type { InjectionConfig } from '@/utils/deepInjectionProtocols';
+export { 
+  DEEP_INJECTION_PROTOCOLS,
+  createProtocol0Script,
+  createProtocol0DeepHook,
+} from '@/utils/deepInjectionProtocols';
+export type { InjectionConfig, Protocol0Options } from '@/utils/deepInjectionProtocols';
