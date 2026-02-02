@@ -36,7 +36,12 @@ describe('DeveloperModeContext', () => {
     });
 
     expect(ctxRef!.developerMode.enabled).toBe(DEFAULT_DEVELOPER_MODE.enabled);
-    expect(ctxRef!.developerMode.pinCode).toBe(DEFAULT_DEVELOPER_MODE.pinCode);
+    if (DEFAULT_DEVELOPER_MODE.pinCode) {
+      // PINs are migrated to hashed storage on load.
+      expect(ctxRef!.developerMode.pinCode).toBe(`sha256:digest_SHA256_${DEFAULT_DEVELOPER_MODE.pinCode}`);
+    } else {
+      expect(ctxRef!.developerMode.pinCode).toBeNull();
+    }
   });
 
   test('incorrect PIN does not enable developer mode', async () => {

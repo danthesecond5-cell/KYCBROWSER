@@ -35,8 +35,47 @@ jest.mock('react-native/src/private/specs_DEPRECATED/modules/NativeDeviceInfo', 
 // Mock AsyncStorage
 jest.mock('@react-native-async-storage/async-storage');
 
-// Use fake timers for animations
-jest.useFakeTimers();
+// Avoid NativeAnimated invariant errors in Jest.
+// RN 0.7x/0.8x expects NativeAnimatedHelper.API to exist.
+const mockNativeAnimatedHelper = {
+  API: {
+    // Core graph wiring
+    connectAnimatedNodes: jest.fn(),
+    disconnectAnimatedNodes: jest.fn(),
+    connectAnimatedNodeToView: jest.fn(),
+    disconnectAnimatedNodeFromView: jest.fn(),
+    dropAnimatedNode: jest.fn(),
+
+    // Value operations
+    setAnimatedNodeValue: jest.fn(),
+    setAnimatedNodeOffset: jest.fn(),
+    flattenAnimatedNodeOffset: jest.fn(),
+    extractAnimatedNodeOffset: jest.fn(),
+    getValue: jest.fn(),
+
+    // Animations
+    startAnimatingNode: jest.fn(),
+    stopAnimation: jest.fn(),
+
+    // Events
+    addAnimatedEventToView: jest.fn(),
+    removeAnimatedEventFromView: jest.fn(),
+
+    // Queue flushing (some RN builds call this)
+    flushQueue: jest.fn(),
+  },
+};
+
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => mockNativeAnimatedHelper);
+
+// Older RN path (ignore if not present).
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  require('react-native/Libraries/Animated/NativeAnimatedHelper');
+  jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper', () => mockNativeAnimatedHelper);
+} catch {
+  // ignore
+}
 
 // Mock expo-sensors
 jest.mock('expo-sensors', () => ({

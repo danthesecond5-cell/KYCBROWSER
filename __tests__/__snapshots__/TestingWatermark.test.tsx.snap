@@ -7,7 +7,7 @@ exports[`TestingWatermark renders full variant 1`] = `
   style={
     {
       "alignItems": "flex-end",
-      "opacity": 0,
+      "opacity": 1,
       "position": "absolute",
       "right": 12,
       "top": 60,
@@ -144,7 +144,7 @@ exports[`TestingWatermark renders fullscreen position with all elements 1`] = `
       "bottom": 0,
       "justifyContent": "space-between",
       "left": 0,
-      "opacity": 0,
+      "opacity": 1,
       "position": "absolute",
       "right": 0,
       "top": 0,
@@ -434,7 +434,7 @@ exports[`TestingWatermark renders minimal variant 1`] = `
   style={
     {
       "alignItems": "flex-end",
-      "opacity": 0,
+      "opacity": 1,
       "position": "absolute",
       "right": 12,
       "top": 60,
@@ -502,5 +502,3 @@ exports[`TestingWatermark renders minimal variant 1`] = `
   </View>
 </View>
 `;
-
-exports[`TestingWatermark renders fullscreen position with all elements 1`] = `null`;
