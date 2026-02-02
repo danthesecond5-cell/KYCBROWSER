@@ -4,19 +4,61 @@ jest.mock('react-native/Libraries/TurboModule/TurboModuleRegistry', () => ({
   getEnforcing: jest.fn(() => ({})),
 }));
 
-// Mock NativeAnimatedHelper (prevents "Native animated module is not available")
-// RN 0.81+ uses this private path in some environments.
+// Mock NativeAnimatedHelper (prevents Animated/native crashes in Jest)
+// RN may reference either the private path or the Libraries path depending on version/bundler.
 jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => ({
   __esModule: true,
   default: {
+    // RN uses `import NativeAnimatedHelper from ...` and then reads `NativeAnimatedHelper.API`,
+    // so the default export must include the API surface.
     API: {
       flushQueue: jest.fn(),
+      getValue: jest.fn(),
+      createAnimatedNode: jest.fn(),
+      startListeningToAnimatedNodeValue: jest.fn(),
+      stopListeningToAnimatedNodeValue: jest.fn(),
+      connectAnimatedNodes: jest.fn(),
+      disconnectAnimatedNodes: jest.fn(),
+      startAnimatingNode: jest.fn(),
+      stopAnimation: jest.fn(),
+      setAnimatedNodeValue: jest.fn(),
+      setAnimatedNodeOffset: jest.fn(),
+      flattenAnimatedNodeOffset: jest.fn(),
+      extractAnimatedNodeOffset: jest.fn(),
+      connectAnimatedNodeToView: jest.fn(),
+      disconnectAnimatedNodeFromView: jest.fn(),
+      dropAnimatedNode: jest.fn(),
+      addAnimatedEventToView: jest.fn(),
+      removeAnimatedEventFromView: jest.fn(),
     },
+    shouldUseNativeDriver: jest.fn(() => false),
+    nativeOpsValue: null,
   },
+  // Keep these top-level exports too, since some RN internals access them directly.
   API: {
     flushQueue: jest.fn(),
+    getValue: jest.fn(),
+    createAnimatedNode: jest.fn(),
+    startListeningToAnimatedNodeValue: jest.fn(),
+    stopListeningToAnimatedNodeValue: jest.fn(),
+    connectAnimatedNodes: jest.fn(),
+    disconnectAnimatedNodes: jest.fn(),
+    startAnimatingNode: jest.fn(),
+    stopAnimation: jest.fn(),
+    setAnimatedNodeValue: jest.fn(),
+    setAnimatedNodeOffset: jest.fn(),
+    flattenAnimatedNodeOffset: jest.fn(),
+    extractAnimatedNodeOffset: jest.fn(),
+    connectAnimatedNodeToView: jest.fn(),
+    disconnectAnimatedNodeFromView: jest.fn(),
+    dropAnimatedNode: jest.fn(),
+    addAnimatedEventToView: jest.fn(),
+    removeAnimatedEventToView: jest.fn(),
+    removeAnimatedEventFromView: jest.fn(),
   },
+  shouldUseNativeDriver: jest.fn(() => false),
 }));
+
 
 // Mock NativePlatformConstantsIOS
 jest.mock('react-native/Libraries/Utilities/NativePlatformConstantsIOS', () => ({
@@ -49,42 +91,8 @@ jest.mock('react-native/src/private/specs_DEPRECATED/modules/NativeDeviceInfo', 
 // Mock AsyncStorage
 jest.mock('@react-native-async-storage/async-storage');
 
-// Mock NativeAnimated module
-jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => ({
-  __esModule: true,
-  default: {
-    shouldUseNativeDriver: jest.fn(() => false),
-    nativeOpsValue: null,
-  },
-  API: {
-    flushQueue: jest.fn(),
-    getValue: jest.fn(),
-    createAnimatedNode: jest.fn(),
-    startListeningToAnimatedNodeValue: jest.fn(),
-    stopListeningToAnimatedNodeValue: jest.fn(),
-    connectAnimatedNodes: jest.fn(),
-    disconnectAnimatedNodes: jest.fn(),
-    startAnimatingNode: jest.fn(),
-    stopAnimation: jest.fn(),
-    setAnimatedNodeValue: jest.fn(),
-    setAnimatedNodeOffset: jest.fn(),
-    flattenAnimatedNodeOffset: jest.fn(),
-    extractAnimatedNodeOffset: jest.fn(),
-    connectAnimatedNodeToView: jest.fn(),
-    disconnectAnimatedNodeFromView: jest.fn(),
-    dropAnimatedNode: jest.fn(),
-    addAnimatedEventToView: jest.fn(),
-    removeAnimatedEventFromView: jest.fn(),
-  },
-  shouldUseNativeDriver: jest.fn(() => false),
-}));
-
 // Use fake timers for animations
 jest.useFakeTimers();
-
-// React Native Animated uses a native module in real apps; in Jest we must mock it.
-// RN 0.81+ uses the private module path; older guidance uses the Libraries path.
-jest.mock('react-native/src/private/animated/NativeAnimatedHelper');
 
 // Mock expo-sensors
 jest.mock('expo-sensors', () => ({
