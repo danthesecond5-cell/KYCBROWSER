@@ -1,5 +1,6 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
+import { createWorkingInjectionScript } from '../constants/workingInjection';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
 
 type ProtocolRun = {
@@ -131,6 +132,19 @@ async function runOnce(run: ProtocolRun) {
 
 async function main() {
   const protocolRuns: ProtocolRun[] = [
+    {
+      name: 'Working Injection (app standard/allowlist path)',
+      id: 'working',
+      injectedBeforeLoad: createWorkingInjectionScript({
+        videoUri: null,
+        devices: DEVICES as any,
+        stealthMode: true,
+        debugEnabled: false,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
+      }),
+    },
     {
       name: 'Protocol 1: standard',
       id: 'standard',

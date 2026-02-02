@@ -772,6 +772,25 @@ export const createMediaInjectionScript = (
       }
     } catch (e) {}
   }
+
+  function safeDefine(target, prop, value) {
+    if (!target) return false;
+    try {
+      Object.defineProperty(target, prop, {
+        configurable: true,
+        writable: true,
+        value
+      });
+      return true;
+    } catch (e) {
+      try {
+        target[prop] = value;
+        return true;
+      } catch (e2) {
+        return false;
+      }
+    }
+  }
   
   function getCanvasStream(canvas, fps) {
     if (!canvas) return null;
@@ -1655,7 +1674,7 @@ export const createMediaInjectionScript = (
     navigator.mediaDevices = {};
   }
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.enumerateDevices = async function() {
+    const overrideEnumerateDevices = async function() {
       const cfg = window.__mediaSimConfig || {};
       const devices = cfg.devices || [];
       const hasSimDevices = devices.length > 0;
@@ -1755,7 +1774,7 @@ export const createMediaInjectionScript = (
     }
     
     // ============ GET USER MEDIA OVERRIDE ============
-    mediaDevices.getUserMedia = async function(constraints) {
+    const overrideGetUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
@@ -1867,21 +1886,33 @@ export const createMediaInjectionScript = (
       return canvasStream;
     };
 
-    // Register override functions as native-looking
-    __nativeFunctions.add(navigator.mediaDevices.getUserMedia);
-    __nativeFunctions.add(navigator.mediaDevices.enumerateDevices);
+    const enumerateApplied = safeDefine(navigator.mediaDevices, 'enumerateDevices', overrideEnumerateDevices);
+    const gumApplied = safeDefine(mediaDevices, 'getUserMedia', overrideGetUserMedia);
 
-    const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
-    const overrideGetUserMedia = navigator.mediaDevices.getUserMedia;
+    if (window.MediaDevices && window.MediaDevices.prototype) {
+      if (!enumerateApplied) {
+        safeDefine(window.MediaDevices.prototype, 'enumerateDevices', overrideEnumerateDevices);
+      }
+      if (!gumApplied) {
+        safeDefine(window.MediaDevices.prototype, 'getUserMedia', overrideGetUserMedia);
+      }
+    }
+
+    // Register override functions as native-looking
+    __nativeFunctions.add(overrideGetUserMedia);
+    __nativeFunctions.add(overrideEnumerateDevices);
+
+    const overrideEnumerateDevicesRef = navigator.mediaDevices.enumerateDevices;
+    const overrideGetUserMediaRef = navigator.mediaDevices.getUserMedia;
     const overrideWatchdog = setInterval(function() {
       try {
         if (navigator.mediaDevices) {
-          if (navigator.mediaDevices.enumerateDevices !== overrideEnumerateDevices) {
-            navigator.mediaDevices.enumerateDevices = overrideEnumerateDevices;
+          if (navigator.mediaDevices.enumerateDevices !== overrideEnumerateDevicesRef) {
+            safeDefine(navigator.mediaDevices, 'enumerateDevices', overrideEnumerateDevicesRef);
             Logger.warn('enumerateDevices override restored');
           }
-          if (navigator.mediaDevices.getUserMedia !== overrideGetUserMedia) {
-            navigator.mediaDevices.getUserMedia = overrideGetUserMedia;
+          if (navigator.mediaDevices.getUserMedia !== overrideGetUserMediaRef) {
+            safeDefine(navigator.mediaDevices, 'getUserMedia', overrideGetUserMediaRef);
             Logger.warn('getUserMedia override restored');
           }
         }

@@ -85,7 +85,35 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     stream: null,
     videoLoaded: false,
     mode: 'canvas', // 'video' or 'canvas'
+    captureSupported: null,
   };
+
+  function postStatus(type, payload) {
+    try {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type, payload }));
+      }
+    } catch (e) {}
+  }
+
+  function safeDefine(target, prop, value) {
+    if (!target) return false;
+    try {
+      Object.defineProperty(target, prop, {
+        configurable: true,
+        writable: true,
+        value,
+      });
+      return true;
+    } catch (e) {
+      try {
+        target[prop] = value;
+        return true;
+      } catch (e2) {
+        return false;
+      }
+    }
+  }
   
   // ============================================================================
   // SILENT AUDIO GENERATOR
@@ -348,16 +376,20 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     try {
       // Create video stream from canvas
       let stream;
-      if (canvas.captureStream) {
-        stream = canvas.captureStream(CONFIG.TARGET_FPS);
-      } else if (canvas.mozCaptureStream) {
-        stream = canvas.mozCaptureStream(CONFIG.TARGET_FPS);
-      } else if (canvas.webkitCaptureStream) {
-        stream = canvas.webkitCaptureStream(CONFIG.TARGET_FPS);
-      } else {
+      const captureFn = canvas.captureStream || canvas.mozCaptureStream || canvas.webkitCaptureStream;
+      if (!captureFn) {
+        State.captureSupported = false;
         error('captureStream not supported');
+        postStatus('videoError', {
+          error: {
+            message: 'Canvas captureStream not supported in this WebView',
+            solution: 'This environment cannot generate a fake camera stream via JS injection.'
+          }
+        });
         return null;
       }
+      State.captureSupported = true;
+      stream = captureFn.call(canvas, CONFIG.TARGET_FPS);
       
       if (!stream) {
         error('captureStream returned null');
@@ -448,17 +480,47 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   // GETUSERMEDIA OVERRIDE - THE CRITICAL PART
   // ============================================================================
   
-  // Store original
-  const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
-  const originalEnumerateDevices = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
-  
-  // Ensure mediaDevices exists
-  if (!navigator.mediaDevices) {
-    navigator.mediaDevices = {};
+  let mediaDevices = navigator.mediaDevices;
+  if (!mediaDevices) {
+    try {
+      Object.defineProperty(navigator, 'mediaDevices', { value: {}, configurable: true });
+    } catch (e) {
+      try { navigator.mediaDevices = {}; } catch (e2) {}
+    }
+    mediaDevices = navigator.mediaDevices || {};
   }
-  
+
+  // Store original
+  const originalGetUserMedia = mediaDevices.getUserMedia ? mediaDevices.getUserMedia.bind(mediaDevices) : null;
+  const originalEnumerateDevices = mediaDevices.enumerateDevices ? mediaDevices.enumerateDevices.bind(mediaDevices) : null;
+
+  // Permission API spoofing (camera/microphone = granted)
+  try {
+    if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+      const originalQuery = navigator.permissions.query.bind(navigator.permissions);
+      navigator.permissions.query = async function(permissionDesc) {
+        try {
+          const result = await originalQuery(permissionDesc);
+          if (permissionDesc && (permissionDesc.name === 'camera' || permissionDesc.name === 'microphone')) {
+            return {
+              state: 'granted',
+              name: permissionDesc.name,
+              onchange: null,
+              addEventListener: result.addEventListener?.bind(result),
+              removeEventListener: result.removeEventListener?.bind(result),
+              dispatchEvent: result.dispatchEvent?.bind(result)
+            };
+          }
+          return result;
+        } catch (e) {
+          return { state: 'granted', name: permissionDesc?.name || 'camera', onchange: null };
+        }
+      };
+    }
+  } catch (e) {}
+
   // Override enumerateDevices
-  navigator.mediaDevices.enumerateDevices = async function() {
+  const overrideEnumerateDevices = async function() {
     log('enumerateDevices called');
     
     if (CONFIG.STEALTH) {
@@ -482,9 +544,9 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     
     return [];
   };
-  
+
   // Override getUserMedia - THIS IS THE KEY FUNCTION
-  navigator.mediaDevices.getUserMedia = async function(constraints) {
+  const overrideGetUserMedia = async function(constraints) {
     log('getUserMedia called with constraints:', JSON.stringify(constraints));
     
     const wantsVideo = !!(constraints && constraints.video);
@@ -533,14 +595,80 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     log('Returning stream with', State.stream.getTracks().length, 'tracks');
     return State.stream;
   };
+
+  const enumerateApplied = safeDefine(mediaDevices, 'enumerateDevices', overrideEnumerateDevices);
+  const gumApplied = safeDefine(mediaDevices, 'getUserMedia', overrideGetUserMedia);
+
+  if (window.MediaDevices && window.MediaDevices.prototype) {
+    if (!enumerateApplied) {
+      safeDefine(window.MediaDevices.prototype, 'enumerateDevices', overrideEnumerateDevices);
+    }
+    if (!gumApplied) {
+      safeDefine(window.MediaDevices.prototype, 'getUserMedia', overrideGetUserMedia);
+    }
+  }
+
+  // Legacy getUserMedia shims
+  const legacyGetUserMedia = function(constraints, successCb, errorCb) {
+    overrideGetUserMedia(constraints).then(successCb).catch(errorCb);
+  };
+  safeDefine(navigator, 'getUserMedia', legacyGetUserMedia);
+  safeDefine(navigator, 'webkitGetUserMedia', legacyGetUserMedia);
+  safeDefine(navigator, 'mozGetUserMedia', legacyGetUserMedia);
+
+  window.__workingInjectionStatus = {
+    getUserMediaOverridden: gumApplied,
+    enumerateDevicesOverridden: enumerateApplied,
+    captureStreamSupported: State.captureSupported,
+  };
   
   // ============================================================================
   // INITIALIZATION
   // ============================================================================
-  
-  async function initializeSync() {
-    if (State.ready) return;
-    
+
+  function cleanupState() {
+    if (State.animationFrameId) {
+      cancelAnimationFrame(State.animationFrameId);
+      State.animationFrameId = null;
+    }
+    if (State.stream) {
+      try {
+        State.stream.getTracks().forEach(t => t.stop());
+      } catch (e) {}
+    }
+    if (State.videoElement && State.videoElement.parentNode) {
+      try { State.videoElement.parentNode.removeChild(State.videoElement); } catch (e) {}
+    }
+    if (State.canvasElement && State.canvasElement.parentNode) {
+      try { State.canvasElement.parentNode.removeChild(State.canvasElement); } catch (e) {}
+    }
+    State.videoElement = null;
+    State.canvasElement = null;
+    State.canvasContext = null;
+    State.stream = null;
+    State.videoLoaded = false;
+    State.mode = 'canvas';
+    State.captureSupported = null;
+    State.ready = false;
+  }
+
+  function resolveVideoUriFromConfig(config) {
+    if (!config || typeof config !== 'object') return undefined;
+    if (config.videoUri !== undefined) return config.videoUri;
+    const devices = Array.isArray(config.devices) ? config.devices : [];
+    const primaryDevice =
+      devices.find(d => d.type === 'camera' && d.simulationEnabled) ||
+      devices.find(d => d.type === 'camera') ||
+      devices[0];
+    return primaryDevice?.assignedVideoUri || config.fallbackVideoUri || null;
+  }
+
+  async function initializeSync(force) {
+    if (State.ready && !force) return;
+    if (force) {
+      cleanupState();
+    }
+
     log('Initializing injection system...');
     
     // Always initialize canvas (fallback)
@@ -576,6 +704,39 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     State.ready = true;
     log('Initialization complete - mode:', State.mode);
   }
+
+  function updateConfig(newConfig) {
+    if (!newConfig || typeof newConfig !== 'object') return;
+
+    const prevVideoUri = CONFIG.VIDEO_URI;
+    const prevWidth = CONFIG.TARGET_WIDTH;
+    const prevHeight = CONFIG.TARGET_HEIGHT;
+    const prevFps = CONFIG.TARGET_FPS;
+
+    if (typeof newConfig.stealthMode === 'boolean') CONFIG.STEALTH = newConfig.stealthMode;
+    if (typeof newConfig.debugEnabled === 'boolean') CONFIG.DEBUG = newConfig.debugEnabled;
+    if (Array.isArray(newConfig.devices)) CONFIG.DEVICES = newConfig.devices;
+    if (typeof newConfig.targetWidth === 'number') CONFIG.TARGET_WIDTH = newConfig.targetWidth;
+    if (typeof newConfig.targetHeight === 'number') CONFIG.TARGET_HEIGHT = newConfig.targetHeight;
+    if (typeof newConfig.targetFPS === 'number') CONFIG.TARGET_FPS = newConfig.targetFPS;
+
+    const nextVideoUri = resolveVideoUriFromConfig(newConfig);
+    if (nextVideoUri !== undefined) {
+      CONFIG.VIDEO_URI = nextVideoUri;
+    }
+
+    const needsRestart =
+      prevVideoUri !== CONFIG.VIDEO_URI ||
+      prevWidth !== CONFIG.TARGET_WIDTH ||
+      prevHeight !== CONFIG.TARGET_HEIGHT ||
+      prevFps !== CONFIG.TARGET_FPS ||
+      Array.isArray(newConfig.devices);
+
+    if (needsRestart) {
+      log('Config updated, reinitializing injection');
+      initializeSync(true);
+    }
+  }
   
   // Start initialization immediately
   initializeSync().then(() => {
@@ -593,6 +754,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
           mode: State.mode,
           videoLoaded: State.videoLoaded,
           streamReady: !!State.stream,
+          captureStreamSupported: State.captureSupported,
         },
       }));
     }
@@ -604,8 +766,15 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
   window.__workingInjection = {
     getState: () => State,
     getStream: () => State.stream,
-    reinitialize: () => initializeSync(),
+    reinitialize: () => initializeSync(true),
+    updateConfig: (config) => updateConfig(config),
   };
+
+  // Align with legacy injector update flow
+  window.__updateMediaConfig = function(config) {
+    updateConfig(config);
+  };
+  window.__mediaInjectorInitialized = true;
   
 })();
 true;
