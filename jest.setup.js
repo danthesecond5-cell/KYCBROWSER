@@ -5,7 +5,15 @@ jest.mock('react-native/Libraries/TurboModule/TurboModuleRegistry', () => ({
 }));
 
 // Avoid "Native animated module is not available" in Jest environment
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper');
+// React Native 0.81+ uses the "src/private/animated" helper path.
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => ({
+  __esModule: true,
+  default: {
+    API: {
+      flushQueue: jest.fn(),
+    },
+  },
+}));
 
 // Mock NativePlatformConstantsIOS
 jest.mock('react-native/Libraries/Utilities/NativePlatformConstantsIOS', () => ({
