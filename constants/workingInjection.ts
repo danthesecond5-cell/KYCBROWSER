@@ -215,6 +215,28 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     return !!(canvas.captureStream || canvas.mozCaptureStream || canvas.webkitCaptureStream);
   }
   
+  function reportCapabilities(source) {
+    const payload = {
+      source: source || 'init',
+      captureStream: supportsCaptureStream(),
+      frameGenerator: supportsFrameGenerator(),
+      spoofingAvailable: supportsCaptureStream() || supportsFrameGenerator(),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+    };
+    window.__workingInjectionCapabilities = payload;
+    
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      try {
+        window.ReactNativeWebView.postMessage(JSON.stringify({
+          type: 'mediaCapabilities',
+          payload,
+        }));
+      } catch (e) {}
+    }
+  }
+  
+  reportCapabilities('init');
+  
   function stopGenerator() {
     if (State.generatorWriter) {
       try {
@@ -832,6 +854,8 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
         },
       }));
     }
+    
+    reportCapabilities('ready');
   }).catch(err => {
     error('Initialization error:', err);
   });
@@ -842,6 +866,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     getStream: () => State.stream,
     reinitialize: () => initializeSync(),
     updateConfig: (config) => window.__updateMediaConfig && window.__updateMediaConfig(config),
+    getCapabilities: () => window.__workingInjectionCapabilities || null,
   };
   
 })();

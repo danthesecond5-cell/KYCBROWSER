@@ -194,6 +194,14 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
 - If both `captureStream` and WebCodecs are missing, JavaScript-only spoofing is not possible.
 - In that case, a native virtual camera is required.
 
+### iOS WKWebView constraints
+
+**Important**: iOS does not expose a public API to register a virtual camera device for `WKWebView`.
+
+**Implications**:
+1. If `canvas.captureStream` and WebCodecs are unavailable, **spoofing cannot work** in an App Store-safe build.
+2. A **native virtual camera** would require private WebKit APIs or a custom WebKit build (typically not App Store safe).
+
 ### Override Replacement
 
 **Problem**: Some sites detect override and replace it with original

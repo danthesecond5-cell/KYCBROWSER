@@ -156,6 +156,7 @@ export default function MotionBrowserScreen() {
   const isMountedRef = useRef<boolean>(true);
   const lastInjectionTimeRef = useRef<number>(0);
   const pendingInjectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const capabilityAlertShownRef = useRef<boolean>(false);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [safariModeEnabled, setSafariModeEnabled] = useState(true);
@@ -1207,6 +1208,24 @@ export default function MotionBrowserScreen() {
                       console.log('[WebView Injection Ready]', data.payload);
                     } else if (data.type === 'mediaAccess') {
                       console.log('[WebView Media Access]', data.device, data.action);
+                    } else if (data.type === 'mediaCapabilities') {
+                      const payload = data.payload || {};
+                      console.log('[WebView Capabilities]', payload);
+                      
+                      if (
+                        Platform.OS === 'ios' &&
+                        payload.spoofingAvailable === false &&
+                        !capabilityAlertShownRef.current
+                      ) {
+                        capabilityAlertShownRef.current = true;
+                        Alert.alert(
+                          'iOS WebView Limitation',
+                          'This iOS WebView build does not support canvas.captureStream or WebCodecs. ' +
+                            'JavaScript-only camera spoofing cannot work in this environment. ' +
+                            'A native virtual camera build is required for iOS.',
+                          [{ text: 'OK' }]
+                        );
+                      }
                     } else if (data.type === 'cameraPermissionRequest') {
                       const payload = data.payload || {};
                       if (!payload.requestId) {
