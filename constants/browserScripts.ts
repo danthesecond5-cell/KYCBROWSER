@@ -1692,7 +1692,7 @@ export const createMediaInjectionScript = (
     }
     
     // ============ GET USER MEDIA OVERRIDE ============
-    mediaDevices.getUserMedia = function(constraints) {
+    mediaDevices.getUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
@@ -1760,7 +1760,7 @@ export const createMediaInjectionScript = (
 
       const shouldSimulate = decisionAction === 'simulate'
         ? true
-        : (forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
+        : (cfg.forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
 
       if (!shouldSimulate) {
         if (_origGetUserMedia) {
