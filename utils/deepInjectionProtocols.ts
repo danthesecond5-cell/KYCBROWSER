@@ -2249,94 +2249,82 @@ export function createProtocol3ProxyIntercept(config: Partial<InjectionConfig> =
   }
   
   // ============================================================================
-  // PROXY INTERCEPT (Fixed for getter-only navigator.mediaDevices)
+  // PROXY INTERCEPT - Using method replacement instead of property override
   // ============================================================================
   
-  const originalMediaDevices = navigator.mediaDevices;
-  
-  // Create proxy wrapper
-  const mediaDevicesProxy = new Proxy(originalMediaDevices, {
-    get(target, prop) {
-      if (prop === 'getUserMedia') {
-        return async function(constraints) {
-          console.log('[Protocol3] Proxy getUserMedia:', constraints);
-          
-          if (constraints?.video) {
-            try {
-              const stream = makeStream();
-              console.log('[Protocol3] Returning injected stream');
-              return stream;
-            } catch (e) {
-              console.error('[Protocol3] Failed:', e);
-              return target.getUserMedia.call(target, constraints);
-            }
-          }
-          
-          return target.getUserMedia.call(target, constraints);
-        };
-      }
-      
-      if (prop === 'enumerateDevices') {
-        return async function() {
-          console.log('[Protocol3] Proxy enumerateDevices');
-          return [{
-            deviceId: CONFIG.deviceId,
-            groupId: 'default',
-            kind: 'videoinput',
-            label: CONFIG.deviceLabel,
-            toJSON: function() { return this; }
-          }];
-        };
-      }
-      
-      // For other properties, return bound version if function
-      const value = target[prop];
-      if (typeof value === 'function') {
-        return value.bind(target);
-      }
-      return value;
+  // Cannot use Proxy on navigator.mediaDevices directly because it's read-only
+  // Instead, we override the individual methods
+  if (!navigator.mediaDevices) {
+    try {
+      navigator.mediaDevices = {};
+    } catch (e) {
+      console.warn('[Protocol3] Unable to create navigator.mediaDevices:', e);
     }
-  });
+  }
   
-  // Use Object.defineProperty to override the getter-only property
-  try {
-    Object.defineProperty(navigator, 'mediaDevices', {
-      get: function() { return mediaDevicesProxy; },
-      configurable: true
-    });
-    console.log('[Protocol3] navigator.mediaDevices successfully proxied');
-  } catch (e) {
-    // Fallback: directly override methods on the original object
-    console.warn('[Protocol3] Could not redefine navigator.mediaDevices, using method override fallback');
-    
-    const origGetUserMedia = originalMediaDevices.getUserMedia.bind(originalMediaDevices);
-    originalMediaDevices.getUserMedia = async function(constraints) {
-      console.log('[Protocol3] Fallback getUserMedia:', constraints);
+  const originalGetUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+  const originalEnumerateDevices = navigator.mediaDevices?.enumerateDevices?.bind(navigator.mediaDevices);
+  
+  // Create proxy handler for getUserMedia
+  const getUserMediaProxy = new Proxy(originalGetUserMedia || (async () => { throw new Error('Not supported'); }), {
+    apply(target, thisArg, argumentsList) {
+      const constraints = argumentsList[0];
+      console.log('[Protocol3] Proxy getUserMedia apply:', constraints);
       
       if (constraints?.video) {
         try {
           const stream = makeStream();
-          console.log('[Protocol3] Returning injected stream (fallback)');
-          return stream;
-        } catch (err) {
-          console.error('[Protocol3] Fallback failed:', err);
-          return origGetUserMedia(constraints);
+          console.log('[Protocol3] Returning injected stream');
+          return Promise.resolve(stream);
+        } catch (e) {
+          console.error('[Protocol3] Failed:', e);
         }
       }
       
-      return origGetUserMedia(constraints);
-    };
-    
-    originalMediaDevices.enumerateDevices = async function() {
-      console.log('[Protocol3] Fallback enumerateDevices');
-      return [{
+      return Reflect.apply(target, thisArg, argumentsList);
+    }
+  });
+  
+  // Create proxy handler for enumerateDevices
+  const enumerateDevicesProxy = new Proxy(originalEnumerateDevices || (async () => []), {
+    apply() {
+      console.log('[Protocol3] Proxy enumerateDevices apply');
+      return Promise.resolve([{
         deviceId: CONFIG.deviceId,
         groupId: 'default',
         kind: 'videoinput',
         label: CONFIG.deviceLabel,
         toJSON: function() { return this; }
-      }];
-    };
+      }]);
+    }
+  });
+  
+  // Override the methods on mediaDevices
+  if (navigator.mediaDevices) {
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        value: getUserMediaProxy,
+        writable: true,
+        configurable: true,
+      });
+      console.log('[Protocol3] getUserMedia replaced with proxy');
+    } catch (e) {
+      // Fallback: direct assignment
+      navigator.mediaDevices.getUserMedia = getUserMediaProxy;
+      console.log('[Protocol3] getUserMedia replaced (direct)');
+    }
+    
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: enumerateDevicesProxy,
+        writable: true,
+        configurable: true,
+      });
+      console.log('[Protocol3] enumerateDevices replaced with proxy');
+    } catch (e) {
+      navigator.mediaDevices.enumerateDevices = enumerateDevicesProxy;
+      console.log('[Protocol3] enumerateDevices replaced (direct)');
+    }
   }
   
   window.__protocol3 = {

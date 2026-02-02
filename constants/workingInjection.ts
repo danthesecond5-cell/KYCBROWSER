@@ -567,19 +567,18 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       await initializeSync();
     }
     
-    // Try to create stream if not already created
-    if (!State.stream) {
-      log('Creating stream on demand...');
-      const stream = createInjectedStream();
-      if (!stream) {
-        error('Failed to create stream');
-        throw new DOMException('Could not start video source', 'NotReadableError');
-      }
+    // Always create a fresh stream to avoid issues with stopped tracks
+    // If a previous stream's tracks were stopped, we need new ones
+    log('Creating fresh stream for this request...');
+    const stream = createInjectedStream();
+    if (!stream) {
+      error('Failed to create stream');
+      throw new DOMException('Could not start video source', 'NotReadableError');
     }
     
-    // Return the stream
-    log('Returning stream with', State.stream.getTracks().length, 'tracks');
-    return State.stream;
+    // Return the fresh stream
+    log('Returning stream with', stream.getTracks().length, 'tracks');
+    return stream;
   };
   
   // ============================================================================
