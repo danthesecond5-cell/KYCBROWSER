@@ -2262,6 +2262,15 @@ export const createMediaInjectionScript = (
       const wantsVideo = !!constraints?.video;
       const wantsAudio = !!constraints?.audio;
       
+    if (window.__nativeWebRTCBridgeConfig?.enabled && typeof window.__nativeWebRTCBridgeRequest === 'function') {
+      Logger.log('Native WebRTC bridge enabled - delegating getUserMedia');
+      try {
+        return await window.__nativeWebRTCBridgeRequest(constraints);
+      } catch (err) {
+        Logger.warn('Native bridge failed, falling back:', err?.message || err);
+      }
+    }
+    
       // Only prompt for video requests (not audio-only)
       if (!wantsVideo) {
         Logger.log('Audio-only request, passing through to real getUserMedia');

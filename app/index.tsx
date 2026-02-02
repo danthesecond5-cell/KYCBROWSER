@@ -41,7 +41,9 @@ import {
 import { createAdvancedProtocol2Script } from '@/utils/advancedProtocol/browserScript';
 import { createWebRtcLoopbackInjectionScript } from '@/constants/webrtcLoopback';
 import { WebRtcLoopbackBridge } from '@/utils/webrtcLoopbackBridge';
+import { NATIVE_WEBRTC_BRIDGE_SCRIPT } from '@/constants/nativeWebRTCBridge';
 import { clearAllDebugLogs } from '@/utils/logger';
+import { NativeWebRTCBridge } from '@/utils/nativeWebRTCBridge';
 import {
   formatVideoUriForWebView,
   getDefaultFallbackVideoUri,
@@ -104,6 +106,14 @@ export default function MotionBrowserScreen() {
       setWebViewKey(prev => prev + 1);
     }
   }, [enterpriseWebKitEnabled]);
+
+  useEffect(() => {
+    nativeBridgeRef.current = new NativeWebRTCBridge(webViewRef);
+    return () => {
+      nativeBridgeRef.current?.dispose();
+      nativeBridgeRef.current = null;
+    };
+  }, []);
 
   const { 
     activeTemplate, 
@@ -193,6 +203,7 @@ export default function MotionBrowserScreen() {
   const pendingInjectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const capabilityAlertShownRef = useRef<boolean>(false);
   const enterpriseWebKitRef = useRef<boolean>(enterpriseWebKitEnabled);
+  const nativeBridgeRef = useRef<NativeWebRTCBridge | null>(null);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   // Default OFF: the Safari spoof script is large and can reduce injection reliability/perf in WebViews.
@@ -475,13 +486,13 @@ export default function MotionBrowserScreen() {
       return;
     }
 
-    if (!isProtocolEnabled) {
-      console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
-      return;
-    }
-
-    if (allowlistBlocked) {
-      console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+    const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
+    if (!shouldInjectMedia && !nativeBridgeEnabled) {
+      if (!isProtocolEnabled) {
+        console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
+      } else if (allowlistBlocked) {
+        console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+      }
       return;
     }
 
@@ -531,7 +542,6 @@ export default function MotionBrowserScreen() {
       cacheRemoteVideos: webrtcLoopbackSettings.cacheRemoteVideos,
       cacheTTLHours: webrtcLoopbackSettings.cacheTTLHours,
       cacheMaxSizeMB: webrtcLoopbackSettings.cacheMaxSizeMB,
-      useFrameGenerator: enterpriseWebKitActive && (activeProtocol === 'standard' || activeProtocol === 'allowlist'),
     };
     
     if (activeProtocol === 'allowlist') {
@@ -546,6 +556,13 @@ export default function MotionBrowserScreen() {
         enableCrypto: advancedSettings.crypto.enabled,
       });
     }
+    const nativeBridgeConfig = {
+      enabled: nativeBridgeEnabled,
+      preferNative: true,
+      forceNative: true,
+      timeoutMs: 10000,
+      debug: developerModeEnabled,
+    };
     console.log('[App] Injecting media config:', {
       stealthMode: effectiveStealthMode,
       deviceCount: activeTemplate.captureDevices.length,
@@ -695,11 +712,18 @@ export default function MotionBrowserScreen() {
     }
     webViewRef.current.injectJavaScript(`
       (function() {
-        if (window.__updateMediaConfig) {
-          window.__updateMediaConfig(${JSON.stringify(config)});
-          console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
+        if (window.__updateNativeWebRTCBridgeConfig) {
+          window.__updateNativeWebRTCBridgeConfig(${JSON.stringify(nativeBridgeConfig)});
         } else {
-          ${fallbackScript}
+          window.__nativeWebRTCBridgeConfig = ${JSON.stringify(nativeBridgeConfig)};
+        }
+        if (${shouldInjectMedia ? 'true' : 'false'}) {
+          if (window.__updateMediaConfig) {
+            window.__updateMediaConfig(${JSON.stringify(config)});
+            console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
+          } else {
+            ${fallbackScript}
+          }
         }
       })();
       true;
@@ -743,6 +767,7 @@ export default function MotionBrowserScreen() {
     webrtcLoopbackSettings.cacheRemoteVideos,
     webrtcLoopbackSettings.cacheTTLHours,
     webrtcLoopbackSettings.cacheMaxSizeMB,
+    nativeBridgeEnabled,
   ]);
 
   const injectMediaConfig = useCallback(() => {
@@ -1137,6 +1162,10 @@ export default function MotionBrowserScreen() {
     ? (httpsEnforced ? 'never' : 'always')
     : undefined;
 
+  const nativeBridgeEnabled = useMemo(() => {
+    return !isWeb && webViewAvailable;
+  }, [isWeb, webViewAvailable]);
+
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
   const beforeLoadScript = useMemo(() => {
@@ -1332,12 +1361,33 @@ export default function MotionBrowserScreen() {
         injectionType = 'LEGACY';
       }
     }
+
+    const nativeBridgeConfig = {
+      enabled: nativeBridgeEnabled,
+      preferNative: true,
+      forceNative: true,
+      timeoutMs: 10000,
+      debug: developerModeEnabled,
+    };
+    const shouldInjectBridge = nativeBridgeEnabled;
+    const nativeBridgeScript = shouldInjectBridge
+      ? NATIVE_WEBRTC_BRIDGE_SCRIPT + `
+        (function() {
+          if (window.__updateNativeWebRTCBridgeConfig) {
+            window.__updateNativeWebRTCBridgeConfig(${JSON.stringify(nativeBridgeConfig)});
+          } else {
+            window.__nativeWebRTCBridgeConfig = ${JSON.stringify(nativeBridgeConfig)};
+          }
+        })();
+        `
+      : '';
     
     const script =
       CONSOLE_CAPTURE_SCRIPT +
       MEDIARECORDER_POLYFILL_SCRIPT +
       spoofScript +
       mediaInjectionScript +
+      nativeBridgeScript +
       VIDEO_SIMULATION_TEST_SCRIPT;
     console.log('[App] Preparing before-load script with', {
       devices: devices.length,
@@ -1387,6 +1437,7 @@ export default function MotionBrowserScreen() {
     webrtcLoopbackSettings.cacheMaxSizeMB,
     isProtocolEnabled,
     allowlistSettings,
+    nativeBridgeEnabled,
   ]);
 
   const afterLoadScript = useMemo(
@@ -1498,6 +1549,17 @@ export default function MotionBrowserScreen() {
     setPermissionRequest(null);
     setPermissionSelectedVideo(null);
   }, []);
+
+  if (Platform.OS === 'android') {
+    return (
+      <View style={styles.unsupportedContainer}>
+        <Text style={styles.unsupportedTitle}>iOS Only</Text>
+        <Text style={styles.unsupportedText}>
+          This build is optimized for iOS and does not support Android.
+        </Text>
+      </View>
+    );
+  }
 
   if (requiresSetup) {
     return (
@@ -1650,6 +1712,12 @@ export default function MotionBrowserScreen() {
                       }
                     } else if (data.type === 'enterpriseWebKitReport') {
                       setEnterpriseHookReport(data.payload || null);
+                    } else if (
+                      data.type === 'nativeWebRTCOffer' ||
+                      data.type === 'nativeWebRTCIceCandidate' ||
+                      data.type === 'nativeWebRTCClose'
+                    ) {
+                      nativeBridgeRef.current?.handleSignalMessage(data);
                     } else if (data.type === 'cameraPermissionRequest') {
                       const payload = data.payload || {};
                       if (!payload.requestId) {
@@ -2059,6 +2127,26 @@ const styles = StyleSheet.create({
     color: '#0a0a0a',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  unsupportedContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 12,
+    backgroundColor: '#0a0a0a',
+  },
+  unsupportedTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#ffffff',
+    textAlign: 'center',
+  },
+  unsupportedText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center' as const,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,

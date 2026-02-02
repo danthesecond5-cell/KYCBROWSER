@@ -90,9 +90,11 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     USE_FRAME_GENERATOR: ${preferFrameGenerator},
   };
   
-  const log = CONFIG.DEBUG 
-    ? (...args) => console.log('[WorkingInject]', ...args)
-    : () => {};
+  const log = (...args) => {
+    if (CONFIG.DEBUG) {
+      console.log('[WorkingInject]', ...args);
+    }
+  };
   const error = (...args) => console.error('[WorkingInject]', ...args);
   const notifyUnsupported = (reason) => {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -122,71 +124,24 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     } catch (e) {}
   }
   
-  function computeVideoUriFromConfig(config) {
-    if (!config) return CONFIG.VIDEO_URI || null;
-    if (config.videoUri !== undefined) return config.videoUri;
-    if (Array.isArray(config.devices)) {
-      const primary = config.devices.find(d => d.type === 'camera' && d.simulationEnabled && d.assignedVideoUri) ||
-        config.devices.find(d => d.type === 'camera' && d.assignedVideoUri);
-      if (primary && primary.assignedVideoUri) return primary.assignedVideoUri;
-    }
-    if (config.fallbackVideoUri) return config.fallbackVideoUri;
-    return CONFIG.VIDEO_URI || null;
-  }
-  
-  function updateConfig(newConfig) {
-    if (!newConfig || typeof newConfig !== 'object') return;
-    
-    if (typeof newConfig.stealthMode === 'boolean') {
-      CONFIG.STEALTH = newConfig.stealthMode;
-    }
-    if (typeof newConfig.debugEnabled === 'boolean') {
-      CONFIG.DEBUG = newConfig.debugEnabled;
-    }
-    if (Array.isArray(newConfig.devices)) {
-      CONFIG.DEVICES = newConfig.devices;
-    }
-    if (typeof newConfig.targetWidth === 'number') {
-      CONFIG.TARGET_WIDTH = newConfig.targetWidth;
-    }
-    if (typeof newConfig.targetHeight === 'number') {
-      CONFIG.TARGET_HEIGHT = newConfig.targetHeight;
-    }
-    if (typeof newConfig.targetFPS === 'number') {
-      CONFIG.TARGET_FPS = newConfig.targetFPS;
-    }
-    
-    const nextVideoUri = computeVideoUriFromConfig(newConfig);
-    if (nextVideoUri !== CONFIG.VIDEO_URI) {
-      CONFIG.VIDEO_URI = nextVideoUri;
-      State.videoLoaded = false;
-      State.mode = nextVideoUri ? 'video' : 'canvas';
-      if (State.videoElement) {
-        try { State.videoElement.pause(); } catch (e) {}
-        safeRemoveElement(State.videoElement);
-      }
-      State.videoElement = null;
-      State.stream = null;
-      
-      if (nextVideoUri) {
-        initVideoStream().then(videoOk => {
-          State.mode = videoOk ? 'video' : 'canvas';
-        }).catch(() => {});
-      }
-    }
-    
-    // Resize canvas if dimensions changed
-    if (State.canvasElement) {
-      State.canvasElement.width = CONFIG.TARGET_WIDTH;
-      State.canvasElement.height = CONFIG.TARGET_HEIGHT;
-    }
-  }
-  
   function setDebug(enabled) {
     CONFIG.DEBUG = !!enabled;
     log = CONFIG.DEBUG
       ? (...args) => console.log('[WorkingInject]', ...args)
       : () => {};
+  }
+  
+  // Basic polyfills for environments that throttle rAF
+  if (!window.performance) {
+    window.performance = { now: function() { return Date.now(); } };
+  } else if (typeof window.performance.now !== 'function') {
+    window.performance.now = function() { return Date.now(); };
+  }
+  if (!window.requestAnimationFrame) {
+    window.requestAnimationFrame = function(cb) { return setTimeout(function() { cb(Date.now()); }, 16); };
+  }
+  if (!window.cancelAnimationFrame) {
+    window.cancelAnimationFrame = function(id) { clearTimeout(id); };
   }
   
   log('========================================');
@@ -219,6 +174,11 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     generatorWriter: null,
     generatorActive: false,
     generatorWritePending: false,
+    audioTrack: null,
+    audioContext: null,
+    audioOscillator: null,
+    audioGain: null,
+    audioDestination: null,
   };
 
   // ============================================================================
@@ -458,13 +418,13 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     if (!CONFIG.AUDIO_ENABLED) return null;
     
     try {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContext) {
+      const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextCtor) {
         log('AudioContext not available');
         return null;
       }
       
-      const audioContext = new AudioContext();
+      const audioContext = new AudioContextCtor();
       const oscillator = audioContext.createOscillator();
       const gainNode = audioContext.createGain();
       const destination = audioContext.createMediaStreamDestination();
@@ -475,8 +435,17 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       gainNode.connect(destination);
       oscillator.start();
       
+      if (typeof audioContext.resume === 'function' && audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => {});
+      }
+      
       const audioTracks = destination.stream.getAudioTracks();
       if (audioTracks.length > 0) {
+        State.audioContext = audioContext;
+        State.audioOscillator = oscillator;
+        State.audioGain = gainNode;
+        State.audioDestination = destination;
+        State.audioTrack = audioTracks[0];
         log('Silent audio track created');
         
         // Spoof audio track metadata
@@ -494,6 +463,43 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       error('Failed to create audio track:', e);
     }
     return null;
+  }
+  
+  function cleanupAudio() {
+    if (State.audioTrack) {
+      try { State.audioTrack.stop(); } catch (e) {}
+    }
+    if (State.audioOscillator) {
+      try { State.audioOscillator.stop(); } catch (e) {}
+    }
+    if (State.audioContext && State.audioContext.state !== 'closed') {
+      try { State.audioContext.close(); } catch (e) {}
+    }
+    State.audioTrack = null;
+    State.audioContext = null;
+    State.audioOscillator = null;
+    State.audioGain = null;
+    State.audioDestination = null;
+  }
+  
+  function removeAudioTracks(stream) {
+    if (!stream) return;
+    const tracks = stream.getAudioTracks();
+    tracks.forEach(function(track) {
+      try { stream.removeTrack(track); } catch (e) {}
+      try { track.stop(); } catch (e) {}
+    });
+    cleanupAudio();
+  }
+  
+  function ensureAudioTrack(stream) {
+    if (!stream) return;
+    if (stream.getAudioTracks().length > 0) return;
+    const audioTrack = createSilentAudioTrack();
+    if (audioTrack) {
+      stream.addTrack(audioTrack);
+      log('Added audio track');
+    }
   }
   
   // ============================================================================
@@ -743,25 +749,7 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     State.videoElement = null;
     State.videoLoaded = false;
   }
-  
-  function resolveVideoUriFromConfig(config) {
-    if (!config || typeof config !== 'object') return CONFIG.VIDEO_URI;
-    if (typeof config.videoUri === 'string') return config.videoUri;
-    if (Array.isArray(config.devices)) {
-      const camera =
-        config.devices.find(d => d.type === 'camera' && d.simulationEnabled) ||
-        config.devices.find(d => d.type === 'camera') ||
-        config.devices[0];
-      if (camera && camera.assignedVideoUri) {
-        return camera.assignedVideoUri;
-      }
-    }
-    if (typeof config.fallbackVideoUri === 'string') {
-      return config.fallbackVideoUri;
-    }
-    return CONFIG.VIDEO_URI;
-  }
-  
+
   async function applyVideoUri(nextUri) {
     const normalized = nextUri || null;
     if (!normalized) {
@@ -972,12 +960,8 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       log('Stream created with', videoTracks.length, 'video track(s)');
       
       // Add silent audio only when requested.
-      if (wantsAudio && CONFIG.AUDIO_ENABLED) {
-        const audioTrack = createSilentAudioTrack();
-        if (audioTrack) {
-          stream.addTrack(audioTrack);
-          log('Added audio track');
-        }
+      if (wantsAudio) {
+        ensureAudioTrack(stream);
       }
       
       // Store stream
@@ -1198,6 +1182,15 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     
     log('Wants video:', wantsVideo, '| Wants audio:', wantsAudio);
     
+    if (window.__nativeWebRTCBridgeConfig?.enabled && typeof window.__nativeWebRTCBridgeRequest === 'function') {
+      log('Native WebRTC bridge enabled - delegating getUserMedia');
+      try {
+        return await window.__nativeWebRTCBridgeRequest(constraints);
+      } catch (err) {
+        log('Native bridge failed, falling back:', err?.message || err);
+      }
+    }
+    
     if (!wantsVideo) {
       // Audio only - pass through to real getUserMedia if available
       if (originalGetUserMedia && !CONFIG.STEALTH) {
@@ -1281,8 +1274,6 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
           throw new DOMException('Could not start video source', 'NotReadableError');
         }
       }
-    }
-    
     log('Returning stream with', stream.getTracks().length, 'tracks');
     return stream;
   };
@@ -1336,13 +1327,6 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
       }
     } catch (e) {}
   }, 2000);
-  
-  // Expose config updater for RN bridge compatibility
-  window.__updateMediaConfig = function(config) {
-    updateConfig(config);
-    log('Config updated - devices:', CONFIG.DEVICES.length);
-  };
-  window.__mediaInjectorInitialized = true;
   
   // ============================================================================
   // INITIALIZATION
@@ -1593,11 +1577,6 @@ export function createWorkingInjectionScript(options: WorkingInjectionOptions): 
     },
     updateConfig: (config) => updateConfig(config),
     getCapabilities: () => window.__workingInjectionCapabilities || null,
-  };
-
-  // Align with legacy injector update flow
-  window.__updateMediaConfig = function(config) {
-    updateConfig(config);
   };
   window.__mediaInjectorInitialized = true;
   

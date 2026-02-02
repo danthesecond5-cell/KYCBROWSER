@@ -236,6 +236,13 @@ export default function ProtocolSettingsModal({
                 thumbColor={standardSettings.loopVideo ? '#ffffff' : '#888'}
               />
             </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Native WebRTC Bridge</Text>
+                <Text style={styles.settingHint}>Forced ON (native dev client required)</Text>
+              </View>
+              <Text style={styles.settingValue}>FORCED</Text>
+            </View>
           </View>
         );
 
@@ -1421,6 +1428,11 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(255,255,255,0.5)',
     marginTop: 2,
+  },
+  settingValue: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#00ff88',
   },
   mlNotice: {
     flexDirection: 'row',

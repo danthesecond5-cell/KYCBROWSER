@@ -144,6 +144,27 @@ This document analyzes which injection protocols work on webcam test sites like 
 
 ---
 
+### 🧪 Native WebRTC Bridge (EXPERIMENTAL)
+
+**Status**: OPTIONAL (Native module required)
+
+**How it works**:
+- WebView `getUserMedia()` is proxied to React Native via a WebRTC offer/answer exchange
+- React Native creates the MediaStream with `react-native-webrtc` and sends it back over the bridge
+- WebView receives a real `MediaStream` track (not canvas capture)
+
+**Why this helps webcamtests.com**:
+- MediaRecorder sees a true WebRTC track, not a canvas capture
+- Avoids some canvas-based detection heuristics
+
+**Requirements**:
+- `react-native-webrtc` installed
+- Native dev client / prebuild (not supported in Expo web)
+
+**Works on webcamtests.com**: YES (when native module is available)
+
+---
+
 ## Technical Root Causes of Failures
 
 ### Timing Issues

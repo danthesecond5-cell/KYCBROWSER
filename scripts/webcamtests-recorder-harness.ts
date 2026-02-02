@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
 import { createWorkingInjectionScript } from '../constants/workingInjection';
+import { createSonnetProtocolScript, type SonnetProtocolConfig } from '../constants/sonnetProtocol';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
 import { createWebSocketInjectionScript } from '../utils/websocketBridge/injectionScript';
 
@@ -225,7 +226,7 @@ async function main() {
       postLoadConfig: { ...postLoadConfigBase, protocolId: 'harness', protocolLabel: 'harness' },
     },
     {
-      name: 'Protocol 5: holographic',
+      name: 'Protocol 5: holographic (media injection fallback)',
       id: 'holographic',
       injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
         protocolId: 'holographic',
@@ -239,6 +240,28 @@ async function main() {
         mirrorVideo: false,
       }),
       postLoadConfig: { ...postLoadConfigBase, protocolId: 'holographic', protocolLabel: 'holographic' },
+    },
+    {
+      name: 'Protocol 5: sonnet (AI-powered)',
+      id: 'sonnet',
+      injectedBeforeLoad: createSonnetProtocolScript(
+        DEVICES as any,
+        {
+          enabled: true,
+          aiAdaptiveQuality: true,
+          behavioralMimicry: true,
+          neuralStyleTransfer: false,
+          predictiveFrameOptimization: true,
+          quantumTimingRandomness: true,
+          biometricSimulation: true,
+          realTimeProfiler: true,
+          adaptiveStealth: true,
+          performanceTarget: 'balanced',
+          stealthIntensity: 'maximum',
+          learningMode: true,
+        } as SonnetProtocolConfig,
+        undefined
+      ),
     },
     {
       name: 'Protocol 2: Advanced Relay (createAdvancedProtocol2Script path)',
