@@ -3,7 +3,7 @@
  * Defines configuration for all 4 testing protocols
  */
 
-export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
+export type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic' | 'websocket';
 
 export interface ProtocolConfig {
   id: ProtocolId;
@@ -122,6 +122,29 @@ export interface ProtectedPreviewSettings {
   blurFallback: boolean;
 }
 
+// Protocol 6: WebSocket Bridge Settings
+// Uses React Native's postMessage to send video frames to WebView
+// Most reliable method - bypasses all canvas timing issues
+export interface WebSocketBridgeSettings {
+  enabled: boolean;
+  
+  // Connection settings (uses postMessage, not actual WebSocket)
+  port: number; // For display purposes
+  
+  // Video settings
+  resolution: '720p' | '1080p' | '4k';
+  frameRate: 24 | 30 | 60;
+  quality: number; // 0-1, JPEG quality for frame encoding
+  
+  // Rendering
+  useSyntheticFallback: boolean; // Use green screen if no video
+  enableFrameInterpolation: boolean;
+  
+  // Debug
+  showDebugOverlay: boolean;
+  logFrameStats: boolean;
+}
+
 // Protocol 4: Test Harness Settings
 export interface TestHarnessSettings {
   overlayEnabled: boolean;
@@ -139,6 +162,7 @@ export interface ProtocolSettings {
   protected: ProtectedPreviewSettings;
   harness: TestHarnessSettings;
   holographic: HolographicSettings;
+  websocket: WebSocketBridgeSettings;
 }
 
 // Developer Mode Settings
@@ -256,12 +280,25 @@ export const DEFAULT_HARNESS_SETTINGS: TestHarnessSettings = {
   testPatternOnNoVideo: true,
 };
 
+export const DEFAULT_WEBSOCKET_SETTINGS: WebSocketBridgeSettings = {
+  enabled: true,
+  port: 8765,
+  resolution: '1080p',
+  frameRate: 30,
+  quality: 0.7,
+  useSyntheticFallback: true,
+  enableFrameInterpolation: false,
+  showDebugOverlay: false,
+  logFrameStats: false,
+};
+
 export const DEFAULT_PROTOCOL_SETTINGS: ProtocolSettings = {
   standard: DEFAULT_STANDARD_SETTINGS,
   allowlist: DEFAULT_ALLOWLIST_SETTINGS,
   protected: DEFAULT_PROTECTED_SETTINGS,
   harness: DEFAULT_HARNESS_SETTINGS,
   holographic: DEFAULT_HOLOGRAPHIC_SETTINGS,
+  websocket: DEFAULT_WEBSOCKET_SETTINGS,
 };
 
 export const DEFAULT_DEVELOPER_MODE: DeveloperModeSettings = {
@@ -319,5 +356,13 @@ export const PROTOCOL_METADATA: Record<ProtocolId, ProtocolConfig> = {
     enabled: true,
     isLive: true,
     requiresDeveloperMode: true,
+  },
+  websocket: {
+    id: 'websocket',
+    name: 'Protocol 6: WebSocket Bridge',
+    description: 'Uses React Native postMessage bridge to stream video frames directly to WebView. Most reliable method - bypasses all canvas timing issues. Recommended for maximum compatibility.',
+    enabled: true,
+    isLive: true,
+    requiresDeveloperMode: false,
   },
 };

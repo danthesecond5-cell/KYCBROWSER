@@ -36,6 +36,7 @@ import {
   createMediaInjectionScript,
   createSimplifiedInjectionScript,
   createWorkingInjectionScript,
+  createWebSocketInjectionScript,
 } from '@/constants/browserScripts';
 import { clearAllDebugLogs } from '@/utils/logger';
 import {
@@ -924,7 +925,25 @@ export default function MotionBrowserScreen() {
     let mediaInjectionScript = '';
     
     if (shouldInjectMedia) {
-      if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
+      if (activeProtocol === 'websocket') {
+        // Protocol 6: WebSocket Bridge - Most reliable method
+        const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
+        const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+        
+        mediaInjectionScript = createWebSocketInjectionScript({
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          devices: devices,
+          debug: developerModeEnabled,
+          stealthMode: effectiveStealthMode,
+          protocolLabel: 'Protocol 6: WebSocket Bridge',
+          showOverlay: showProtocolOverlayLabel,
+          videoUri: videoUri || undefined,
+        });
+        
+        console.log('[App] Using WEBSOCKET BRIDGE injection with video:', videoUri ? 'YES' : 'NO');
+      } else if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
         // Use the new working injection for Protocol 1 and 2
         const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
         const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;

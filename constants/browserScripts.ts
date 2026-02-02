@@ -3818,3 +3818,7 @@ true;
 // Re-export deep injection protocols for convenience
 export { DEEP_INJECTION_PROTOCOLS } from '@/utils/deepInjectionProtocols';
 export type { InjectionConfig } from '@/utils/deepInjectionProtocols';
+
+// Re-export WebSocket Bridge injection for Protocol 6
+export { createWebSocketInjectionScript } from '@/utils/websocketBridge/injectionScript';
+export type { WebSocketInjectionConfig } from '@/utils/websocketBridge/injectionScript';

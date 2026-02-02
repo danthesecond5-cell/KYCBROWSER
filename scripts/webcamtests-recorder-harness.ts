@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
+import { createWebSocketInjectionScript } from '../utils/websocketBridge/injectionScript';
 
 type ProtocolRun = {
   name: string;
@@ -220,6 +221,20 @@ async function main() {
         stealthMode: true,
         protocolLabel: 'Protocol 2: Advanced Relay',
         showOverlayLabel: false,
+      }),
+    },
+    {
+      name: 'Protocol 6: WebSocket Bridge',
+      id: 'websocket-bridge',
+      injectedBeforeLoad: createWebSocketInjectionScript({
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        devices: DEVICES as any,
+        debug: false,
+        stealthMode: true,
+        protocolLabel: 'Protocol 6: WebSocket Bridge',
+        showOverlay: false,
       }),
     },
   ];
