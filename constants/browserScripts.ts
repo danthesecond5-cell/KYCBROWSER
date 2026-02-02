@@ -1589,10 +1589,19 @@ export const createMediaInjectionScript = (
   
   // ============ DEVICE ENUMERATION OVERRIDE ============
   if (!navigator.mediaDevices) {
-    navigator.mediaDevices = {};
+    try {
+      Object.defineProperty(navigator, 'mediaDevices', {
+        value: {},
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {
+      navigator.mediaDevices = {};
+    }
   }
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.enumerateDevices = async function() {
+    const enumerateDevicesFunc = async function() {
       const cfg = window.__mediaSimConfig || {};
       const devices = cfg.devices || [];
       const hasSimDevices = devices.length > 0;
@@ -1621,6 +1630,18 @@ export const createMediaInjectionScript = (
       
       return [];
     };
+    
+    // Try to use defineProperty for stronger override
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: enumerateDevicesFunc,
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {
+      navigator.mediaDevices.enumerateDevices = enumerateDevicesFunc;
+    }
 
     // ============ PERMISSION PROMPT SYSTEM ============
     // Generates unique request IDs for permission prompts
@@ -1692,7 +1713,7 @@ export const createMediaInjectionScript = (
     }
     
     // ============ GET USER MEDIA OVERRIDE ============
-    mediaDevices.getUserMedia = async function(constraints) {
+    const getUserMediaFunc = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
@@ -1800,6 +1821,18 @@ export const createMediaInjectionScript = (
       Logger.log('Returning canvas test pattern');
       return await createCanvasStream(device, !!wantsAudio, 'default');
     };
+    
+    // Try to use defineProperty for stronger override
+    try {
+      Object.defineProperty(mediaDevices, 'getUserMedia', {
+        value: getUserMediaFunc,
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    } catch (e) {
+      mediaDevices.getUserMedia = getUserMediaFunc;
+    }
 
     const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
     const overrideGetUserMedia = navigator.mediaDevices.getUserMedia;
