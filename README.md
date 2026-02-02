@@ -88,6 +88,7 @@ You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Andro
 - In-app purchases and subscriptions
 - Push notifications
 - Custom native modules
+- WebRTC native bridge (react-native-webrtc)
 
 Learn more: [Expo Custom Development Builds Guide](https://docs.expo.dev/develop/development-builds/introduction/)
 
@@ -99,6 +100,20 @@ bun run start -- --ios
 
 # Android Emulator
 bun run start -- --android
+```
+
+### Native WebRTC Bridge (custom dev client required)
+
+The WebView native WebRTC bridge uses `react-native-webrtc`, which requires a
+custom development build (Expo Go will not load it).
+
+```bash
+# Generate native projects (once)
+expo prebuild
+
+# Run a dev client build
+expo run:ios
+expo run:android
 ```
 
 ### **Sideload to a real iPhone (IPA)**
