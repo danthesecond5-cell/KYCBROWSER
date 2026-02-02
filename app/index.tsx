@@ -440,13 +440,13 @@ export default function MotionBrowserScreen() {
       return;
     }
 
-    if (!isProtocolEnabled) {
-      console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
-      return;
-    }
-
-    if (allowlistBlocked) {
-      console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+    const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
+    if (!shouldInjectMedia && !nativeBridgeEnabled) {
+      if (!isProtocolEnabled) {
+        console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
+      } else if (allowlistBlocked) {
+        console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+      }
       return;
     }
 
@@ -478,7 +478,8 @@ export default function MotionBrowserScreen() {
     
     const nativeBridgeConfig = {
       enabled: nativeBridgeEnabled,
-      preferNative: true,
+      preferNative: standardSettings.nativeBridgeForce,
+      forceNative: standardSettings.nativeBridgeForce,
       timeoutMs: 10000,
       debug: developerModeEnabled,
     };
@@ -493,18 +494,20 @@ export default function MotionBrowserScreen() {
     
     lastInjectionTimeRef.current = Date.now();
     
-    const fallbackScript = createMediaInjectionScript(normalizedDevices, {
-      stealthMode: effectiveStealthMode,
-      fallbackVideoUri,
-      forceSimulation: protocolForceSimulation,
-      protocolId: activeProtocol,
-      protocolLabel: protocolOverlayLabel,
-      showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: standardSettings.loopVideo,
-      mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
-      permissionPromptEnabled: true,
-    });
+    const fallbackScript = shouldInjectMedia
+      ? createMediaInjectionScript(normalizedDevices, {
+          stealthMode: effectiveStealthMode,
+          fallbackVideoUri,
+          forceSimulation: protocolForceSimulation,
+          protocolId: activeProtocol,
+          protocolLabel: protocolOverlayLabel,
+          showOverlayLabel: showProtocolOverlayLabel,
+          loopVideo: standardSettings.loopVideo,
+          mirrorVideo: protocolMirrorVideo,
+          debugEnabled: developerModeEnabled,
+          permissionPromptEnabled: true,
+        })
+      : '';
 
     webViewRef.current.injectJavaScript(`
       (function() {
@@ -513,11 +516,13 @@ export default function MotionBrowserScreen() {
         } else {
           window.__nativeWebRTCBridgeConfig = ${JSON.stringify(nativeBridgeConfig)};
         }
-        if (window.__updateMediaConfig) {
-          window.__updateMediaConfig(${JSON.stringify(config)});
-          console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
-        } else {
-          ${fallbackScript}
+        if (${shouldInjectMedia ? 'true' : 'false'}) {
+          if (window.__updateMediaConfig) {
+            window.__updateMediaConfig(${JSON.stringify(config)});
+            console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
+          } else {
+            ${fallbackScript}
+          }
         }
       })();
       true;
@@ -539,6 +544,7 @@ export default function MotionBrowserScreen() {
     protocolMirrorVideo,
     developerModeEnabled,
     nativeBridgeEnabled,
+    standardSettings.nativeBridgeForce,
   ]);
 
   const injectMediaConfig = useCallback(() => {
@@ -921,9 +927,19 @@ export default function MotionBrowserScreen() {
 
   const nativeBridgeEnabled = useMemo(() => {
     if (isWeb || !webViewAvailable) return false;
-    if (!isProtocolEnabled || allowlistBlocked) return false;
-    return standardSettings.nativeBridgeEnabled;
-  }, [isWeb, webViewAvailable, isProtocolEnabled, allowlistBlocked, standardSettings.nativeBridgeEnabled]);
+    if (!standardSettings.nativeBridgeEnabled && !standardSettings.nativeBridgeForce) return false;
+    if (!standardSettings.nativeBridgeForce) {
+      if (!isProtocolEnabled || allowlistBlocked) return false;
+    }
+    return true;
+  }, [
+    isWeb,
+    webViewAvailable,
+    standardSettings.nativeBridgeEnabled,
+    standardSettings.nativeBridgeForce,
+    isProtocolEnabled,
+    allowlistBlocked,
+  ]);
 
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
@@ -990,11 +1006,13 @@ export default function MotionBrowserScreen() {
 
     const nativeBridgeConfig = {
       enabled: nativeBridgeEnabled,
-      preferNative: true,
+      preferNative: standardSettings.nativeBridgeForce,
+      forceNative: standardSettings.nativeBridgeForce,
       timeoutMs: 10000,
       debug: developerModeEnabled,
     };
-    const nativeBridgeScript = shouldInjectMedia
+    const shouldInjectBridge = nativeBridgeEnabled;
+    const nativeBridgeScript = shouldInjectBridge
       ? NATIVE_WEBRTC_BRIDGE_SCRIPT + `
         (function() {
           if (window.__updateNativeWebRTCBridgeConfig) {
@@ -1034,6 +1052,7 @@ export default function MotionBrowserScreen() {
     protocolOverlayLabel,
     showProtocolOverlayLabel,
     standardSettings.loopVideo,
+    standardSettings.nativeBridgeForce,
     protocolMirrorVideo,
     developerModeEnabled,
     isProtocolEnabled,

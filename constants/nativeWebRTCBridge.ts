@@ -11,7 +11,8 @@ export const NATIVE_WEBRTC_BRIDGE_SCRIPT = `
   
   var DEFAULT_CONFIG = {
     enabled: false,
-    preferNative: true,
+    preferNative: false,
+    forceNative: false,
     timeoutMs: 8000,
     debug: false
   };
@@ -231,8 +232,9 @@ export const NATIVE_WEBRTC_BRIDGE_SCRIPT = `
       return Promise.reject(new DOMException('getUserMedia not available', 'NotSupportedError'));
     }
     
+    var forceNative = cfg.forceNative === true || cfg.preferNative === true;
     return requestStream(constraints).catch(function(err) {
-      if (originalGetUserMedia && !cfg.preferNative) {
+      if (originalGetUserMedia && !forceNative) {
         return originalGetUserMedia(constraints);
       }
       throw err;

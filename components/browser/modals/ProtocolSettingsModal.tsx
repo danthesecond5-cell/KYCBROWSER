@@ -229,6 +229,18 @@ export default function ProtocolSettingsModal({
                 thumbColor={standardSettings.nativeBridgeEnabled ? '#ffffff' : '#888'}
               />
             </View>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Force Native Bridge</Text>
+                <Text style={styles.settingHint}>Always use native stream, even if other injection is disabled</Text>
+              </View>
+              <Switch
+                value={standardSettings.nativeBridgeForce}
+                onValueChange={(v) => updateStandardSettings({ nativeBridgeForce: v })}
+                trackColor={{ false: 'rgba(255,255,255,0.2)', true: '#ff9f1a' }}
+                thumbColor={standardSettings.nativeBridgeForce ? '#ffffff' : '#888'}
+              />
+            </View>
           </View>
         );
 
