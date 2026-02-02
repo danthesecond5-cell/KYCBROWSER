@@ -1761,7 +1761,7 @@ export const createMediaInjectionScript = (
 
       const shouldSimulate = decisionAction === 'simulate'
         ? true
-        : (forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
+        : ((cfg.forceSimulation || CONFIG.FORCE_SIMULATION) || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
 
       if (!shouldSimulate) {
         if (_origGetUserMedia) {
