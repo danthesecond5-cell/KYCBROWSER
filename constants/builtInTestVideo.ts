@@ -348,9 +348,48 @@ export const BUILT_IN_VIDEO_INJECTION_SCRIPT = `
             return;
           }
           
-          // Spoof track settings
+          // Spoof track settings - CRITICAL for webcamtests.com compatibility
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
+            const trackId = 'builtin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
+            // Essential track properties
+            try {
+              Object.defineProperty(videoTrack, 'id', {
+                get: function() { return trackId; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'kind', {
+                get: function() { return 'video'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'readyState', {
+                get: function() { return 'live'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'enabled', {
+                get: function() { return true; },
+                set: function(v) { /* ignore */ },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'muted', {
+                get: function() { return false; },
+                configurable: true
+              });
+            } catch(e) {}
+            
             videoTrack.getSettings = function() {
               return {
                 width: w,
@@ -374,6 +413,18 @@ export const BUILT_IN_VIDEO_INJECTION_SCRIPT = `
                 height: { min: 1, max: 2160 },
                 width: { min: 1, max: 3840 },
               };
+            };
+            
+            videoTrack.getConstraints = function() {
+              return {
+                facingMode: 'user',
+                width: { ideal: w },
+                height: { ideal: h }
+              };
+            };
+            
+            videoTrack.applyConstraints = function(constraints) {
+              return Promise.resolve();
             };
             
             Object.defineProperty(videoTrack, 'label', {

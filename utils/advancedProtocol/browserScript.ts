@@ -715,17 +715,56 @@ export function createAdvancedProtocol2Script(
     
     const device = CONFIG.DEVICES.find(d => d.type === 'camera') || CONFIG.DEVICES[0];
     const recommendedRes = ASIModule.getRecommendedResolution();
+    const trackId = 'track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const deviceId = device?.nativeDeviceId || device?.id || 'camera_0';
+    const facingMode = device?.facing === 'back' ? 'environment' : 'user';
+    
+    // CRITICAL: Spoof essential track properties for webcamtests.com compatibility
+    try {
+      Object.defineProperty(videoTrack, 'id', {
+        get: function() { return trackId; },
+        configurable: true,
+      });
+    } catch(e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'kind', {
+        get: function() { return 'video'; },
+        configurable: true,
+      });
+    } catch(e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'readyState', {
+        get: function() { return 'live'; },
+        configurable: true,
+      });
+    } catch(e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'enabled', {
+        get: function() { return true; },
+        set: function(v) { /* ignore */ },
+        configurable: true,
+      });
+    } catch(e) {}
+    
+    try {
+      Object.defineProperty(videoTrack, 'muted', {
+        get: function() { return false; },
+        configurable: true,
+      });
+    } catch(e) {}
     
     // Spoof getSettings
-    const originalGetSettings = videoTrack.getSettings?.bind(videoTrack);
     videoTrack.getSettings = function() {
       return {
         width: recommendedRes.width,
         height: recommendedRes.height,
         frameRate: CONFIG.TARGET_FPS,
         aspectRatio: recommendedRes.width / recommendedRes.height,
-        facingMode: device?.facing === 'back' ? 'environment' : 'user',
-        deviceId: device?.nativeDeviceId || device?.id || 'camera_0',
+        facingMode: facingMode,
+        deviceId: deviceId,
         groupId: device?.groupId || 'default',
         resizeMode: 'none',
       };
@@ -735,8 +774,8 @@ export function createAdvancedProtocol2Script(
     videoTrack.getCapabilities = function() {
       return {
         aspectRatio: { min: 0.5, max: 2.0 },
-        deviceId: device?.nativeDeviceId || device?.id || 'camera_0',
-        facingMode: [device?.facing === 'back' ? 'environment' : 'user'],
+        deviceId: deviceId,
+        facingMode: [facingMode],
         frameRate: { min: 1, max: 60 },
         groupId: device?.groupId || 'default',
         height: { min: 1, max: 4320 },
@@ -745,13 +784,28 @@ export function createAdvancedProtocol2Script(
       };
     };
     
+    // Spoof getConstraints
+    videoTrack.getConstraints = function() {
+      return {
+        facingMode: facingMode,
+        width: { ideal: recommendedRes.width },
+        height: { ideal: recommendedRes.height },
+        deviceId: { exact: deviceId }
+      };
+    };
+    
+    // Spoof applyConstraints
+    videoTrack.applyConstraints = function(constraints) {
+      return Promise.resolve();
+    };
+    
     // Spoof label
     Object.defineProperty(videoTrack, 'label', {
       get: function() { return device?.name || 'Camera'; },
       configurable: true,
     });
     
-    Logger.log('Track metadata spoofed');
+    Logger.log('Track metadata spoofed:', device?.name, '| id:', trackId);
   }
   
   function notifyReactNative(type, payload) {

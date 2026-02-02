@@ -1476,8 +1476,11 @@ export const createMediaInjectionScript = (
       if (cfg.permissionPromptEnabled === false) {
         return Promise.resolve({ action: 'auto' });
       }
+      // CRITICAL FIX: When no RN bridge exists (standalone testing), auto-simulate
+      // instead of denying. This allows injection to work on webcamtests.com etc.
       if (!window.ReactNativeWebView || !window.ReactNativeWebView.postMessage) {
-        return Promise.resolve({ action: 'deny' });
+        Logger.log('No RN bridge detected - auto-simulating for standalone testing');
+        return Promise.resolve({ action: 'simulate' });
       }
       const requestId = 'perm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
       return new Promise(function(resolve) {
@@ -2428,12 +2431,51 @@ export const createMediaInjectionScript = (
             const groupId = device?.groupId || 'default';
             const facingMode = device?.facing === 'back' ? 'environment' : 'user';
             const caps = device?.capabilities || {};
+            const trackId = 'track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
             // Get max resolution from capabilities
             const videoResolutions = caps.videoResolutions || [];
             const maxWidth = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.width; })) : res.width;
             const maxHeight = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.height; })) : res.height;
             const maxFps = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.maxFps || 30; })) : CONFIG.TARGET_FPS;
+            
+            // CRITICAL: Spoof essential track properties for webcamtests.com compatibility
+            try {
+              Object.defineProperty(videoTrack, 'id', {
+                get: function() { return trackId; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'kind', {
+                get: function() { return 'video'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            // Ensure track appears live and enabled
+            try {
+              Object.defineProperty(videoTrack, 'readyState', {
+                get: function() { return 'live'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'enabled', {
+                get: function() { return true; },
+                set: function(v) { /* ignore */ },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'muted', {
+                get: function() { return false; },
+                configurable: true
+              });
+            } catch(e) {}
             
             // Spoof getSettings - derived from device template
             videoTrack.getSettings = function() {
@@ -2473,13 +2515,25 @@ export const createMediaInjectionScript = (
               };
             };
             
+            // Spoof applyConstraints - return resolved promise
+            videoTrack.applyConstraints = function(constraints) {
+              return Promise.resolve();
+            };
+            
+            // Spoof clone - return the same track (simplified)
+            const origClone = videoTrack.clone ? videoTrack.clone.bind(videoTrack) : null;
+            videoTrack.clone = function() {
+              if (origClone) return origClone();
+              return videoTrack;
+            };
+            
             // Make label match device template name
             Object.defineProperty(videoTrack, 'label', {
               get: function() { return deviceName; },
               configurable: true
             });
             
-            Logger.log('Track spoofed from template:', deviceName, '| facing:', facingMode, '| caps:', maxWidth + 'x' + maxHeight + '@' + maxFps);
+            Logger.log('Track spoofed from template:', deviceName, '| id:', trackId, '| facing:', facingMode, '| caps:', maxWidth + 'x' + maxHeight + '@' + maxFps);
           }
           
           // Cleanup function
@@ -2654,11 +2708,49 @@ export const createMediaInjectionScript = (
             const groupId = device?.groupId || 'default';
             const facingMode = device?.facing === 'back' ? 'environment' : 'user';
             const caps = device?.capabilities || {};
+            const trackId = 'track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
             const videoResolutions = caps.videoResolutions || [];
             const maxWidth = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.width; })) : w;
             const maxHeight = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.height; })) : h;
             const maxFps = videoResolutions.length > 0 ? Math.max.apply(null, videoResolutions.map(function(r) { return r.maxFps || 30; })) : CONFIG.TARGET_FPS;
+            
+            // CRITICAL: Spoof essential track properties for webcamtests.com compatibility
+            try {
+              Object.defineProperty(videoTrack, 'id', {
+                get: function() { return trackId; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'kind', {
+                get: function() { return 'video'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'readyState', {
+                get: function() { return 'live'; },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'enabled', {
+                get: function() { return true; },
+                set: function(v) { /* ignore */ },
+                configurable: true
+              });
+            } catch(e) {}
+            
+            try {
+              Object.defineProperty(videoTrack, 'muted', {
+                get: function() { return false; },
+                configurable: true
+              });
+            } catch(e) {}
             
             videoTrack.getSettings = function() {
               return {
@@ -2695,12 +2787,16 @@ export const createMediaInjectionScript = (
               };
             };
             
+            videoTrack.applyConstraints = function(constraints) {
+              return Promise.resolve();
+            };
+            
             Object.defineProperty(videoTrack, 'label', {
               get: function() { return deviceName; },
               configurable: true
             });
             
-            Logger.log('Green screen track spoofed:', deviceName, '| facing:', facingMode);
+            Logger.log('Green screen track spoofed:', deviceName, '| id:', trackId, '| facing:', facingMode);
           }
           
           stream._cleanup = function() { 
