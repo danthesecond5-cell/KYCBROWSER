@@ -1,0 +1,12 @@
+{
+  "name": "webrtc-loopback",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "nativePackage": true,
+  "react-native": {
+    "ios": {
+      "podspecPath": "ios/WebRtcLoopback.podspec"
+    }
+  }
+}
