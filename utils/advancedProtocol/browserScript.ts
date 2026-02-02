@@ -486,7 +486,17 @@ export function createAdvancedProtocol2Script(
     },
     
     start: function() {
-      if (this.isRunning) return this.outputStream;
+      // If already running but stream was stopped/ended, create a new one
+      if (this.isRunning && this.outputStream) {
+        const tracks = this.outputStream.getVideoTracks();
+        const isEnded = tracks.length === 0 || tracks.every(t => t.readyState === 'ended');
+        if (!isEnded) {
+          // Stream is still valid, clone it so each caller gets their own
+          return this.outputStream.clone();
+        }
+        // Stream ended, create new one
+        Logger.log('StreamGenerator: Previous stream ended, creating new one');
+      }
       
       this.isRunning = true;
       this.lastFrameTime = performance.now();
@@ -546,17 +556,43 @@ export function createAdvancedProtocol2Script(
         generator.animationFrameId = requestAnimationFrame(render);
       }
       
-      requestAnimationFrame(render);
+      // CRITICAL: Draw multiple frames before captureStream to ensure valid stream
+      // MediaRecorder will fail if the canvas has no content or too little data
+      for (let i = 0; i < 3; i++) {
+        this.drawGreenScreen(this.outputCtx, this.outputCanvas.width, this.outputCanvas.height, performance.now() + i * 16);
+      }
       
-      // Create output stream
+      // Create output stream AFTER drawing frames
       try {
-        this.outputStream = this.outputCanvas.captureStream(CONFIG.TARGET_FPS);
+        // Try captureStream with explicit frame rate first
+        if (typeof this.outputCanvas.captureStream === 'function') {
+          this.outputStream = this.outputCanvas.captureStream(CONFIG.TARGET_FPS);
+        } else if (typeof this.outputCanvas.mozCaptureStream === 'function') {
+          this.outputStream = this.outputCanvas.mozCaptureStream(CONFIG.TARGET_FPS);
+        } else if (typeof this.outputCanvas.webkitCaptureStream === 'function') {
+          this.outputStream = this.outputCanvas.webkitCaptureStream(CONFIG.TARGET_FPS);
+        } else {
+          Logger.error('StreamGenerator: captureStream not available');
+          return null;
+        }
+        
+        if (!this.outputStream || this.outputStream.getVideoTracks().length === 0) {
+          Logger.error('StreamGenerator: No video tracks in captured stream');
+          return null;
+        }
+        
         Logger.log('StreamGenerator: Started, tracks:', this.outputStream.getTracks().length);
-        return this.outputStream;
       } catch (e) {
         Logger.error('StreamGenerator: captureStream failed', e);
         return null;
       }
+      
+      // Start animation loop after stream is created
+      requestAnimationFrame(render);
+      
+      // Return a clone so each caller gets their own stream instance
+      // This prevents one caller from stopping another's tracks
+      return this.outputStream.clone();
     },
     
     drawGreenScreen: function(ctx, width, height, timestamp) {
