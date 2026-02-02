@@ -91,7 +91,8 @@ describe('Claude Sonnet Protocol', () => {
   describe('Monitoring Helpers', () => {
     it('should track async operations', async () => {
       const operation = async () => {
-        await new Promise(resolve => setTimeout(resolve, 10));
+        // Jest uses fake timers globally in this repo; avoid relying on real timeouts here.
+        await Promise.resolve();
         return 'success';
       };
 
