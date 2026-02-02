@@ -338,7 +338,7 @@ const DEFAULT_PROTOCOLS: Record<ProtocolType, ProtocolConfig> = {
 };
 
 const isProtocolType = (value: string): value is ProtocolType => {
-  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness';
+  return value === 'standard' || value === 'allowlist' || value === 'protected' || value === 'harness' || value === 'holographic';
 };
 
 export const [ProtocolProvider, useProtocol] = createContextHook<ProtocolContextValue>(() => {

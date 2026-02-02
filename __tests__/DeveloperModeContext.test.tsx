@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react-native';
+import { act, render, waitFor } from '@testing-library/react-native';
 import { DeveloperModeProvider, useDeveloperMode } from '@/contexts/DeveloperModeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { DEFAULT_DEVELOPER_MODE } from '@/types/protocols';
@@ -36,7 +36,8 @@ describe('DeveloperModeContext', () => {
     });
 
     expect(ctxRef!.developerMode.enabled).toBe(DEFAULT_DEVELOPER_MODE.enabled);
-    expect(ctxRef!.developerMode.pinCode).toBe(DEFAULT_DEVELOPER_MODE.pinCode);
+    // PINs are migrated to hashed storage on load.
+    expect(ctxRef!.developerMode.pinCode).toMatch(/^sha256:/);
   });
 
   test('incorrect PIN does not enable developer mode', async () => {
@@ -52,7 +53,10 @@ describe('DeveloperModeContext', () => {
       expect(ctxRef).not.toBeNull();
     });
 
-    const result = await ctxRef!.toggleDeveloperMode('wrong');
+    let result = false;
+    await act(async () => {
+      result = await ctxRef!.toggleDeveloperMode('wrong');
+    });
     expect(result).toBe(false);
 
     await waitFor(() => {
@@ -73,7 +77,10 @@ describe('DeveloperModeContext', () => {
       expect(ctxRef).not.toBeNull();
     });
 
-    const result = await ctxRef!.toggleDeveloperMode(DEFAULT_DEVELOPER_MODE.pinCode || '');
+    let result = false;
+    await act(async () => {
+      result = await ctxRef!.toggleDeveloperMode(DEFAULT_DEVELOPER_MODE.pinCode || '');
+    });
     expect(result).toBe(true);
 
     await waitFor(() => {

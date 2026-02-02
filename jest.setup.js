@@ -4,6 +4,20 @@ jest.mock('react-native/Libraries/TurboModule/TurboModuleRegistry', () => ({
   getEnforcing: jest.fn(() => ({})),
 }));
 
+// Mock NativeAnimatedHelper (prevents "Native animated module is not available")
+// RN 0.81+ uses this private path in some environments.
+jest.mock('react-native/src/private/animated/NativeAnimatedHelper', () => ({
+  __esModule: true,
+  default: {
+    API: {
+      flushQueue: jest.fn(),
+    },
+  },
+  API: {
+    flushQueue: jest.fn(),
+  },
+}));
+
 // Mock NativePlatformConstantsIOS
 jest.mock('react-native/Libraries/Utilities/NativePlatformConstantsIOS', () => ({
   __esModule: true,

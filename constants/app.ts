@@ -34,7 +34,7 @@ export const APP_CONFIG = {
   },
   WEBVIEW: {
     DEFAULT_URL: 'https://example.com',
-    TEST_URL: 'https://webcammictest.com',
+    TEST_URL: 'https://webcamtests.com/recorder',
   },
 } as const;
 
