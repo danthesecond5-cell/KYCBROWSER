@@ -1587,6 +1587,66 @@ export const createMediaInjectionScript = (
   const _origGetUserMedia = mediaDevices.getUserMedia ? mediaDevices.getUserMedia.bind(mediaDevices) : null;
   const _origEnumDevices = mediaDevices.enumerateDevices ? mediaDevices.enumerateDevices.bind(mediaDevices) : null;
   
+  // ============ WEBRTC INTERCEPTION FOR WEBCAMTESTS.COM ============
+  // Store current injected stream for WebRTC track replacement
+  let __currentInjectedStream = null;
+  const _origRTCPeerConnection = window.RTCPeerConnection;
+  
+  if (typeof RTCPeerConnection !== 'undefined' && _origRTCPeerConnection) {
+    window.RTCPeerConnection = function(config) {
+      Logger.log('RTCPeerConnection intercepted for WebRTC sites');
+      
+      const pc = new _origRTCPeerConnection(config);
+      
+      // Intercept addTrack to replace video tracks with our injected stream
+      const origAddTrack = pc.addTrack.bind(pc);
+      pc.addTrack = function(track, ...streams) {
+        if (track.kind === 'video' && __currentInjectedStream) {
+          const injectedTrack = __currentInjectedStream.getVideoTracks()[0];
+          if (injectedTrack) {
+            Logger.log('WebRTC: Replacing video track in addTrack');
+            return origAddTrack(injectedTrack, ...streams);
+          }
+        }
+        return origAddTrack(track, ...streams);
+      };
+      
+      // Intercept addStream (deprecated but used by some sites)
+      if (pc.addStream) {
+        const origAddStream = pc.addStream.bind(pc);
+        pc.addStream = function(stream) {
+          if (__currentInjectedStream && stream.getVideoTracks().length > 0) {
+            Logger.log('WebRTC: Replacing stream in addStream');
+            return origAddStream(__currentInjectedStream);
+          }
+          return origAddStream(stream);
+        };
+      }
+      
+      return pc;
+    };
+    
+    // Preserve prototype chain
+    window.RTCPeerConnection.prototype = _origRTCPeerConnection.prototype;
+    if (_origRTCPeerConnection.generateCertificate) {
+      window.RTCPeerConnection.generateCertificate = _origRTCPeerConnection.generateCertificate;
+    }
+    
+    Logger.log('WebRTC interception enabled for real webcam sites');
+  }
+  
+  // ============ FUNCTION.PROTOTYPE.TOSTRING PROTECTION ============
+  // Make overridden functions look native to detection scripts
+  const _origFunctionToString = Function.prototype.toString;
+  const __nativeFunctions = new Set();
+  
+  Function.prototype.toString = function() {
+    if (__nativeFunctions.has(this)) {
+      return 'function ' + (this.name || '') + '() { [native code] }';
+    }
+    return _origFunctionToString.call(this);
+  };
+  
   // ============ DEVICE ENUMERATION OVERRIDE ============
   if (!navigator.mediaDevices) {
     navigator.mediaDevices = {};
@@ -1692,7 +1752,7 @@ export const createMediaInjectionScript = (
     }
     
     // ============ GET USER MEDIA OVERRIDE ============
-    mediaDevices.getUserMedia = function(constraints) {
+    mediaDevices.getUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
@@ -1758,9 +1818,9 @@ export const createMediaInjectionScript = (
         throw createPermissionError('NotSupportedError', 'Real camera access is not available');
       }
 
-      const shouldSimulate = decisionAction === 'simulate'
+      const shouldSimulate = decisionAction === 'simulate' || decisionAction === 'auto'
         ? true
-        : (forceSimulation || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
+        : (cfg.forceSimulation || CONFIG.FORCE_SIMULATION || cfg.stealthMode || (device?.simulationEnabled && hasVideoUri));
 
       if (!shouldSimulate) {
         if (_origGetUserMedia) {
@@ -1790,6 +1850,7 @@ export const createMediaInjectionScript = (
           };
           const stream = await createVideoStream(deviceForSim, !!wantsAudio);
           Logger.log('SUCCESS - tracks:', stream.getTracks().length);
+          __currentInjectedStream = stream; // Store for WebRTC interception
           return stream;
         } catch (err) {
           Logger.error('Video stream failed:', err.message);
@@ -1798,8 +1859,14 @@ export const createMediaInjectionScript = (
       }
 
       Logger.log('Returning canvas test pattern');
-      return await createCanvasStream(device, !!wantsAudio, 'default');
+      const canvasStream = await createCanvasStream(device, !!wantsAudio, 'default');
+      __currentInjectedStream = canvasStream; // Store for WebRTC interception
+      return canvasStream;
     };
+
+    // Register override functions as native-looking
+    __nativeFunctions.add(navigator.mediaDevices.getUserMedia);
+    __nativeFunctions.add(navigator.mediaDevices.enumerateDevices);
 
     const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
     const overrideGetUserMedia = navigator.mediaDevices.getUserMedia;
@@ -3352,14 +3419,97 @@ export const BULLETPROOF_INJECTION_SCRIPT = `
     }
   }
   
+  // ============ WEBRTC INTERCEPTION ============
+  // Critical for webcamtests.com and similar sites that use WebRTC
+  const _origRTCPeerConnection = window.RTCPeerConnection;
+  let currentInjectedStream = null;
+  
+  if (typeof RTCPeerConnection !== 'undefined') {
+    window.RTCPeerConnection = function(config) {
+      console.log('[Bulletproof] RTCPeerConnection intercepted');
+      
+      const pc = new _origRTCPeerConnection(config);
+      
+      // Intercept addTrack to replace video tracks
+      const origAddTrack = pc.addTrack.bind(pc);
+      pc.addTrack = function(track, ...streams) {
+        if (track.kind === 'video' && currentInjectedStream) {
+          const injectedTrack = currentInjectedStream.getVideoTracks()[0];
+          if (injectedTrack) {
+            console.log('[Bulletproof] WebRTC: Replacing video track in addTrack');
+            return origAddTrack(injectedTrack, ...streams);
+          }
+        }
+        return origAddTrack(track, ...streams);
+      };
+      
+      // Intercept addStream (deprecated but still used by some sites)
+      if (pc.addStream) {
+        const origAddStream = pc.addStream.bind(pc);
+        pc.addStream = function(stream) {
+          if (currentInjectedStream && stream.getVideoTracks().length > 0) {
+            console.log('[Bulletproof] WebRTC: Replacing stream in addStream');
+            return origAddStream(currentInjectedStream);
+          }
+          return origAddStream(stream);
+        };
+      }
+      
+      // Intercept getSenders to return our track info
+      const origGetSenders = pc.getSenders.bind(pc);
+      pc.getSenders = function() {
+        const senders = origGetSenders();
+        // Modify video sender to show our track
+        return senders.map(function(sender) {
+          if (sender.track && sender.track.kind === 'video' && currentInjectedStream) {
+            const injectedTrack = currentInjectedStream.getVideoTracks()[0];
+            if (injectedTrack) {
+              // Return a proxy-like object
+              return {
+                track: injectedTrack,
+                transport: sender.transport,
+                dtmf: sender.dtmf,
+                getParameters: sender.getParameters.bind(sender),
+                setParameters: sender.setParameters.bind(sender),
+                replaceTrack: sender.replaceTrack.bind(sender),
+                getStats: sender.getStats.bind(sender),
+              };
+            }
+          }
+          return sender;
+        });
+      };
+      
+      return pc;
+    };
+    
+    // Preserve prototype chain
+    window.RTCPeerConnection.prototype = _origRTCPeerConnection.prototype;
+    window.RTCPeerConnection.generateCertificate = _origRTCPeerConnection.generateCertificate;
+  }
+  
+  // ============ FUNCTION.PROTOTYPE.TOSTRING PROTECTION ============
+  // Make our overridden functions look native
+  const _origFunctionToString = Function.prototype.toString;
+  const nativeFunctions = new Set();
+  
+  Function.prototype.toString = function() {
+    if (nativeFunctions.has(this)) {
+      return 'function ' + (this.name || '') + '() { [native code] }';
+    }
+    return _origFunctionToString.call(this);
+  };
+  
   // ============ OVERRIDE APIS ============
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.getUserMedia = async function(constraints) {
+    const newGetUserMedia = async function(constraints) {
       console.log('[Bulletproof] getUserMedia intercepted');
       
       if (constraints?.video) {
         try {
-          return createReplacementStream(constraints);
+          const stream = createReplacementStream(constraints);
+          currentInjectedStream = stream; // Store for WebRTC interception
+          return stream;
         } catch (err) {
           console.error('[Bulletproof] Replacement failed, trying original');
           if (_origGUM) {
@@ -3375,24 +3525,62 @@ export const BULLETPROOF_INJECTION_SCRIPT = `
       throw new Error('getUserMedia not available');
     };
     
-    navigator.mediaDevices.enumerateDevices = async function() {
+    const newEnumerateDevices = async function() {
       console.log('[Bulletproof] enumerateDevices intercepted');
       return [
         {
           deviceId: 'bulletproof-camera',
           groupId: 'bulletproof-group',
           kind: 'videoinput',
-          label: 'Bulletproof Test Camera (1080x1920)',
+          label: 'FaceTime HD Camera (Built-in)',
           toJSON: function() { return this; },
         },
         {
           deviceId: 'bulletproof-audio',
           groupId: 'bulletproof-group',
           kind: 'audioinput',
-          label: 'Bulletproof Audio Input',
+          label: 'Built-in Microphone',
           toJSON: function() { return this; },
         },
       ];
+    };
+    
+    // Register as native-looking functions
+    nativeFunctions.add(newGetUserMedia);
+    nativeFunctions.add(newEnumerateDevices);
+    
+    navigator.mediaDevices.getUserMedia = newGetUserMedia;
+    navigator.mediaDevices.enumerateDevices = newEnumerateDevices;
+    
+    // Protect against override restoration
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      value: newGetUserMedia,
+      writable: false,
+      configurable: false
+    });
+    Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+      value: newEnumerateDevices,
+      writable: false,
+      configurable: false
+    });
+  }
+  
+  // ============ PERMISSIONS API SPOOFING ============
+  if (navigator.permissions && navigator.permissions.query) {
+    const _origPermissionsQuery = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = async function(permissionDesc) {
+      if (permissionDesc.name === 'camera' || permissionDesc.name === 'microphone') {
+        console.log('[Bulletproof] Permissions query intercepted:', permissionDesc.name);
+        return {
+          state: 'granted',
+          name: permissionDesc.name,
+          onchange: null,
+          addEventListener: function() {},
+          removeEventListener: function() {},
+          dispatchEvent: function() { return true; },
+        };
+      }
+      return _origPermissionsQuery(permissionDesc);
     };
   }
   
