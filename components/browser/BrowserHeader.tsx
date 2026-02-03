@@ -15,6 +15,7 @@ import {
   Shield,
   ShieldOff,
   Camera,
+  Cloud,
 } from 'lucide-react-native';
 
 interface BrowserHeaderProps {
@@ -30,6 +31,7 @@ interface BrowserHeaderProps {
   onSettings: () => void;
   onNavigate: () => void;
   onTestWebcam: () => void;
+  onOpenRemoteBrowser: () => void;
 }
 
 const BrowserHeader = memo(function BrowserHeader({
@@ -45,6 +47,7 @@ const BrowserHeader = memo(function BrowserHeader({
   onSettings,
   onNavigate,
   onTestWebcam,
+  onOpenRemoteBrowser,
 }: BrowserHeaderProps) {
   return (
     <View style={styles.browserHeader}>
@@ -90,6 +93,12 @@ const BrowserHeader = memo(function BrowserHeader({
           onPress={onTestWebcam}
         >
           <Camera size={14} color="#ffffff" />
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={styles.remoteButton}
+          onPress={onOpenRemoteBrowser}
+        >
+          <Cloud size={14} color="#ffffff" />
         </TouchableOpacity>
       </View>
       
@@ -156,6 +165,16 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 8,
     backgroundColor: '#ff6b35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 4,
+  },
+  remoteButton: {
+    paddingHorizontal: 8,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: '#00aaff',
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',

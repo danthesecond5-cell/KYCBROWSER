@@ -1,0 +1,7 @@
+{
+  "name": "NativeMediaBridge",
+  "platforms": ["ios"],
+  "ios": {
+    "modules": ["NativeMediaBridgeModule"]
+  }
+}

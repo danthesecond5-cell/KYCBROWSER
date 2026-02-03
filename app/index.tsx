@@ -31,13 +31,19 @@ import {
   NO_SPOOFING_SCRIPT, 
   MOTION_INJECTION_SCRIPT,
   CONSOLE_CAPTURE_SCRIPT,
+  MEDIARECORDER_POLYFILL_SCRIPT,
   VIDEO_SIMULATION_TEST_SCRIPT,
-  BULLETPROOF_INJECTION_SCRIPT,
   createMediaInjectionScript,
-  createSimplifiedInjectionScript,
+  createProtocol0Script,
+  createWebSocketInjectionScript,
   createWorkingInjectionScript,
 } from '@/constants/browserScripts';
+import { createAdvancedProtocol2Script } from '@/utils/advancedProtocol/browserScript';
+import { createWebRtcLoopbackInjectionScript } from '@/constants/webrtcLoopback';
+import { WebRtcLoopbackBridge } from '@/utils/webrtcLoopbackBridge';
+import { NATIVE_WEBRTC_BRIDGE_SCRIPT } from '@/constants/nativeWebRTCBridge';
 import { clearAllDebugLogs } from '@/utils/logger';
+import { NativeWebRTCBridge } from '@/utils/nativeWebRTCBridge';
 import {
   formatVideoUriForWebView,
   getDefaultFallbackVideoUri,
@@ -46,6 +52,11 @@ import {
   isLocalFileUri,
 } from '@/utils/videoServing';
 import { isBundledSampleVideo } from '@/utils/sampleVideo';
+import {
+  handleNativeGumOffer,
+  handleNativeGumIceCandidate,
+  closeNativeGumSession,
+} from '@/utils/nativeMediaBridge';
 import { APP_CONFIG } from '@/constants/app';
 import type { SimulationConfig } from '@/types/browser';
 import BrowserHeader from '@/components/browser/BrowserHeader';
@@ -71,6 +82,7 @@ type PermissionAction = 'simulate' | 'real' | 'deny';
 
 export default function MotionBrowserScreen() {
   const webViewRef = useRef<WebView>(null);
+  const webrtcLoopbackBridge = useMemo(() => new WebRtcLoopbackBridge(), []);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -83,6 +95,23 @@ export default function MotionBrowserScreen() {
         clearTimeout(pendingInjectionRef.current);
         pendingInjectionRef.current = null;
       }
+    };
+  }, []);
+  
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+    if (enterpriseWebKitRef.current !== enterpriseWebKitEnabled) {
+      enterpriseWebKitRef.current = enterpriseWebKitEnabled;
+      console.log('[App] Enterprise WebKit toggled - reloading WebView');
+      setWebViewKey(prev => prev + 1);
+    }
+  }, [enterpriseWebKitEnabled]);
+
+  useEffect(() => {
+    nativeBridgeRef.current = new NativeWebRTCBridge(webViewRef);
+    return () => {
+      nativeBridgeRef.current?.dispose();
+      nativeBridgeRef.current = null;
     };
   }, []);
 
@@ -125,10 +154,26 @@ export default function MotionBrowserScreen() {
     allowlistSettings,
     protectedSettings,
     harnessSettings,
+    webrtcLoopbackSettings,
     isAllowlisted: checkIsAllowlisted,
     httpsEnforced,
     mlSafetyEnabled,
+    enterpriseWebKitEnabled,
   } = useProtocol();
+
+  useEffect(() => {
+    webrtcLoopbackBridge.setWebViewRef(webViewRef);
+  }, [webrtcLoopbackBridge]);
+
+  useEffect(() => {
+    webrtcLoopbackBridge.updateSettings(webrtcLoopbackSettings);
+  }, [webrtcLoopbackBridge, webrtcLoopbackSettings]);
+
+  useEffect(() => {
+    return () => {
+      webrtcLoopbackBridge.stop().catch(() => {});
+    };
+  }, [webrtcLoopbackBridge]);
 
   const [url, setUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
   const [inputUrl, setInputUrl] = useState<string>(APP_CONFIG.WEBVIEW.DEFAULT_URL);
@@ -156,18 +201,24 @@ export default function MotionBrowserScreen() {
   const isMountedRef = useRef<boolean>(true);
   const lastInjectionTimeRef = useRef<number>(0);
   const pendingInjectionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const capabilityAlertShownRef = useRef<boolean>(false);
+  const enterpriseWebKitRef = useRef<boolean>(enterpriseWebKitEnabled);
+  const nativeBridgeRef = useRef<NativeWebRTCBridge | null>(null);
 
   const [showTemplateModal, setShowTemplateModal] = useState(false);
-  const [safariModeEnabled, setSafariModeEnabled] = useState(true);
+  // Default OFF: the Safari spoof script is large and can reduce injection reliability/perf in WebViews.
+  const [safariModeEnabled, setSafariModeEnabled] = useState(false);
   const [toolbarExpanded, setToolbarExpanded] = useState(false);
   const [showDevicesModal, setShowDevicesModal] = useState(false);
 
   const [showSiteSettingsModal, setShowSiteSettingsModal] = useState(false);
   const [showProtocolSettingsModal, setShowProtocolSettingsModal] = useState(false);
+  const [webViewKey, setWebViewKey] = useState(0);
   const [permissionQueue, setPermissionQueue] = useState<CameraPermissionRequest[]>([]);
   const [pendingPermissionRequest, setPendingPermissionRequest] = useState<CameraPermissionRequest | null>(null);
   const [protocolDropdownOpen, setProtocolDropdownOpen] = useState(false);
   const [selectedProtocol, setSelectedProtocol] = useState<ProtocolType>(activeProtocol);
+  const [enterpriseHookReport, setEnterpriseHookReport] = useState<any | null>(null);
 
   const protocolOptions = useMemo(() => {
     return Object.values(protocols).map(protocol => ({
@@ -331,6 +382,7 @@ export default function MotionBrowserScreen() {
   );
 
   const protocolMirrorVideo = isProtocolEnabled && activeProtocol === 'harness' && harnessSettings.mirrorVideo;
+  const enterpriseWebKitActive = Platform.OS === 'ios' ? enterpriseWebKitEnabled : true;
 
   const protocolOverlayLabel = useMemo(() => {
     if (!isProtocolEnabled) {
@@ -344,6 +396,9 @@ export default function MotionBrowserScreen() {
     }
     if (activeProtocol === 'allowlist' && allowlistEnabled) {
       return allowlistBlocked ? 'Allowlist Blocked' : 'Allowlist Active';
+    }
+    if (activeProtocol === 'webrtc-loopback') {
+      return 'WebRTC Loopback Active';
     }
     return '';
   }, [activeProtocol, harnessSettings.overlayEnabled, allowlistEnabled, allowlistBlocked, isProtocolEnabled]);
@@ -370,7 +425,9 @@ export default function MotionBrowserScreen() {
   const autoInjectEnabled = isProtocolEnabled && (
     (activeProtocol === 'standard' || activeProtocol === 'allowlist')
       ? standardSettings.autoInject
-      : true
+      : activeProtocol === 'webrtc-loopback'
+        ? webrtcLoopbackSettings.autoStart
+        : true
   );
 
   const simulatingDevicesCount = useMemo(() =>
@@ -429,13 +486,13 @@ export default function MotionBrowserScreen() {
       return;
     }
 
-    if (!isProtocolEnabled) {
-      console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
-      return;
-    }
-
-    if (allowlistBlocked) {
-      console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+    const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
+    if (!shouldInjectMedia && !nativeBridgeEnabled) {
+      if (!isProtocolEnabled) {
+        console.log('[App] Protocol disabled - injection skipped:', activeProtocol);
+      } else if (allowlistBlocked) {
+        console.log('[App] Allowlist mode active - injection disabled for:', currentHostname || url);
+      }
       return;
     }
 
@@ -450,7 +507,7 @@ export default function MotionBrowserScreen() {
         assignedVideoName: d.assignedVideoName || fallbackVideo?.name,
       };
     });
-
+    
     const config = {
       stealthMode: effectiveStealthMode,
       devices: normalizedDevices,
@@ -463,8 +520,49 @@ export default function MotionBrowserScreen() {
       mirrorVideo: protocolMirrorVideo,
       debugEnabled: developerModeEnabled,
       permissionPromptEnabled: true,
+      useFrameGenerator: enterpriseWebKitActive && (activeProtocol === 'standard' || activeProtocol === 'allowlist'),
+      signalingTimeoutMs: webrtcLoopbackSettings.signalingTimeoutMs,
+      autoStart: webrtcLoopbackSettings.autoStart,
+      requireNativeBridge: webrtcLoopbackSettings.requireNativeBridge,
+      iceServers: webrtcLoopbackSettings.iceServers,
+      preferredCodec: webrtcLoopbackSettings.preferredCodec,
+      enableAdaptiveBitrate: webrtcLoopbackSettings.enableAdaptiveBitrate,
+      enableAdaptiveResolution: webrtcLoopbackSettings.enableAdaptiveResolution,
+      minBitrateKbps: webrtcLoopbackSettings.minBitrateKbps,
+      targetBitrateKbps: webrtcLoopbackSettings.targetBitrateKbps,
+      maxBitrateKbps: webrtcLoopbackSettings.maxBitrateKbps,
+      keepAliveIntervalMs: webrtcLoopbackSettings.keepAliveIntervalMs,
+      statsIntervalMs: webrtcLoopbackSettings.statsIntervalMs,
+      enableDataChannel: webrtcLoopbackSettings.enableDataChannel,
+      enableIceRestart: webrtcLoopbackSettings.enableIceRestart,
+      enableSimulcast: webrtcLoopbackSettings.enableSimulcast,
+      recordingEnabled: webrtcLoopbackSettings.recordingEnabled,
+      ringBufferSeconds: webrtcLoopbackSettings.ringBufferSeconds,
+      ringSegmentSeconds: webrtcLoopbackSettings.ringSegmentSeconds,
+      cacheRemoteVideos: webrtcLoopbackSettings.cacheRemoteVideos,
+      cacheTTLHours: webrtcLoopbackSettings.cacheTTLHours,
+      cacheMaxSizeMB: webrtcLoopbackSettings.cacheMaxSizeMB,
     };
-
+    
+    if (activeProtocol === 'allowlist') {
+      const primaryDevice = normalizedDevices.find(d => d.type === 'camera' && d.simulationEnabled) || normalizedDevices[0];
+      const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+      const advancedSettings = allowlistSettings.advancedRelay;
+      Object.assign(config, {
+        videoUri: videoUri || null,
+        enableWebRTCRelay: advancedSettings.webrtc.enabled,
+        enableASI: advancedSettings.asi.enabled,
+        enableGPU: advancedSettings.gpu.enabled,
+        enableCrypto: advancedSettings.crypto.enabled,
+      });
+    }
+    const nativeBridgeConfig = {
+      enabled: nativeBridgeEnabled,
+      preferNative: true,
+      forceNative: true,
+      timeoutMs: 10000,
+      debug: developerModeEnabled,
+    };
     console.log('[App] Injecting media config:', {
       stealthMode: effectiveStealthMode,
       deviceCount: activeTemplate.captureDevices.length,
@@ -474,27 +572,158 @@ export default function MotionBrowserScreen() {
     });
     
     lastInjectionTimeRef.current = Date.now();
+    const primaryDevice =
+      normalizedDevices.find(d => d.type === 'camera' && d.simulationEnabled) ||
+      normalizedDevices.find(d => d.type === 'camera') ||
+      normalizedDevices[0];
+    const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
     
-    const fallbackScript = createMediaInjectionScript(normalizedDevices, {
-      stealthMode: effectiveStealthMode,
-      fallbackVideoUri,
-      forceSimulation: protocolForceSimulation,
-      protocolId: activeProtocol,
-      protocolLabel: protocolOverlayLabel,
-      showOverlayLabel: showProtocolOverlayLabel,
-      loopVideo: standardSettings.loopVideo,
-      mirrorVideo: protocolMirrorVideo,
-      debugEnabled: developerModeEnabled,
-      permissionPromptEnabled: true,
-    });
-
+    const maxInjectionScriptSize = 180000;
+    const buildProtocol0Fallback = () => {
+      const protocol0Script = createProtocol0Script({
+        devices: normalizedDevices,
+        videoUri: videoUri,
+        fallbackVideoUri,
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        showDebugOverlay: developerModeEnabled,
+        stealthMode: effectiveStealthMode,
+        loopVideo: standardSettings.loopVideo,
+        mirrorVideo: protocolMirrorVideo,
+      });
+      if (protocol0Script.length > maxInjectionScriptSize) {
+        return createWorkingInjectionScript({
+          videoUri: videoUri,
+          devices: normalizedDevices,
+          stealthMode: effectiveStealthMode,
+          debugEnabled: developerModeEnabled,
+          targetWidth: 1080,
+          targetHeight: 1920,
+          targetFPS: 30,
+          preferFrameGenerator: enterpriseWebKitActive,
+        });
+      }
+      return protocol0Script;
+    };
+    
+    let fallbackScript = '';
+    if (activeProtocol === 'websocket') {
+      fallbackScript = createWebSocketInjectionScript({
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        devices: normalizedDevices,
+        debug: developerModeEnabled,
+        stealthMode: effectiveStealthMode,
+        protocolLabel: 'Protocol 6: WebSocket Bridge',
+        showOverlay: showProtocolOverlayLabel,
+        videoUri: videoUri || undefined,
+      });
+    } else if (activeProtocol === 'sonnet' || activeProtocol === 'claude-sonnet') {
+      const { createSonnetProtocolScript } = require('@/constants/sonnetProtocol');
+      const sonnetConfig = {
+        enabled: true,
+        aiAdaptiveQuality: true,
+        behavioralMimicry: true,
+        neuralStyleTransfer: false,
+        predictiveFrameOptimization: true,
+        quantumTimingRandomness: true,
+        biometricSimulation: true,
+        realTimeProfiler: true,
+        adaptiveStealth: true,
+        performanceTarget: 'balanced' as const,
+        stealthIntensity: 'maximum' as const,
+        learningMode: true,
+      };
+      fallbackScript = createSonnetProtocolScript(normalizedDevices, sonnetConfig, videoUri);
+    } else if (activeProtocol === 'allowlist') {
+      const advancedSettings = allowlistSettings.advancedRelay;
+      const advancedEnabled = Boolean(
+        advancedSettings.webrtc.enabled
+        || advancedSettings.asi.enabled
+        || advancedSettings.gpu.enabled
+        || advancedSettings.crypto.enabled
+      );
+      if (advancedEnabled) {
+        fallbackScript = createAdvancedProtocol2Script({
+          videoUri: videoUri || undefined,
+          devices: normalizedDevices,
+          enableWebRTCRelay: advancedSettings.webrtc.enabled,
+          enableASI: advancedSettings.asi.enabled,
+          enableGPU: advancedSettings.gpu.enabled,
+          enableCrypto: advancedSettings.crypto.enabled,
+          debugEnabled: developerModeEnabled,
+          stealthMode: effectiveStealthMode,
+          protocolLabel: protocolOverlayLabel || 'Protocol 2: Advanced Relay',
+          showOverlayLabel: showProtocolOverlayLabel,
+        });
+      } else {
+        fallbackScript = buildProtocol0Fallback();
+      }
+    } else if (activeProtocol === 'standard') {
+      fallbackScript = buildProtocol0Fallback();
+    } else if (activeProtocol === 'webrtc-loopback') {
+      fallbackScript = createWebRtcLoopbackInjectionScript({
+        devices: normalizedDevices,
+        debugEnabled: developerModeEnabled,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
+        signalingTimeoutMs: webrtcLoopbackSettings.signalingTimeoutMs,
+        autoStart: webrtcLoopbackSettings.autoStart,
+        requireNativeBridge: webrtcLoopbackSettings.requireNativeBridge,
+        iceServers: webrtcLoopbackSettings.iceServers,
+        preferredCodec: webrtcLoopbackSettings.preferredCodec,
+        enableAdaptiveBitrate: webrtcLoopbackSettings.enableAdaptiveBitrate,
+        enableAdaptiveResolution: webrtcLoopbackSettings.enableAdaptiveResolution,
+        minBitrateKbps: webrtcLoopbackSettings.minBitrateKbps,
+        targetBitrateKbps: webrtcLoopbackSettings.targetBitrateKbps,
+        maxBitrateKbps: webrtcLoopbackSettings.maxBitrateKbps,
+        keepAliveIntervalMs: webrtcLoopbackSettings.keepAliveIntervalMs,
+        statsIntervalMs: webrtcLoopbackSettings.statsIntervalMs,
+        enableDataChannel: webrtcLoopbackSettings.enableDataChannel,
+        enableIceRestart: webrtcLoopbackSettings.enableIceRestart,
+        enableSimulcast: webrtcLoopbackSettings.enableSimulcast,
+        recordingEnabled: webrtcLoopbackSettings.recordingEnabled,
+        ringBufferSeconds: webrtcLoopbackSettings.ringBufferSeconds,
+        ringSegmentSeconds: webrtcLoopbackSettings.ringSegmentSeconds,
+        cacheRemoteVideos: webrtcLoopbackSettings.cacheRemoteVideos,
+        cacheTTLHours: webrtcLoopbackSettings.cacheTTLHours,
+        cacheMaxSizeMB: webrtcLoopbackSettings.cacheMaxSizeMB,
+      });
+    } else {
+      fallbackScript = createMediaInjectionScript(normalizedDevices, {
+        stealthMode: effectiveStealthMode,
+        fallbackVideoUri,
+        forceSimulation: protocolForceSimulation,
+        protocolId: activeProtocol,
+        protocolLabel: protocolOverlayLabel,
+        showOverlayLabel: showProtocolOverlayLabel,
+        loopVideo: standardSettings.loopVideo,
+        mirrorVideo: protocolMirrorVideo,
+        debugEnabled: developerModeEnabled,
+        permissionPromptEnabled: true,
+      });
+    }
+    
+    if (activeProtocol === 'webrtc-loopback') {
+      webrtcLoopbackBridge.updateDeviceSources(normalizedDevices);
+    }
     webViewRef.current.injectJavaScript(`
       (function() {
-        if (window.__updateMediaConfig) {
-          window.__updateMediaConfig(${JSON.stringify(config)});
-          console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
+        if (window.__updateNativeWebRTCBridgeConfig) {
+          window.__updateNativeWebRTCBridgeConfig(${JSON.stringify(nativeBridgeConfig)});
         } else {
-          ${fallbackScript}
+          window.__nativeWebRTCBridgeConfig = ${JSON.stringify(nativeBridgeConfig)};
+        }
+        if (${shouldInjectMedia ? 'true' : 'false'}) {
+          if (window.__updateMediaConfig) {
+            window.__updateMediaConfig(${JSON.stringify(config)});
+            console.log('[MediaSim] Config injected from RN - devices:', ${activeTemplate.captureDevices.length});
+          } else {
+            ${fallbackScript}
+          }
         }
       })();
       true;
@@ -514,7 +743,31 @@ export default function MotionBrowserScreen() {
     showProtocolOverlayLabel,
     standardSettings.loopVideo,
     protocolMirrorVideo,
+    allowlistSettings,
     developerModeEnabled,
+    enterpriseWebKitActive,
+    webrtcLoopbackSettings.signalingTimeoutMs,
+    webrtcLoopbackSettings.autoStart,
+    webrtcLoopbackSettings.requireNativeBridge,
+    webrtcLoopbackSettings.iceServers,
+    webrtcLoopbackSettings.preferredCodec,
+    webrtcLoopbackSettings.enableAdaptiveBitrate,
+    webrtcLoopbackSettings.enableAdaptiveResolution,
+    webrtcLoopbackSettings.minBitrateKbps,
+    webrtcLoopbackSettings.targetBitrateKbps,
+    webrtcLoopbackSettings.maxBitrateKbps,
+    webrtcLoopbackSettings.keepAliveIntervalMs,
+    webrtcLoopbackSettings.statsIntervalMs,
+    webrtcLoopbackSettings.enableDataChannel,
+    webrtcLoopbackSettings.enableIceRestart,
+    webrtcLoopbackSettings.enableSimulcast,
+    webrtcLoopbackSettings.recordingEnabled,
+    webrtcLoopbackSettings.ringBufferSeconds,
+    webrtcLoopbackSettings.ringSegmentSeconds,
+    webrtcLoopbackSettings.cacheRemoteVideos,
+    webrtcLoopbackSettings.cacheTTLHours,
+    webrtcLoopbackSettings.cacheMaxSizeMB,
+    nativeBridgeEnabled,
   ]);
 
   const injectMediaConfig = useCallback(() => {
@@ -558,6 +811,20 @@ export default function MotionBrowserScreen() {
     webViewRef.current.injectJavaScript(`
       if (window.__resolveCameraPermission) {
         window.__resolveCameraPermission(${requestJson}, ${decisionJson});
+      }
+      true;
+    `);
+  }, []);
+
+  const sendNativeBridgeMessage = useCallback((handlerName: string, payload: unknown) => {
+    if (!webViewRef.current) {
+      console.warn('[App] Unable to send native bridge message - no WebView');
+      return;
+    }
+    const payloadJson = JSON.stringify(payload);
+    webViewRef.current.injectJavaScript(`
+      if (window.${handlerName}) {
+        window.${handlerName}(${payloadJson});
       }
       true;
     `);
@@ -895,6 +1162,10 @@ export default function MotionBrowserScreen() {
     ? (httpsEnforced ? 'never' : 'always')
     : undefined;
 
+  const nativeBridgeEnabled = useMemo(() => {
+    return !isWeb && webViewAvailable;
+  }, [isWeb, webViewAvailable]);
+
   const requiresSetup = !isTemplateLoading && !hasMatchingTemplate && templates.filter(t => t.isComplete).length === 0;
 
   const beforeLoadScript = useMemo(() => {
@@ -920,28 +1191,160 @@ export default function MotionBrowserScreen() {
     const spoofScript = safariModeEnabled ? SAFARI_SPOOFING_SCRIPT : NO_SPOOFING_SCRIPT;
     const shouldInjectMedia = isProtocolEnabled && !allowlistBlocked;
     
-    // Determine which injection script to use based on protocol
+    // Determine which injection script to use based on protocol.
+    // NOTE: In WebViews, very large injected scripts can fail/truncate depending on platform.
+    // We keep a compact working-injection fallback for reliability.
     let mediaInjectionScript = '';
+    let injectionType = 'NONE';
+    const maxInjectionScriptSize = 180000;
     
     if (shouldInjectMedia) {
-      if (activeProtocol === 'standard' || activeProtocol === 'allowlist') {
-        // Use the new working injection for Protocol 1 and 2
-        const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
-        const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
-        
-        mediaInjectionScript = createWorkingInjectionScript({
-          videoUri: videoUri,
+      const primaryDevice = devices.find(d => d.type === 'camera' && d.simulationEnabled) || devices[0];
+      const videoUri = primaryDevice?.assignedVideoUri || fallbackVideoUri;
+      const buildProtocol0Script = () => {
+        const protocol0Script = createProtocol0Script({
           devices: devices,
+          videoUri: videoUri,
+          fallbackVideoUri: fallbackVideoUri,
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          showDebugOverlay: developerModeEnabled,
           stealthMode: effectiveStealthMode,
+          loopVideo: standardSettings.loopVideo,
+          mirrorVideo: protocolMirrorVideo,
+        });
+        if (protocol0Script.length > maxInjectionScriptSize) {
+          return {
+            script: createWorkingInjectionScript({
+              videoUri: videoUri,
+              devices: devices,
+              stealthMode: effectiveStealthMode,
+              debugEnabled: developerModeEnabled,
+              targetWidth: 1080,
+              targetHeight: 1920,
+              targetFPS: 30,
+              preferFrameGenerator: enterpriseWebKitActive,
+            }),
+            type: 'WORKING_FALLBACK',
+            usedFallback: true,
+          };
+        }
+        return { script: protocol0Script, type: 'PROTOCOL0', usedFallback: false };
+      };
+      
+      if (activeProtocol === 'websocket') {
+        // Protocol 6: WebSocket Bridge - Most reliable method for WebView streaming
+        mediaInjectionScript = createWebSocketInjectionScript({
+          width: 1080,
+          height: 1920,
+          fps: 30,
+          devices: devices,
+          debug: developerModeEnabled,
+          stealthMode: effectiveStealthMode,
+          protocolLabel: 'Protocol 6: WebSocket Bridge',
+          showOverlay: showProtocolOverlayLabel,
+          videoUri: videoUri || undefined,
+        });
+        injectionType = 'WEBSOCKET';
+        console.log('[App] Using WEBSOCKET BRIDGE injection with video:', videoUri ? 'YES' : 'NO');
+      } else if (activeProtocol === 'sonnet' || activeProtocol === 'claude-sonnet') {
+        // Use Sonnet Protocol for Protocol 5
+        const { createSonnetProtocolScript } = require('@/constants/sonnetProtocol');
+        const sonnetConfig = {
+          enabled: true,
+          aiAdaptiveQuality: true,
+          behavioralMimicry: true,
+          neuralStyleTransfer: false,
+          predictiveFrameOptimization: true,
+          quantumTimingRandomness: true,
+          biometricSimulation: true,
+          realTimeProfiler: true,
+          adaptiveStealth: true,
+          performanceTarget: 'balanced' as const,
+          stealthIntensity: 'maximum' as const,
+          learningMode: true,
+        };
+        mediaInjectionScript = createSonnetProtocolScript(devices, sonnetConfig, videoUri);
+        injectionType = 'SONNET';
+        console.log('[App] Using SONNET Protocol injection with video:', videoUri ? 'YES' : 'NO');
+      } else if (activeProtocol === 'allowlist') {
+        const advancedSettings = allowlistSettings.advancedRelay;
+        const advancedEnabled = Boolean(
+          advancedSettings.webrtc.enabled
+          || advancedSettings.asi.enabled
+          || advancedSettings.gpu.enabled
+          || advancedSettings.crypto.enabled
+        );
+        if (advancedEnabled) {
+          mediaInjectionScript = createAdvancedProtocol2Script({
+            videoUri: videoUri || undefined,
+            devices: devices,
+            enableWebRTCRelay: advancedSettings.webrtc.enabled,
+            enableASI: advancedSettings.asi.enabled,
+            enableGPU: advancedSettings.gpu.enabled,
+            enableCrypto: advancedSettings.crypto.enabled,
+            debugEnabled: developerModeEnabled,
+            stealthMode: effectiveStealthMode,
+            protocolLabel: protocolOverlayLabel || 'Protocol 2: Advanced Relay',
+            showOverlayLabel: showProtocolOverlayLabel,
+          });
+          injectionType = 'ADVANCED_RELAY';
+          console.log('[App] Using ADVANCED RELAY injection for allowlist with video:', videoUri ? 'YES' : 'NO');
+        } else {
+          const { script, type, usedFallback } = buildProtocol0Script();
+          mediaInjectionScript = script;
+          injectionType = type;
+          if (usedFallback) {
+            console.warn('[App] Protocol 0 script is large; using working injection fallback');
+          }
+          console.log('[App] Using PROTOCOL 0 (Ultra-Early Deep Hook) for', activeProtocol);
+          console.log('[App] Video URI:', videoUri ? 'YES' : 'NO (green screen)');
+          console.log('[App] Devices:', devices.length);
+        }
+      } else if (activeProtocol === 'standard') {
+        const { script, type, usedFallback } = buildProtocol0Script();
+        mediaInjectionScript = script;
+        injectionType = type;
+        if (usedFallback) {
+          console.warn('[App] Protocol 0 script is large; using working injection fallback');
+        }
+        console.log('[App] Using PROTOCOL 0 (Ultra-Early Deep Hook) for', activeProtocol);
+        console.log('[App] Video URI:', videoUri ? 'YES' : 'NO (green screen)');
+        console.log('[App] Devices:', devices.length);
+      } else if (activeProtocol === 'webrtc-loopback') {
+        mediaInjectionScript = createWebRtcLoopbackInjectionScript({
+          devices: devices,
           debugEnabled: developerModeEnabled,
           targetWidth: 1080,
           targetHeight: 1920,
           targetFPS: 30,
+          signalingTimeoutMs: webrtcLoopbackSettings.signalingTimeoutMs,
+          autoStart: webrtcLoopbackSettings.autoStart,
+          requireNativeBridge: webrtcLoopbackSettings.requireNativeBridge,
+          iceServers: webrtcLoopbackSettings.iceServers,
+          preferredCodec: webrtcLoopbackSettings.preferredCodec,
+          enableAdaptiveBitrate: webrtcLoopbackSettings.enableAdaptiveBitrate,
+          enableAdaptiveResolution: webrtcLoopbackSettings.enableAdaptiveResolution,
+          minBitrateKbps: webrtcLoopbackSettings.minBitrateKbps,
+          targetBitrateKbps: webrtcLoopbackSettings.targetBitrateKbps,
+          maxBitrateKbps: webrtcLoopbackSettings.maxBitrateKbps,
+          keepAliveIntervalMs: webrtcLoopbackSettings.keepAliveIntervalMs,
+          statsIntervalMs: webrtcLoopbackSettings.statsIntervalMs,
+          enableDataChannel: webrtcLoopbackSettings.enableDataChannel,
+          enableIceRestart: webrtcLoopbackSettings.enableIceRestart,
+          enableSimulcast: webrtcLoopbackSettings.enableSimulcast,
+          recordingEnabled: webrtcLoopbackSettings.recordingEnabled,
+          ringBufferSeconds: webrtcLoopbackSettings.ringBufferSeconds,
+          ringSegmentSeconds: webrtcLoopbackSettings.ringSegmentSeconds,
+          cacheRemoteVideos: webrtcLoopbackSettings.cacheRemoteVideos,
+          cacheTTLHours: webrtcLoopbackSettings.cacheTTLHours,
+          cacheMaxSizeMB: webrtcLoopbackSettings.cacheMaxSizeMB,
         });
-        
-        console.log('[App] Using WORKING injection for', activeProtocol, 'with video:', videoUri ? 'YES' : 'NO');
+        injectionType = 'WEBRTC_LOOPBACK';
+        console.log('[App] Using WEBRTC loopback injection');
       } else {
-        // Use original injection for other protocols
+        // Use original injection for other protocols (protected, harness, holographic)
         const injectionOptions = {
           stealthMode: effectiveStealthMode,
           fallbackVideoUri,
@@ -955,13 +1358,36 @@ export default function MotionBrowserScreen() {
           permissionPromptEnabled: true,
         };
         mediaInjectionScript = createMediaInjectionScript(devices, injectionOptions);
+        injectionType = 'LEGACY';
       }
     }
+
+    const nativeBridgeConfig = {
+      enabled: nativeBridgeEnabled,
+      preferNative: true,
+      forceNative: true,
+      timeoutMs: 10000,
+      debug: developerModeEnabled,
+    };
+    const shouldInjectBridge = nativeBridgeEnabled;
+    const nativeBridgeScript = shouldInjectBridge
+      ? NATIVE_WEBRTC_BRIDGE_SCRIPT + `
+        (function() {
+          if (window.__updateNativeWebRTCBridgeConfig) {
+            window.__updateNativeWebRTCBridgeConfig(${JSON.stringify(nativeBridgeConfig)});
+          } else {
+            window.__nativeWebRTCBridgeConfig = ${JSON.stringify(nativeBridgeConfig)};
+          }
+        })();
+        `
+      : '';
     
     const script =
       CONSOLE_CAPTURE_SCRIPT +
+      MEDIARECORDER_POLYFILL_SCRIPT +
       spoofScript +
       mediaInjectionScript +
+      nativeBridgeScript +
       VIDEO_SIMULATION_TEST_SCRIPT;
     console.log('[App] Preparing before-load script with', {
       devices: devices.length,
@@ -969,7 +1395,7 @@ export default function MotionBrowserScreen() {
       allowlisted: shouldInjectMedia,
       protocol: activeProtocol,
       fallback: fallbackVideo?.name || 'none',
-      injectionType: shouldInjectMedia ? (activeProtocol === 'standard' || activeProtocol === 'allowlist' ? 'WORKING' : 'LEGACY') : 'NONE',
+      injectionType,
     });
     console.log('[App] Devices with videos:', devices.filter(d => d.assignedVideoUri).length);
     return script;
@@ -987,7 +1413,31 @@ export default function MotionBrowserScreen() {
     standardSettings.loopVideo,
     protocolMirrorVideo,
     developerModeEnabled,
+    enterpriseWebKitActive,
+    webrtcLoopbackSettings.signalingTimeoutMs,
+    webrtcLoopbackSettings.autoStart,
+    webrtcLoopbackSettings.requireNativeBridge,
+    webrtcLoopbackSettings.iceServers,
+    webrtcLoopbackSettings.preferredCodec,
+    webrtcLoopbackSettings.enableAdaptiveBitrate,
+    webrtcLoopbackSettings.enableAdaptiveResolution,
+    webrtcLoopbackSettings.minBitrateKbps,
+    webrtcLoopbackSettings.targetBitrateKbps,
+    webrtcLoopbackSettings.maxBitrateKbps,
+    webrtcLoopbackSettings.keepAliveIntervalMs,
+    webrtcLoopbackSettings.statsIntervalMs,
+    webrtcLoopbackSettings.enableDataChannel,
+    webrtcLoopbackSettings.enableIceRestart,
+    webrtcLoopbackSettings.enableSimulcast,
+    webrtcLoopbackSettings.recordingEnabled,
+    webrtcLoopbackSettings.ringBufferSeconds,
+    webrtcLoopbackSettings.ringSegmentSeconds,
+    webrtcLoopbackSettings.cacheRemoteVideos,
+    webrtcLoopbackSettings.cacheTTLHours,
+    webrtcLoopbackSettings.cacheMaxSizeMB,
     isProtocolEnabled,
+    allowlistSettings,
+    nativeBridgeEnabled,
   ]);
 
   const afterLoadScript = useMemo(
@@ -1100,6 +1550,17 @@ export default function MotionBrowserScreen() {
     setPermissionSelectedVideo(null);
   }, []);
 
+  if (Platform.OS === 'android') {
+    return (
+      <View style={styles.unsupportedContainer}>
+        <Text style={styles.unsupportedTitle}>iOS Only</Text>
+        <Text style={styles.unsupportedText}>
+          This build is optimized for iOS and does not support Android.
+        </Text>
+      </View>
+    );
+  }
+
   if (requiresSetup) {
     return (
       <SetupRequired
@@ -1140,6 +1601,7 @@ export default function MotionBrowserScreen() {
             onSettings={() => router.push('/device-check')}
             onNavigate={handleNavigate}
             onTestWebcam={handleTestWebcam}
+            onOpenRemoteBrowser={() => router.push('/remote-browser')}
           />
 
           <View style={styles.webViewContainer}>
@@ -1163,13 +1625,23 @@ export default function MotionBrowserScreen() {
               </View>
             ) : (
               <WebView
+                key={`webview-${webViewKey}`}
                 ref={webViewRef}
                 source={{ uri: url }}
                 style={styles.webView}
                 userAgent={safariModeEnabled ? SAFARI_USER_AGENT : undefined}
                 originWhitelist={originWhitelist}
+                enterpriseWebKitEnabled={enterpriseWebKitEnabled}
                 injectedJavaScriptBeforeContentLoaded={beforeLoadScript}
                 injectedJavaScript={afterLoadScript}
+                // Ensure injection runs in iframes too (important for some real-world sites).
+                injectedJavaScriptBeforeContentLoadedForMainFrameOnly={false}
+                injectedJavaScriptForMainFrameOnly={false}
+                // Explicitly enable JS/DOM storage + media playback behaviors.
+                javaScriptEnabled
+                domStorageEnabled
+                allowsInlineMediaPlayback
+                mediaPlaybackRequiresUserAction={false}
                 onLoadStart={() => setIsLoading(true)}
                 onLoadEnd={() => {
                   setIsLoading(false);
@@ -1203,8 +1675,49 @@ export default function MotionBrowserScreen() {
                       console.error('[WebView ERROR]', data.message, data.stack || '');
                     } else if (data.type === 'mediaInjectionReady') {
                       console.log('[WebView Injection Ready]', data.payload);
+                    } else if (data.type === 'mediaInjectionUnsupported') {
+                      console.warn('[WebView Injection Unsupported]', data.payload?.reason || data.payload);
+                    } else if (data.type === 'nativeGumOffer') {
+                      const payload = data.payload || {};
+                      void handleNativeGumOffer(payload, {
+                        onAnswer: (answerPayload) => sendNativeBridgeMessage('__nativeGumAnswer', answerPayload),
+                        onIceCandidate: (icePayload) => sendNativeBridgeMessage('__nativeGumIce', icePayload),
+                        onError: (errorPayload) => sendNativeBridgeMessage('__nativeGumError', errorPayload),
+                      });
+                    } else if (data.type === 'nativeGumIce') {
+                      const payload = data.payload || {};
+                      void handleNativeGumIceCandidate(payload);
+                    } else if (data.type === 'nativeGumCancel') {
+                      const payload = data.payload || {};
+                      closeNativeGumSession({ requestId: payload.requestId });
                     } else if (data.type === 'mediaAccess') {
                       console.log('[WebView Media Access]', data.device, data.action);
+                    } else if (data.type === 'mediaCapabilities') {
+                      const payload = data.payload || {};
+                      console.log('[WebView Capabilities]', payload);
+                      
+                      if (
+                        Platform.OS === 'ios' &&
+                        payload.spoofingAvailable === false &&
+                        !capabilityAlertShownRef.current
+                      ) {
+                        capabilityAlertShownRef.current = true;
+                        Alert.alert(
+                          'iOS WebView Limitation',
+                          'This iOS WebView build does not support canvas.captureStream or WebCodecs. ' +
+                            'JavaScript-only camera spoofing cannot work in this environment. ' +
+                            'A native virtual camera build is required for iOS.',
+                          [{ text: 'OK' }]
+                        );
+                      }
+                    } else if (data.type === 'enterpriseWebKitReport') {
+                      setEnterpriseHookReport(data.payload || null);
+                    } else if (
+                      data.type === 'nativeWebRTCOffer' ||
+                      data.type === 'nativeWebRTCIceCandidate' ||
+                      data.type === 'nativeWebRTCClose'
+                    ) {
+                      nativeBridgeRef.current?.handleSignalMessage(data);
                     } else if (data.type === 'cameraPermissionRequest') {
                       const payload = data.payload || {};
                       if (!payload.requestId) {
@@ -1221,6 +1734,14 @@ export default function MotionBrowserScreen() {
                         requestedDeviceId: payload.requestedDeviceId || null,
                       };
                       setPermissionQueue(queue => [...queue, request]);
+                    } else if (data.type === 'webrtcLoopbackOffer') {
+                      webrtcLoopbackBridge.handleOffer(data.payload);
+                    } else if (data.type === 'webrtcLoopbackCandidate') {
+                      webrtcLoopbackBridge.handleCandidate(data.payload);
+                    } else if (data.type === 'webrtcLoopbackStats') {
+                      if (data.payload?.fps !== undefined) {
+                        console.log('[WebView WebRTC Stats]', data.payload);
+                      }
                     } else if (data.type === 'videoError') {
                       console.error('[WebView Video Error]', data.payload?.error?.message);
                       const errorMsg = data.payload?.error?.message || 'Video failed to load';
@@ -1468,6 +1989,48 @@ export default function MotionBrowserScreen() {
         onDelete={handleDeleteWebsiteSettings}
       />
 
+      {enterpriseHookReport && (
+        <Modal
+          visible={true}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEnterpriseHookReport(null)}
+        >
+          <View style={styles.hookReportOverlay}>
+            <View style={styles.hookReportCard}>
+              <View style={styles.hookReportHeader}>
+                <Text style={styles.hookReportTitle}>Enterprise WebKit Report</Text>
+                <TouchableOpacity onPress={() => setEnterpriseHookReport(null)}>
+                  <Text style={styles.hookReportClose}>Close</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.hookReportSubtitle}>
+                Applied flags: {enterpriseHookReport.appliedFlags?.length || 0} •
+                Failed flags: {enterpriseHookReport.failedFlags?.length || 0}
+              </Text>
+              <ScrollView style={styles.hookReportScroll}>
+                <Text style={styles.hookReportSection}>Applied Flags</Text>
+                {(enterpriseHookReport.appliedFlags || []).map((flag: string, idx: number) => (
+                  <Text key={`applied-${idx}`} style={styles.hookReportItem}>{flag}</Text>
+                ))}
+                <Text style={styles.hookReportSection}>Failed Flags</Text>
+                {(enterpriseHookReport.failedFlags || []).map((flag: string, idx: number) => (
+                  <Text key={`failed-${idx}`} style={styles.hookReportItem}>{flag}</Text>
+                ))}
+                <Text style={styles.hookReportSection}>Loaded Frameworks</Text>
+                {(enterpriseHookReport.loadedFrameworks || []).map((fw: string, idx: number) => (
+                  <Text key={`fw-${idx}`} style={styles.hookReportItem}>{fw}</Text>
+                ))}
+                <Text style={styles.hookReportSection}>Failed Frameworks</Text>
+                {(enterpriseHookReport.failedFrameworks || []).map((fw: string, idx: number) => (
+                  <Text key={`fwf-${idx}`} style={styles.hookReportItem}>{fw}</Text>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       <ProtocolSettingsModal
         visible={showProtocolSettingsModal}
         currentHostname={currentHostname}
@@ -1564,6 +2127,26 @@ const styles = StyleSheet.create({
     color: '#0a0a0a',
     fontSize: 12,
     fontWeight: '600' as const,
+  },
+  unsupportedContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    gap: 12,
+    backgroundColor: '#0a0a0a',
+  },
+  unsupportedTitle: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+    color: '#ffffff',
+    textAlign: 'center',
+  },
+  unsupportedText: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    textAlign: 'center' as const,
+    lineHeight: 18,
   },
   modalOverlay: {
     flex: 1,
@@ -1709,5 +2292,56 @@ const styles = StyleSheet.create({
     color: '#ff4757',
     fontSize: 14,
     fontWeight: '700' as const,
+  },
+  hookReportOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  hookReportCard: {
+    width: '100%',
+    maxHeight: '80%',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  hookReportHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  hookReportTitle: {
+    fontSize: 16,
+    fontWeight: '700' as const,
+    color: '#ffffff',
+  },
+  hookReportClose: {
+    color: '#00ff88',
+    fontWeight: '600' as const,
+  },
+  hookReportSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.6)',
+    marginBottom: 12,
+  },
+  hookReportScroll: {
+    maxHeight: 420,
+  },
+  hookReportSection: {
+    marginTop: 10,
+    marginBottom: 4,
+    fontSize: 13,
+    fontWeight: '600' as const,
+    color: '#ffffff',
+  },
+  hookReportItem: {
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
+    marginBottom: 2,
   },
 });

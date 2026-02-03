@@ -1,0 +1,446 @@
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.h b/node_modules/react-native-webview/apple/RNCWebViewImpl.h
+index 1f6bbfd..a916a6f 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.h
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.h
+@@ -81,6 +81,7 @@ shouldStartLoadForRequest:(NSMutableDictionary<NSString *, id> *)request
+ @property (nonatomic, assign) CGFloat decelerationRate;
+ @property (nonatomic, assign) BOOL allowsInlineMediaPlayback;
+ @property (nonatomic, assign) BOOL allowsPictureInPictureMediaPlayback;
++@property (nonatomic, assign) BOOL enterpriseWebKitEnabled;
+ @property (nonatomic, assign) BOOL webviewDebuggingEnabled;
+ @property (nonatomic, assign) BOOL allowsAirPlayForMediaPlayback;
+ @property (nonatomic, assign) BOOL bounces;
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewImpl.m b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+index 7f5c24d..38b6db9 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewImpl.m
++++ b/node_modules/react-native-webview/apple/RNCWebViewImpl.m
+@@ -16,6 +16,7 @@
+ #endif // !TARGET_OS_OSX
+ 
+ #import "objc/runtime.h"
++#import <dlfcn.h>
+ 
+ static NSTimer *keyboardTimer;
+ static NSString *const HistoryShimName = @"ReactNativeHistoryShim";
+@@ -23,6 +24,376 @@ static NSString *const MessageHandlerName = @"ReactNativeWebView";
+ static NSURLCredential* clientAuthenticationCredential;
+ static NSDictionary* customCertificatesForHost;
+ 
++static NSMutableDictionary *RNCEnterpriseHookReport = nil;
++static NSString *RNCEnterpriseHookReportJSON = nil;
++
++static NSMutableDictionary *RNCGetEnterpriseHookReport(void) {
++  if (!RNCEnterpriseHookReport) {
++    RNCEnterpriseHookReport = [@{
++      @"appliedFlags": [NSMutableArray array],
++      @"failedFlags": [NSMutableArray array],
++      @"appliedSettings": [NSMutableDictionary dictionary],
++      @"failedSettings": [NSMutableDictionary dictionary],
++      @"loadedFrameworks": [NSMutableArray array],
++      @"failedFrameworks": [NSMutableArray array],
++      @"timestamp": @([[NSDate date] timeIntervalSince1970])
++    } mutableCopy];
++  }
++  return RNCEnterpriseHookReport;
++}
++
++static void RNCRecordFlag(NSString *key, BOOL success) {
++  if (!key) {
++    return;
++  }
++  NSMutableDictionary *report = RNCGetEnterpriseHookReport();
++  NSMutableArray *bucket = success ? report[@"appliedFlags"] : report[@"failedFlags"];
++  [bucket addObject:key];
++}
++
++static void RNCRecordSetting(NSString *key, id value, BOOL success) {
++  if (!key) {
++    return;
++  }
++  NSMutableDictionary *report = RNCGetEnterpriseHookReport();
++  NSMutableDictionary *bucket = success ? report[@"appliedSettings"] : report[@"failedSettings"];
++  bucket[key] = value ? [value description] : @"(null)";
++}
++
++static void RNCRecordFrameworkLoad(NSString *path, BOOL success) {
++  if (!path) {
++    return;
++  }
++  NSMutableDictionary *report = RNCGetEnterpriseHookReport();
++  NSMutableArray *bucket = success ? report[@"loadedFrameworks"] : report[@"failedFrameworks"];
++  [bucket addObject:path];
++}
++
++static void RNCFinalizeEnterpriseHookReport(BOOL runtimeEnabled) {
++  NSMutableDictionary *report = RNCGetEnterpriseHookReport();
++  report[@"enabled"] = @(runtimeEnabled);
++  if (!runtimeEnabled) {
++    RNCEnterpriseHookReportJSON = nil;
++    return;
++  }
++  NSError *error = nil;
++  NSData *jsonData = [NSJSONSerialization dataWithJSONObject:report options:0 error:&error];
++  if (!error && jsonData) {
++    RNCEnterpriseHookReportJSON = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
++  }
++}
++
++static NSString *RNCEnterpriseHookReportScript(void) {
++  if (!RNCEnterpriseHookReportJSON || RNCEnterpriseHookReportJSON.length == 0) {
++    return nil;
++  }
++  return [NSString stringWithFormat:
++    @"(function(){window.__enterpriseWebKitReport=%@;"
++     "if (window.ReactNativeWebView&&window.ReactNativeWebView.postMessage){"
++     "window.ReactNativeWebView.postMessage(JSON.stringify({type:'enterpriseWebKitReport',payload:window.__enterpriseWebKitReport}));"
++     "}})();",
++     RNCEnterpriseHookReportJSON
++  ];
++}
++
++static NSComparisonResult RNCCompareVersion(NSString *a, NSString *b) {
++  if (!a && !b) return NSOrderedSame;
++  if (!a) return NSOrderedAscending;
++  if (!b) return NSOrderedDescending;
++  return [a compare:b options:NSNumericSearch];
++}
++
++static BOOL RNCVersionInRange(NSString *version, NSString *min, NSString *max) {
++  if (min && RNCCompareVersion(version, min) == NSOrderedAscending) {
++    return NO;
++  }
++  if (max && RNCCompareVersion(version, max) == NSOrderedDescending) {
++    return NO;
++  }
++  return YES;
++}
++
++static NSArray<NSDictionary *> *RNCEnterpriseFrameworkVariants(void) {
++  id value = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"RNCEnterpriseWebKitFrameworkVariants"];
++  if ([value isKindOfClass:[NSArray class]]) {
++    return value;
++  }
++  return nil;
++}
++
++static NSString *RNCNormalizeFrameworkPath(NSString *path) {
++  if (!path || path.length == 0) {
++    return path;
++  }
++  NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
++  NSString *expanded = path;
++  expanded = [expanded stringByReplacingOccurrencesOfString:@"$(APP_BUNDLE_PATH)" withString:bundlePath];
++  expanded = [expanded stringByReplacingOccurrencesOfString:@"${APP_BUNDLE_PATH}" withString:bundlePath];
++  
++  if ([expanded hasPrefix:@"frameworks://"]) {
++    NSString *relative = [expanded substringFromIndex:[@"frameworks://" length]];
++    return [bundlePath stringByAppendingPathComponent:[@"Frameworks/" stringByAppendingString:relative]];
++  }
++  if ([expanded hasPrefix:@"bundle://"]) {
++    NSString *relative = [expanded substringFromIndex:[@"bundle://" length]];
++    return [bundlePath stringByAppendingPathComponent:relative];
++  }
++  
++  return expanded;
++}
++
++static BOOL RNCEnterpriseWebKitEnabled(void) {
++#if TARGET_OS_IOS
++  NSNumber *flag = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"RNCEnterpriseWebKit"];
++  if (flag != nil) {
++    return [flag boolValue];
++  }
++  NSString *env = [[[NSProcessInfo processInfo] environment] objectForKey:@"RNC_ENTERPRISE_WEBKIT"];
++  if (env != nil) {
++    return [env isEqualToString:@"1"] || [env caseInsensitiveCompare:@"true"] == NSOrderedSame;
++  }
++#endif
++  return NO;
++}
++
++static NSArray<NSString *> *RNCEnterpriseArrayFromPlist(NSString *key) {
++  if (!key) {
++    return nil;
++  }
++  id value = [[NSBundle mainBundle] objectForInfoDictionaryKey:key];
++  if ([value isKindOfClass:[NSArray class]]) {
++    return value;
++  }
++  if ([value isKindOfClass:[NSString class]]) {
++    NSString *stringValue = (NSString *)value;
++    NSArray<NSString *> *parts = [stringValue componentsSeparatedByString:@","];
++    NSMutableArray<NSString *> *trimmed = [NSMutableArray array];
++    for (NSString *part in parts) {
++      NSString *candidate = [part stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
++      if (candidate.length > 0) {
++        [trimmed addObject:candidate];
++      }
++    }
++    return trimmed.count > 0 ? trimmed : nil;
++  }
++  return nil;
++}
++
++static NSDictionary *RNCEnterpriseDictionaryFromPlist(NSString *key) {
++  if (!key) {
++    return nil;
++  }
++  id value = [[NSBundle mainBundle] objectForInfoDictionaryKey:key];
++  if ([value isKindOfClass:[NSDictionary class]]) {
++    return value;
++  }
++  return nil;
++}
++
++static void RNCApplyPrivateValue(id target, NSString *key, id value) {
++  if (!target || !key) {
++    return;
++  }
++  @try {
++    [target setValue:value forKey:key];
++    id current = [target valueForKey:key];
++    BOOL success = (current != nil) && (value == nil || [current isEqual:value]);
++    RNCRecordSetting(key, value, success);
++  } @catch (NSException *exception) {
++    RNCRecordSetting(key, value, NO);
++  }
++}
++
++static NSArray<NSString *> *RNCEnterpriseFrameworkPaths(void) {
++  NSArray<NSDictionary *> *variants = RNCEnterpriseFrameworkVariants();
++  if (variants && variants.count > 0) {
++    NSMutableArray<NSString *> *selected = [NSMutableArray array];
++#if TARGET_OS_IOS
++    NSString *systemVersion = [[UIDevice currentDevice] systemVersion];
++#else
++    NSString *systemVersion = @"0";
++#endif
++    for (NSDictionary *variant in variants) {
++      NSString *pathValue = variant[@"path"];
++      NSString *minVersion = variant[@"minVersion"] ?: variant[@"minIOS"];
++      NSString *maxVersion = variant[@"maxVersion"] ?: variant[@"maxIOS"];
++      if (!pathValue || pathValue.length == 0) {
++        continue;
++      }
++      if (!RNCVersionInRange(systemVersion, minVersion, maxVersion)) {
++        continue;
++      }
++      NSString *resolved = RNCNormalizeFrameworkPath(pathValue);
++      if (resolved.length > 0) {
++        [selected addObject:resolved];
++      }
++    }
++    if (selected.count > 0) {
++      return selected;
++    }
++  }
++  NSArray<NSString *> *paths = RNCEnterpriseArrayFromPlist(@"RNCEnterpriseWebKitFrameworkPaths");
++  if (paths && paths.count > 0) {
++    NSMutableArray<NSString *> *normalized = [NSMutableArray array];
++    for (NSString *entry in paths) {
++      NSString *resolved = RNCNormalizeFrameworkPath(entry);
++      if (resolved.length > 0) {
++        [normalized addObject:resolved];
++      }
++    }
++    return normalized;
++  }
++  NSString *single = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"RNCEnterpriseWebKitFrameworkPath"];
++  if ([single isKindOfClass:[NSString class]] && single.length > 0) {
++    NSString *resolved = RNCNormalizeFrameworkPath(single);
++    return resolved.length > 0 ? @[resolved] : @[];
++  }
++  return @[];
++}
++
++static void RNCLoadCustomWebKitIfNeeded(BOOL runtimeEnabled) {
++  if (!runtimeEnabled || !RNCEnterpriseWebKitEnabled()) {
++    return;
++  }
++  NSArray<NSString *> *paths = RNCEnterpriseFrameworkPaths();
++  for (NSString *path in paths) {
++    const char *cpath = [path UTF8String];
++    if (!cpath) {
++      continue;
++    }
++    void *handle = dlopen(cpath, RTLD_LAZY | RTLD_GLOBAL);
++    if (!handle) {
++      const char *err = dlerror();
++      if (err) {
++        NSLog(@"[RNCWebView] Enterprise WebKit load failed: %s", err);
++      }
++      RNCRecordFrameworkLoad(path, NO);
++    } else {
++      NSLog(@"[RNCWebView] Enterprise WebKit loaded: %@", path);
++      RNCRecordFrameworkLoad(path, YES);
++    }
++  }
++}
++
++static void RNCApplyEnterpriseDefaults(void) {
++  if (!RNCEnterpriseWebKitEnabled()) {
++    return;
++  }
++  NSDictionary *defaults = RNCEnterpriseDictionaryFromPlist(@"RNCEnterpriseWebKitDefaults");
++  if (!defaults || defaults.count == 0) {
++    return;
++  }
++  @try {
++    NSUserDefaults *webKitDefaults = [[NSUserDefaults alloc] initWithSuiteName:@"com.apple.WebKit"];
++    [webKitDefaults registerDefaults:defaults];
++    [webKitDefaults synchronize];
++  } @catch (NSException *exception) {
++  }
++}
++
++static void RNCApplyPrivateBool(id target, NSString *key, BOOL value) {
++  if (!target || !key) {
++    return;
++  }
++  @try {
++    [target setValue:@(value) forKey:key];
++    id current = [target valueForKey:key];
++    BOOL success = NO;
++    if ([current respondsToSelector:@selector(boolValue)]) {
++      success = [current boolValue] == value;
++    } else if (current != nil) {
++      success = YES;
++    }
++    RNCRecordFlag(key, success);
++  } @catch (NSException *exception) {
++    RNCRecordFlag(key, NO);
++  }
++}
++
++static BOOL RNCApplyEnterpriseWebKitPreferences(WKWebViewConfiguration *config, WKPreferences *prefs, BOOL runtimeEnabled) {
++  if (!config || !prefs) {
++    return NO;
++  }
++  if (!runtimeEnabled || !RNCEnterpriseWebKitEnabled()) {
++    return NO;
++  }
++  
++  RNCLoadCustomWebKitIfNeeded(runtimeEnabled);
++  RNCApplyEnterpriseDefaults();
++  
++  NSArray<NSString *> *preferenceFlags = @[
++    @"_mediaCaptureEnabled",
++    @"_mediaDevicesEnabled",
++    @"_mediaRecorderEnabled",
++    @"_mediaStreamEnabled",
++    @"_mediaStreamTrackGeneratorEnabled",
++    @"_captureStreamEnabled",
++    @"_webCodecsEnabled",
++    @"_webCodecsVideoFrameEnabled",
++    @"_webCodecsAudioEnabled",
++    @"_webCodecsVideoEncoderEnabled",
++    @"_webCodecsVideoDecoderEnabled",
++    @"_webCodecsAudioEncoderEnabled",
++    @"_webCodecsAudioDecoderEnabled",
++    @"_webRTCEnabled",
++    @"_webRTCUnifiedPlanEnabled",
++    @"_webRTCH264HardwareEncoderEnabled",
++    @"_webRTCPlatformVideoEncoderEnabled",
++    @"_webRTCPlatformAudioEncoderEnabled",
++    @"_webRTCPlatformVideoDecoderEnabled",
++    @"_webRTCPlatformAudioDecoderEnabled",
++    @"_allowUserMedia",
++    @"_allowMediaCapture",
++    @"_developerExtrasEnabled",
++    @"_experimentalFeaturesEnabled"
++  ];
++  
++  NSArray<NSString *> *customPrefFlags = RNCEnterpriseArrayFromPlist(@"RNCEnterpriseWebKitCustomPreferenceFlags");
++  if (customPrefFlags && customPrefFlags.count > 0) {
++    preferenceFlags = [preferenceFlags arrayByAddingObjectsFromArray:customPrefFlags];
++  }
++  
++  for (NSString *key in preferenceFlags) {
++    RNCApplyPrivateBool(prefs, key, YES);
++  }
++  
++  NSArray<NSString *> *configFlags = @[
++    @"_mediaCaptureEnabled",
++    @"_allowUserMedia",
++    @"_allowMediaCapture",
++    @"_allowsInlineMediaPlayback",
++    @"_mediaDevicesEnabled",
++    @"_captureStreamEnabled"
++  ];
++  
++  NSArray<NSString *> *customConfigFlags = RNCEnterpriseArrayFromPlist(@"RNCEnterpriseWebKitCustomConfigFlags");
++  if (customConfigFlags && customConfigFlags.count > 0) {
++    configFlags = [configFlags arrayByAddingObjectsFromArray:customConfigFlags];
++  }
++  
++  for (NSString *key in configFlags) {
++    RNCApplyPrivateBool(config, key, YES);
++  }
++  
++  NSDictionary *customPrefSettings = RNCEnterpriseDictionaryFromPlist(@"RNCEnterpriseWebKitCustomPreferenceSettings");
++  if (customPrefSettings && customPrefSettings.count > 0) {
++    for (NSString *key in customPrefSettings) {
++      RNCApplyPrivateValue(prefs, key, customPrefSettings[key]);
++    }
++  }
++  
++  NSDictionary *customConfigSettings = RNCEnterpriseDictionaryFromPlist(@"RNCEnterpriseWebKitCustomConfigSettings");
++  if (customConfigSettings && customConfigSettings.count > 0) {
++    for (NSString *key in customConfigSettings) {
++      RNCApplyPrivateValue(config, key, customConfigSettings[key]);
++    }
++  }
++  
++  RNCFinalizeEnterpriseHookReport(runtimeEnabled);
++  
++  return YES;
++}
++
+ NSString *const CUSTOM_SELECTOR = @"_CUSTOM_SELECTOR_";
+ 
+ #if TARGET_OS_IOS
+@@ -174,6 +545,7 @@ RCTAutoInsetsProtocol>
+     _mediaPlaybackRequiresUserAction = YES;
+     _automaticallyAdjustContentInsets = YES;
+     _autoManageStatusBarEnabled = YES;
++    _enterpriseWebKitEnabled = RNCEnterpriseWebKitEnabled();
+     _contentInset = UIEdgeInsetsZero;
+     _savedKeyboardDisplayRequiresUserAction = YES;
+     _injectedJavaScript = nil;
+@@ -456,6 +828,9 @@ RCTAutoInsetsProtocol>
+     }
+   }
+ #endif
++  if (RNCApplyEnterpriseWebKitPreferences(wkWebViewConfig, prefs, _enterpriseWebKitEnabled)) {
++    _prefsUsed = YES;
++  }
+   if (_prefsUsed) {
+     wkWebViewConfig.preferences = prefs;
+   }
+@@ -492,6 +867,14 @@ RCTAutoInsetsProtocol>
+                                                             name:HistoryShimName];
+   [self resetupScripts:wkWebViewConfig];
+   
++  NSString *enterpriseReportScript = RNCEnterpriseHookReportScript();
++  if (enterpriseReportScript) {
++    WKUserScript *reportScript = [[WKUserScript alloc] initWithSource:enterpriseReportScript
++                                                       injectionTime:WKUserScriptInjectionTimeAtDocumentStart
++                                                    forMainFrameOnly:YES];
++    [wkWebViewConfig.userContentController addUserScript:reportScript];
++  }
++
+   if(@available(macos 10.11, ios 9.0, *)) {
+     wkWebViewConfig.allowsAirPlayForMediaPlayback = _allowsAirPlayForMediaPlayback;
+   }
+diff --git a/node_modules/react-native-webview/apple/RNCWebViewManager.mm b/node_modules/react-native-webview/apple/RNCWebViewManager.mm
+index f8f375f..9784ba0 100644
+--- a/node_modules/react-native-webview/apple/RNCWebViewManager.mm
++++ b/node_modules/react-native-webview/apple/RNCWebViewManager.mm
+@@ -63,6 +63,7 @@ RCT_EXPORT_VIEW_PROPERTY(allowFileAccessFromFileURLs, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowUniversalAccessFromFileURLs, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowsInlineMediaPlayback, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowsPictureInPictureMediaPlayback, BOOL)
++RCT_EXPORT_VIEW_PROPERTY(enterpriseWebKitEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(webviewDebuggingEnabled, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(allowsAirPlayForMediaPlayback, BOOL)
+ RCT_EXPORT_VIEW_PROPERTY(mediaPlaybackRequiresUserAction, BOOL)

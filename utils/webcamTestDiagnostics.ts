@@ -8,11 +8,20 @@ export interface DiagnosticResult {
   timestamp: string;
   url: string;
   success: boolean;
+  environment: {
+    isWebView: boolean;
+    userAgent: string;
+    platform: string;
+    vendor: string;
+  };
   apiAvailable: {
     mediaDevices: boolean;
     getUserMedia: boolean;
     enumerateDevices: boolean;
     captureStream: boolean;
+    canvasCaptureStream: boolean;
+    audioContext: boolean;
+    mediaRecorder: boolean;
   };
   injection: {
     detected: boolean;
@@ -33,8 +42,15 @@ export interface DiagnosticResult {
       videoTrackInfo: any | null;
       error: string | null;
     };
+    mediaRecorder?: {
+      available: boolean;
+      canRecordStream: boolean;
+      recordedBytes: number;
+      error: string | null;
+    };
   };
   errors: string[];
+  warnings: string[];
 }
 
 /**
@@ -57,11 +73,20 @@ export const createDiagnosticScript = (): string => {
     timestamp: new Date().toISOString(),
     url: window.location.href,
     success: false,
+    environment: {
+      isWebView: false,
+      userAgent: '',
+      platform: '',
+      vendor: '',
+    },
     apiAvailable: {
       mediaDevices: false,
       getUserMedia: false,
       enumerateDevices: false,
       captureStream: false,
+      canvasCaptureStream: false,
+      audioContext: false,
+      mediaRecorder: false,
     },
     injection: {
       detected: false,
@@ -70,7 +95,25 @@ export const createDiagnosticScript = (): string => {
     },
     testResults: {},
     errors: [],
+    warnings: [],
   };
+  
+  // Detect environment
+  try {
+    results.environment.userAgent = navigator.userAgent || '';
+    results.environment.platform = navigator.platform || '';
+    results.environment.vendor = navigator.vendor || '';
+    results.environment.isWebView = navigator.userAgent.includes('WebView') || 
+                                     navigator.userAgent.includes('wv') ||
+                                     !!window.ReactNativeWebView;
+    
+    console.log('[Diagnostics] Environment Detection:');
+    console.log('[Diagnostics]   Is WebView:', results.environment.isWebView);
+    console.log('[Diagnostics]   User Agent:', results.environment.userAgent);
+    console.log('[Diagnostics]   Platform:', results.environment.platform);
+  } catch (e) {
+    results.warnings.push('Environment detection failed: ' + e.message);
+  }
   
   // Check API availability
   try {
@@ -84,8 +127,30 @@ export const createDiagnosticScript = (): string => {
       !!(HTMLCanvasElement.prototype.captureStream || 
          HTMLCanvasElement.prototype.mozCaptureStream || 
          HTMLCanvasElement.prototype.webkitCaptureStream);
+    results.apiAvailable.canvasCaptureStream = results.apiAvailable.captureStream;
+    results.apiAvailable.audioContext = !!(window.AudioContext || window.webkitAudioContext);
+    results.apiAvailable.mediaRecorder = typeof MediaRecorder !== 'undefined';
     
-    console.log('[Diagnostics] API Availability:', results.apiAvailable);
+    console.log('[Diagnostics] API Availability:');
+    console.log('[Diagnostics]   mediaDevices:', results.apiAvailable.mediaDevices);
+    console.log('[Diagnostics]   getUserMedia:', results.apiAvailable.getUserMedia);
+    console.log('[Diagnostics]   enumerateDevices:', results.apiAvailable.enumerateDevices);
+    console.log('[Diagnostics]   captureStream:', results.apiAvailable.captureStream);
+    console.log('[Diagnostics]   AudioContext:', results.apiAvailable.audioContext);
+    console.log('[Diagnostics]   MediaRecorder:', results.apiAvailable.mediaRecorder);
+    
+    // Detailed canvas captureStream check
+    if (typeof HTMLCanvasElement !== 'undefined') {
+      const canvas = document.createElement('canvas');
+      const hasCaptureStream = typeof canvas.captureStream === 'function';
+      const hasMozCaptureStream = typeof canvas.mozCaptureStream === 'function';
+      const hasWebkitCaptureStream = typeof canvas.webkitCaptureStream === 'function';
+      console.log('[Diagnostics] Canvas methods:', {
+        captureStream: hasCaptureStream,
+        mozCaptureStream: hasMozCaptureStream,
+        webkitCaptureStream: hasWebkitCaptureStream,
+      });
+    }
   } catch (e) {
     results.errors.push('API check failed: ' + e.message);
   }
@@ -176,25 +241,30 @@ export const createDiagnosticScript = (): string => {
           height: { ideal: 1920 },
           facingMode: 'user',
         },
-        audio: false,
+        audio: true,
       };
       
-      console.log('[Diagnostics] Requesting stream with constraints:', constraints);
+      console.log('[Diagnostics] Requesting stream with constraints:', JSON.stringify(constraints));
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       
       const videoTracks = stream.getVideoTracks();
+      const audioTracks = stream.getAudioTracks();
       let videoTrackInfo = null;
       
       if (videoTracks.length > 0) {
         const track = videoTracks[0];
         const settings = track.getSettings ? track.getSettings() : {};
+        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
         videoTrackInfo = {
           label: track.label,
           id: track.id ? track.id.substring(0, 20) + '...' : '',
+          kind: track.kind,
           enabled: track.enabled,
           muted: track.muted,
           readyState: track.readyState,
           settings: settings,
+          hasCapabilities: !!track.getCapabilities,
+          hasConstraints: !!track.getConstraints,
         };
       }
       
@@ -207,10 +277,19 @@ export const createDiagnosticScript = (): string => {
       };
       
       console.log('[Diagnostics] ✓ getUserMedia successful');
-      console.log('[Diagnostics]   Tracks:', stream.getTracks().length);
+      console.log('[Diagnostics]   Total tracks:', stream.getTracks().length);
       console.log('[Diagnostics]   Video tracks:', videoTracks.length);
+      console.log('[Diagnostics]   Audio tracks:', audioTracks.length);
       if (videoTrackInfo) {
-        console.log('[Diagnostics]   Video info:', videoTrackInfo);
+        console.log('[Diagnostics]   Video track details:', videoTrackInfo);
+      }
+      
+      // Test MediaRecorder if available
+      if (typeof MediaRecorder !== 'undefined') {
+        await testMediaRecorder(stream);
+      } else {
+        console.warn('[Diagnostics] MediaRecorder not available');
+        results.warnings.push('MediaRecorder not available');
       }
       
       // Clean up
@@ -228,6 +307,97 @@ export const createDiagnosticScript = (): string => {
       results.errors.push('getUserMedia failed: ' + e.message);
       console.error('[Diagnostics] ✗ getUserMedia failed:', e);
       return false;
+    }
+  }
+  
+  // Test MediaRecorder
+  async function testMediaRecorder(stream) {
+    console.log('[Diagnostics] Testing MediaRecorder...');
+    try {
+      const chunks = [];
+      const recorder = new MediaRecorder(stream);
+      
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          console.warn('[Diagnostics] MediaRecorder test timeout');
+          results.warnings.push('MediaRecorder test timeout');
+          resolve();
+        }, 2000);
+        
+        recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) {
+            chunks.push(e.data);
+            console.log('[Diagnostics] Recorded chunk:', e.data.size, 'bytes');
+          }
+        };
+        
+        recorder.onstop = () => {
+          clearTimeout(timeout);
+          const blob = new Blob(chunks, { type: recorder.mimeType || 'video/webm' });
+          const totalBytes = blob.size;
+          
+          results.testResults.mediaRecorder = {
+            available: true,
+            canRecordStream: totalBytes > 0,
+            recordedBytes: totalBytes,
+            error: null,
+          };
+          
+          if (totalBytes > 0) {
+            console.log('[Diagnostics] ✓ MediaRecorder successful - recorded', totalBytes, 'bytes');
+          } else {
+            console.warn('[Diagnostics] ⚠ MediaRecorder recorded 0 bytes');
+            results.warnings.push('MediaRecorder recorded 0 bytes');
+          }
+          
+          resolve();
+        };
+        
+        recorder.onerror = (e) => {
+          clearTimeout(timeout);
+          const errorMsg = e.error ? e.error.message : 'Unknown error';
+          results.testResults.mediaRecorder = {
+            available: true,
+            canRecordStream: false,
+            recordedBytes: 0,
+            error: errorMsg,
+          };
+          results.errors.push('MediaRecorder error: ' + errorMsg);
+          console.error('[Diagnostics] ✗ MediaRecorder failed:', errorMsg);
+          resolve();
+        };
+        
+        try {
+          recorder.start();
+          console.log('[Diagnostics] MediaRecorder started');
+          setTimeout(() => {
+            if (recorder.state === 'recording') {
+              recorder.stop();
+              console.log('[Diagnostics] MediaRecorder stopped');
+            }
+          }, 1000);
+        } catch (e) {
+          clearTimeout(timeout);
+          results.testResults.mediaRecorder = {
+            available: true,
+            canRecordStream: false,
+            recordedBytes: 0,
+            error: e.message,
+          };
+          results.errors.push('MediaRecorder start failed: ' + e.message);
+          console.error('[Diagnostics] ✗ MediaRecorder start failed:', e);
+          resolve();
+        }
+      });
+    } catch (e) {
+      results.testResults.mediaRecorder = {
+        available: false,
+        canRecordStream: false,
+        recordedBytes: 0,
+        error: e.message,
+      };
+      results.errors.push('MediaRecorder unavailable: ' + e.message);
+      console.error('[Diagnostics] ✗ MediaRecorder unavailable:', e);
     }
   }
   
@@ -289,10 +459,13 @@ true;
 /**
  * Create a GUARANTEED working injection for webcamtests.com
  * This uses the most aggressive, earliest-possible interception
+ * ENHANCED for React Native WebView environments
  */
 export const createGuaranteedInjection = (): string => {
   return `
 (function() {
+  'use strict';
+  
   // CRITICAL: Run before ANYTHING else
   if (window.__guaranteedInjection) {
     console.log('[Guaranteed] Already active');
@@ -303,7 +476,14 @@ export const createGuaranteedInjection = (): string => {
   console.log('[Guaranteed] ================================================');
   console.log('[Guaranteed] GUARANTEED INJECTION ACTIVATING');
   console.log('[Guaranteed] Target: webcamtests.com and all webcam test sites');
+  console.log('[Guaranteed] Environment:', navigator.userAgent.includes('WebView') ? 'WebView' : 'Browser');
   console.log('[Guaranteed] ================================================');
+  
+  // Ensure mediaDevices exists (critical for WebView)
+  if (!navigator.mediaDevices) {
+    console.log('[Guaranteed] Creating navigator.mediaDevices');
+    navigator.mediaDevices = {};
+  }
   
   // Store original IMMEDIATELY
   const _origGUM = navigator.mediaDevices?.getUserMedia?.bind?.(navigator.mediaDevices);
@@ -524,39 +704,58 @@ export const createGuaranteedInjection = (): string => {
     }
   }
   
-  // OVERRIDE getUserMedia - AGGRESSIVELY
-  if (navigator.mediaDevices) {
-    // Method 1: Direct override
-    navigator.mediaDevices.getUserMedia = async function(constraints) {
-      console.log('[Guaranteed] getUserMedia INTERCEPTED');
-      console.log('[Guaranteed] Constraints:', constraints);
-      
-      // If video is requested, return our stream
-      if (constraints?.video) {
-        try {
-          const stream = createStream(constraints);
-          console.log('[Guaranteed] Returning injected stream');
-          return stream;
-        } catch (err) {
-          console.error('[Guaranteed] Injection failed, trying original');
-          if (_origGUM) {
-            return _origGUM(constraints);
-          }
-          throw err;
-        }
-      }
-      
-      // If only audio, try original
-      if (_origGUM) {
-        console.log('[Guaranteed] Audio only, using original');
-        return _origGUM(constraints);
-      }
-      
-      throw new DOMException('getUserMedia not available', 'NotSupportedError');
-    };
+  // OVERRIDE getUserMedia - AGGRESSIVELY WITH MULTIPLE METHODS
+  
+  // Method 1: Direct function replacement
+  const newGetUserMedia = async function(constraints) {
+    console.log('[Guaranteed] getUserMedia INTERCEPTED');
+    console.log('[Guaranteed] Constraints:', JSON.stringify(constraints));
     
-    // Method 2: Override enumerateDevices
-    navigator.mediaDevices.enumerateDevices = async function() {
+    // If video is requested, return our stream
+    if (constraints?.video) {
+      try {
+        const stream = createStream(constraints);
+        console.log('[Guaranteed] Returning injected stream');
+        console.log('[Guaranteed] Stream has', stream.getTracks().length, 'tracks');
+        return stream;
+      } catch (err) {
+        console.error('[Guaranteed] Injection failed:', err);
+        if (_origGUM) {
+          console.log('[Guaranteed] Falling back to original getUserMedia');
+          return _origGUM(constraints);
+        }
+        throw err;
+      }
+    }
+    
+    // If only audio, try original
+    if (_origGUM) {
+      console.log('[Guaranteed] Audio only, using original');
+      return _origGUM(constraints);
+    }
+    
+    throw new DOMException('getUserMedia not available', 'NotSupportedError');
+  };
+  
+  // Apply the override
+  if (navigator.mediaDevices) {
+    navigator.mediaDevices.getUserMedia = newGetUserMedia;
+    
+    // Method 2: Also try to lock it in place with defineProperty
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        value: newGetUserMedia,
+        writable: true,  // Keep writable to avoid WebView errors
+        configurable: true,
+        enumerable: true,
+      });
+      console.log('[Guaranteed] getUserMedia locked with defineProperty');
+    } catch (e) {
+      console.warn('[Guaranteed] Could not use defineProperty:', e);
+    }
+    
+    // Override enumerateDevices
+    const newEnumerateDevices = async function() {
       console.log('[Guaranteed] enumerateDevices INTERCEPTED');
       
       const injectedDevices = [
@@ -587,25 +786,47 @@ export const createGuaranteedInjection = (): string => {
       return injectedDevices;
     };
     
+    navigator.mediaDevices.enumerateDevices = newEnumerateDevices;
+    
+    try {
+      Object.defineProperty(navigator.mediaDevices, 'enumerateDevices', {
+        value: newEnumerateDevices,
+        writable: true,
+        configurable: true,
+        enumerable: true,
+      });
+      console.log('[Guaranteed] enumerateDevices locked with defineProperty');
+    } catch (e) {
+      console.warn('[Guaranteed] Could not use defineProperty for enumerateDevices:', e);
+    }
+    
     console.log('[Guaranteed] navigator.mediaDevices methods overridden');
   } else {
     console.error('[Guaranteed] CRITICAL: navigator.mediaDevices not available!');
+    console.error('[Guaranteed] This is a fatal error - injection cannot proceed');
   }
   
-  // Protect against re-definition
+  // Protect against re-definition (but keep configurable for WebView compatibility)
   try {
-    Object.defineProperty(Function.prototype, 'toString', {
-      value: function() {
-        if (this === navigator.mediaDevices?.getUserMedia ||
-            this === navigator.mediaDevices?.enumerateDevices) {
-          return 'function ' + (this.name || 'getUserMedia') + '() { [native code] }';
-        }
-        return Function.prototype.toString.call(this);
-      },
-      configurable: false,
-    });
+    const originalToString = Function.prototype.toString;
+    Function.prototype.toString = function() {
+      if (this === navigator.mediaDevices?.getUserMedia ||
+          this === navigator.mediaDevices?.enumerateDevices) {
+        return 'function ' + (this.name || 'getUserMedia') + '() { [native code] }';
+      }
+      return originalToString.call(this);
+    };
+    console.log('[Guaranteed] Function.prototype.toString protected');
   } catch (e) {
     console.warn('[Guaranteed] Could not protect toString:', e);
+  }
+  
+  // Also freeze the navigator object to prevent tampering (but catch errors)
+  try {
+    Object.preventExtensions(navigator.mediaDevices);
+    console.log('[Guaranteed] navigator.mediaDevices protected from extensions');
+  } catch (e) {
+    console.warn('[Guaranteed] Could not prevent extensions:', e);
   }
   
   console.log('[Guaranteed] ================================================');

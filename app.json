@@ -3,6 +3,9 @@
     "name": "Clones11",
     "slug": "clones11",
     "version": "1.0.0",
+    "platforms": [
+      "ios"
+    ],
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rork-app",
@@ -18,38 +21,38 @@
       "bundleIdentifier": "app.rork.clones11",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
+        "NSPhotoLibraryAddUsageDescription": "Allow $(PRODUCT_NAME) to save videos to your photo library",
         "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
+        "RNCEnterpriseWebKit": true,
+        "RNCEnterpriseWebKitFrameworkPath": "frameworks://CustomWebKit.framework/CustomWebKit",
         "UIBackgroundModes": [
           "audio"
         ]
       },
       "usesIcloudStorage": true
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
-      },
-      "package": "app.rork.clones11",
-      "permissions": [
-        "android.permission.HIGH_SAMPLING_RATE_SENSORS",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "RECORD_AUDIO",
-        "android.permission.REQUEST_INSTALL_PACKAGES",
-        "INTERNET"
-      ]
-    },
     "web": {
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "expo-dev-client",
       [
         "expo-router",
         {
           "origin": "https://rork.com/"
+        }
+      ],
+      [
+        "./plugins/withEnterpriseWebKit",
+        {
+          "frameworkPath": "enterprise/webkit/CustomWebKit.framework",
+          "iosFrameworksDir": "Frameworks",
+          "required": true,
+          "checksumRequired": true,
+          "autoGenerateChecksum": true,
+          "frameworkSha256Env": "CUSTOM_WEBKIT_SHA256",
+          "hookConfigPath": "enterprise/webkit/hooks.json"
         }
       ],
       "expo-font",
@@ -64,8 +67,7 @@
         "expo-camera",
         {
           "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
-          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone",
-          "recordAudioAndroid": true
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone"
         }
       ],
       [

@@ -1,0 +1,41 @@
+{
+  "customPreferenceFlags": [
+    "_webCodecsEnabled",
+    "_webCodecsVideoFrameEnabled",
+    "_webCodecsAudioEnabled",
+    "_mediaStreamEnabled",
+    "_mediaStreamTrackGeneratorEnabled",
+    "_captureStreamEnabled",
+    "_mediaRecorderEnabled",
+    "_mediaDevicesEnabled",
+    "_allowUserMedia",
+    "_allowMediaCapture",
+    "_developerExtrasEnabled",
+    "_experimentalFeaturesEnabled",
+    "_webRTCEnabled",
+    "_webRTCUnifiedPlanEnabled",
+    "_webRTCH264HardwareEncoderEnabled",
+    "_webRTCPlatformVideoEncoderEnabled",
+    "_webRTCPlatformAudioEncoderEnabled",
+    "_webRTCPlatformVideoDecoderEnabled",
+    "_webRTCPlatformAudioDecoderEnabled"
+  ],
+  "customConfigFlags": [
+    "_mediaCaptureEnabled",
+    "_allowUserMedia",
+    "_allowMediaCapture",
+    "_allowsInlineMediaPlayback",
+    "_mediaDevicesEnabled",
+    "_captureStreamEnabled"
+  ],
+  "customPreferenceSettings": {
+    "_developerExtrasEnabled": true,
+    "_experimentalFeaturesEnabled": true
+  },
+  "customConfigSettings": {
+    "_allowsInlineMediaPlayback": true
+  },
+  "defaults": {
+    "WebKitDeveloperExtras": true
+  }
+}

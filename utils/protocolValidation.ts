@@ -53,6 +53,8 @@ export class ProtocolValidator {
       'protected',
       'harness',
       'holographic',
+      'websocket',
+      'webrtc-loopback',
       'claude-sonnet',
       'claude',
       'sonnet',
@@ -92,7 +94,7 @@ export class ProtocolValidator {
     };
 
     // Validate protocol ID
-    if (!['standard', 'allowlist', 'protected', 'harness', 'holographic', 'claude-sonnet', 'claude', 'sonnet'].includes(protocolId)) {
+    if (!['standard', 'allowlist', 'protected', 'harness', 'holographic', 'websocket', 'webrtc-loopback', 'claude-sonnet', 'claude', 'sonnet'].includes(protocolId)) {
       result.valid = false;
       result.errors.push(`Invalid protocol ID: ${protocolId}`);
       return result;
@@ -144,6 +146,47 @@ export class ProtocolValidator {
         if (config.noiseInjectionLevel && (config.noiseInjectionLevel < 0 || config.noiseInjectionLevel > 1)) {
           result.errors.push('Noise injection level must be between 0 and 1');
           result.valid = false;
+        }
+        break;
+
+      case 'websocket':
+        if (config.port && (config.port < 1 || config.port > 65535)) {
+          result.errors.push('WebSocket bridge port must be between 1 and 65535');
+          result.valid = false;
+        }
+        if (config.quality && (config.quality < 0 || config.quality > 1)) {
+          result.errors.push('Quality must be between 0 and 1');
+          result.valid = false;
+        }
+        break;
+
+      case 'webrtc-loopback':
+        if (config.signalingTimeoutMs && (config.signalingTimeoutMs < 1000 || config.signalingTimeoutMs > 60000)) {
+          result.warnings.push('Signaling timeout should be between 1000ms and 60000ms');
+        }
+        if (config.maxBitrateKbps && config.maxBitrateKbps < 0) {
+          result.errors.push('Max bitrate must be >= 0');
+          result.valid = false;
+        }
+        if (config.minBitrateKbps && config.minBitrateKbps < 0) {
+          result.errors.push('Min bitrate must be >= 0');
+          result.valid = false;
+        }
+        if (config.targetBitrateKbps && config.targetBitrateKbps < 0) {
+          result.errors.push('Target bitrate must be >= 0');
+          result.valid = false;
+        }
+        if (config.keepAliveIntervalMs && config.keepAliveIntervalMs < 500) {
+          result.warnings.push('Keepalive interval < 500ms may be too aggressive');
+        }
+        if (config.ringBufferSeconds && config.ringBufferSeconds < 1) {
+          result.warnings.push('Ring buffer < 1s may be too small for playback');
+        }
+        if (config.cacheTTLHours && config.cacheTTLHours < 1) {
+          result.warnings.push('Cache TTL < 1 hour may cause frequent re-downloads');
+        }
+        if (config.cacheMaxSizeMB && config.cacheMaxSizeMB < 50) {
+          result.warnings.push('Cache max size < 50MB may be too small for large videos');
         }
         break;
 

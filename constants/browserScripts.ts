@@ -652,6 +652,460 @@ export const CONSOLE_CAPTURE_SCRIPT = `
 true;
 `;
 
+/**
+ * MediaRecorder polyfill for WebViews that lack native MediaRecorder (notably some WebKit/WKWebView builds).
+ *
+ * webcamtests.com/recorder relies on MediaRecorder to function; without it, the site will show a preview
+ * (if getUserMedia works) but fail to start recording. This polyfill aims to be "good enough" for
+ * short recordings and basic compatibility checks.
+ *
+ * Notes:
+ * - Video-only (no real audio encoding). If audio tracks exist, they are ignored.
+ * - Produces `video/webm` using a lightweight inlined Whammy-style encoder.
+ * - Enabled only when `window.MediaRecorder` is missing.
+ */
+export const MEDIARECORDER_POLYFILL_SCRIPT = `
+(function() {
+  if (typeof window === 'undefined') return;
+  if (typeof window.MediaRecorder !== 'undefined') return;
+  if (window.__mediaRecorderPolyfillInstalled) return;
+  window.__mediaRecorderPolyfillInstalled = true;
+
+  // Basic capability marker for diagnostics
+  window.__mediaRecorderPolyfill = { installed: true, version: '1.0', type: 'whammy-webm' };
+
+  // ---------------------------------------------------------------------------
+  // Minimal Whammy-style WebM encoder (VP8-in-WebP frames via canvas.toDataURL('image/webp'))
+  // Based on the public domain "Whammy" approach; heavily simplified for our use case.
+  // ---------------------------------------------------------------------------
+
+  function parseWebP(dataURI) {
+    const base64 = dataURI.slice(dataURI.indexOf(',') + 1);
+    const binary = atob(base64);
+    const len = binary.length;
+    const bytes = new Uint8Array(len);
+    for (let i = 0; i < len; i++) bytes[i] = binary.charCodeAt(i);
+
+    // Find VP8 chunk in RIFF container
+    // RIFF....WEBPVP8 .... payload
+    let offset = 0;
+    function readStr(n) {
+      let s = '';
+      for (let i = 0; i < n; i++) s += String.fromCharCode(bytes[offset++]);
+      return s;
+    }
+    function readU32LE() {
+      const v = (bytes[offset]) | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24);
+      offset += 4;
+      return v >>> 0;
+    }
+
+    const riff = readStr(4);
+    if (riff !== 'RIFF') throw new Error('Invalid WebP (no RIFF)');
+    readU32LE(); // file size
+    const webp = readStr(4);
+    if (webp !== 'WEBP') throw new Error('Invalid WebP (no WEBP)');
+    const vp8 = readStr(4); // VP8 / VP8L / VP8X
+    const chunkSize = readU32LE();
+    const payload = bytes.slice(offset, offset + chunkSize);
+    return { riff, webp, vp8, chunkSize, payload };
+  }
+
+  function numToBuffer(num) {
+    const parts = [];
+    while (num > 0) {
+      parts.push(num & 0xff);
+      num = num >> 8;
+    }
+    return new Uint8Array(parts);
+  }
+
+  function strToBuffer(str) {
+    const arr = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) arr[i] = str.charCodeAt(i);
+    return arr;
+  }
+
+  function bitsToBuffer(bits) {
+    const data = [];
+    const pad = bits.length % 8 ? (new Array(1 + 8 - (bits.length % 8))).join('0') : '';
+    bits = pad + bits;
+    for (let i = 0; i < bits.length; i += 8) {
+      data.push(parseInt(bits.substr(i, 8), 2));
+    }
+    return new Uint8Array(data);
+  }
+
+  function doubleToString(num) {
+    const buffer = new ArrayBuffer(8);
+    new DataView(buffer).setFloat64(0, num);
+    return new Uint8Array(buffer);
+  }
+
+  function makeSimpleBlock(data) {
+    let flags = 0;
+    if (data.keyframe) flags |= 0x80;
+
+    const trackNum = 1;
+    const timecode = data.timecode;
+
+    const out = [];
+    out.push(0xA3);
+    const payload = [];
+    // track number (1) + timecode (2) + flags (1) + frame
+    payload.push(0x81);
+    payload.push((timecode >> 8) & 0xff);
+    payload.push(timecode & 0xff);
+    payload.push(flags);
+
+    const frame = data.frame;
+    const blockPayload = new Uint8Array(payload.length + frame.length);
+    blockPayload.set(payload, 0);
+    blockPayload.set(frame, payload.length);
+
+    const size = numToBuffer(blockPayload.length);
+    out.push(0x80 | size.length);
+    for (let i = 0; i < size.length; i++) out.push(size[i]);
+    return concat([new Uint8Array(out), blockPayload]);
+  }
+
+  function concat(arrays) {
+    let total = 0;
+    for (const a of arrays) total += a.length;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const a of arrays) {
+      out.set(a, off);
+      off += a.length;
+    }
+    return out;
+  }
+
+  function makeEBML(json) {
+    const ebml = [];
+    for (const item of json) {
+      const data = item.data;
+      let payload;
+      if (typeof data === 'number') {
+        payload = doubleToString(data);
+      } else if (typeof data === 'string') {
+        payload = strToBuffer(data);
+      } else if (data instanceof Uint8Array) {
+        payload = data;
+      } else if (Array.isArray(data)) {
+        payload = makeEBML(data);
+      } else {
+        payload = new Uint8Array([]);
+      }
+
+      const id = item.id;
+      const idBuf = typeof id === 'string' ? strToBuffer(id) : numToBuffer(id);
+      const size = numToBuffer(payload.length);
+      const sizeBuf = new Uint8Array(1 + size.length);
+      sizeBuf[0] = 0x80 | size.length;
+      sizeBuf.set(size, 1);
+      ebml.push(concat([idBuf, sizeBuf, payload]));
+    }
+    return concat(ebml);
+  }
+
+  function webmFromWebPFrames(frames, fps) {
+    const frameDuration = 1000 / (fps || 30);
+    let clusterTimecode = 0;
+
+    const trackEntry = {
+      id: 0xAE,
+      data: [
+        { id: 0xD7, data: 1 }, // TrackNumber
+        { id: 0x73C5, data: 1 }, // TrackUID
+        { id: 0x83, data: 1 }, // TrackType (video)
+        { id: 0x86, data: 'V_VP8' }, // CodecID
+        {
+          id: 0xE0,
+          data: [
+            { id: 0xB0, data: frames[0]?.width || 640 }, // PixelWidth
+            { id: 0xBA, data: frames[0]?.height || 480 }, // PixelHeight
+          ],
+        },
+      ],
+    };
+
+    const segmentInfo = [
+      { id: 0x2AD7B1, data: 1e6 }, // TimecodeScale (1ms)
+      { id: 0x4489, data: frames.length * frameDuration }, // Duration
+      { id: 0x4D80, data: 'MediaSim' }, // MuxingApp
+      { id: 0x5741, data: 'MediaSim' }, // WritingApp
+    ];
+
+    const tracks = [{ id: 0x1654AE6B, data: [trackEntry] }];
+
+    // One cluster for simplicity (short recordings)
+    const cluster = [];
+    cluster.push({ id: 0xE7, data: 0 }); // Timecode
+    for (let i = 0; i < frames.length; i++) {
+      const f = frames[i];
+      const timecode = Math.round(i * frameDuration);
+      const block = makeSimpleBlock({
+        timecode: timecode - clusterTimecode,
+        keyframe: true,
+        frame: f.data,
+      });
+      cluster.push({ id: 0xA3, data: block.slice(1) }); // strip SimpleBlock id; stored as data for EBML writer
+    }
+
+    // Workaround: our EBML writer expects ids as numbers; SimpleBlock already includes its own framing.
+    // We'll build cluster bytes manually.
+    const clusterId = numToBuffer(0x1F43B675);
+    const clusterPayloadPieces = [];
+    // Timecode element
+    clusterPayloadPieces.push(makeEBML([{ id: 0xE7, data: 0 }]));
+    // SimpleBlock elements
+    for (let i = 0; i < frames.length; i++) {
+      const timecode = Math.round(i * frameDuration);
+      const block = makeSimpleBlock({ timecode: timecode - clusterTimecode, keyframe: true, frame: frames[i].data });
+      clusterPayloadPieces.push(block);
+    }
+    const clusterPayload = concat(clusterPayloadPieces);
+    const clusterSize = numToBuffer(clusterPayload.length);
+    const clusterSizeBuf = new Uint8Array(1 + clusterSize.length);
+    clusterSizeBuf[0] = 0x80 | clusterSize.length;
+    clusterSizeBuf.set(clusterSize, 1);
+    const clusterBytes = concat([clusterId, clusterSizeBuf, clusterPayload]);
+
+    const ebmlHeader = [
+      {
+        id: 0x1A45DFA3,
+        data: [
+          { id: 0x4286, data: 1 },
+          { id: 0x42F7, data: 1 },
+          { id: 0x42F2, data: 4 },
+          { id: 0x42F3, data: 8 },
+          { id: 0x4282, data: 'webm' },
+          { id: 0x4287, data: 2 },
+          { id: 0x4285, data: 2 },
+        ],
+      },
+    ];
+
+    const segment = [
+      { id: 0x1549A966, data: segmentInfo }, // Info
+      ...tracks, // Tracks
+      // Cluster is appended manually after EBML build due to SimpleBlock handling.
+    ];
+
+    const headerBytes = makeEBML(ebmlHeader);
+    const segmentBytes = makeEBML(segment);
+
+    // Segment ID + unknown size (all 1s) for streaming
+    const segmentId = numToBuffer(0x18538067);
+    const unknownSize = bitsToBuffer('0'.repeat(1) + '1'.repeat(7 * 8 - 1)); // 0x01FFFFFFFFFFFFFF-ish
+    // Force 8-byte unknown size marker: 0x01FFFFFFFFFFFFFF
+    const unknown = new Uint8Array([0x01, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+
+    return concat([headerBytes, segmentId, unknown, segmentBytes, clusterBytes]);
+  }
+
+  // ---------------------------------------------------------------------------
+  // MediaRecorder polyfill API
+  // ---------------------------------------------------------------------------
+
+  function PolyfillMediaRecorder(stream, options) {
+    this.stream = stream;
+    this.mimeType = (options && options.mimeType) || 'video/webm';
+    this.state = 'inactive';
+    this.ondataavailable = null;
+    this.onstop = null;
+    this.onerror = null;
+    this.onstart = null;
+    this._interval = null;
+    this._frames = [];
+    this._startTime = 0;
+    this._fps = 30;
+    this._videoEl = null;
+    this._canvas = null;
+    this._ctx = null;
+  }
+
+  PolyfillMediaRecorder.isTypeSupported = function(type) {
+    if (!type) return false;
+    return String(type).toLowerCase().indexOf('video/webm') === 0 || String(type).toLowerCase().indexOf('video/') === 0;
+  };
+
+  PolyfillMediaRecorder.prototype.start = function(timeslice) {
+    if (this.state !== 'inactive') return;
+    this.state = 'recording';
+    this._startTime = Date.now();
+    this._frames = [];
+
+    try {
+      // Prefer capturing frames directly from the injection canvas if available.
+      // This is significantly more reliable than round-tripping through a <video> element
+      // in constrained WebView environments.
+      const internal = window.__mediaSimInternal || {};
+      const directCanvas = internal.lastCanvas && typeof internal.lastCanvas.toDataURL === 'function'
+        ? internal.lastCanvas
+        : null;
+
+      const recorder = this;
+      function captureFromCanvas(sourceCanvas) {
+        if (recorder.state !== 'recording') return;
+        try {
+          const dataURL = sourceCanvas.toDataURL('image/webp', 0.8);
+          const parsed = parseWebP(dataURL);
+          recorder._frames.push({
+            width: sourceCanvas.width || 640,
+            height: sourceCanvas.height || 480,
+            data: parsed.payload,
+          });
+        } catch (e) {
+          // ignore per-frame errors
+        }
+      }
+
+      if (directCanvas) {
+        this._canvas = directCanvas;
+        const intervalMs = Math.max(33, Math.floor(1000 / this._fps));
+        this._interval = setInterval(function() { captureFromCanvas(directCanvas); }, intervalMs);
+
+        if (typeof this.onstart === 'function') this.onstart();
+
+        if (typeof timeslice === 'number' && timeslice > 0) {
+          const sliceMs = timeslice;
+          const sliceInterval = setInterval(function() {
+            if (recorder.state !== 'recording') {
+              clearInterval(sliceInterval);
+              return;
+            }
+            recorder.requestData();
+          }, sliceMs);
+          this._sliceInterval = sliceInterval;
+        }
+        return;
+      }
+
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.setAttribute('playsinline', 'true');
+      v.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+      v.srcObject = this.stream;
+      document.body && document.body.appendChild(v);
+      this._videoEl = v;
+
+      const canvas = document.createElement('canvas');
+      const w = 640, h = 480;
+      canvas.width = w;
+      canvas.height = h;
+      canvas.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
+      document.body && document.body.appendChild(canvas);
+      this._canvas = canvas;
+      this._ctx = canvas.getContext('2d', { alpha: false });
+
+      function capture() {
+        if (recorder.state !== 'recording') return;
+        try {
+          const vw = recorder._videoEl.videoWidth || w;
+          const vh = recorder._videoEl.videoHeight || h;
+          if (vw && vh && recorder._canvas) {
+            if (recorder._canvas.width !== vw || recorder._canvas.height !== vh) {
+              recorder._canvas.width = vw;
+              recorder._canvas.height = vh;
+            }
+          }
+          if (recorder._ctx && recorder._videoEl && recorder._videoEl.readyState >= 2) {
+            recorder._ctx.drawImage(recorder._videoEl, 0, 0, recorder._canvas.width, recorder._canvas.height);
+            const dataURL = recorder._canvas.toDataURL('image/webp', 0.8);
+            const parsed = parseWebP(dataURL);
+            recorder._frames.push({
+              width: recorder._canvas.width,
+              height: recorder._canvas.height,
+              data: parsed.payload,
+            });
+          }
+        } catch (e) {
+          // ignore per-frame errors
+        }
+      }
+
+      const intervalMs = Math.max(33, Math.floor(1000 / this._fps));
+      this._interval = setInterval(capture, intervalMs);
+
+      // Kick off video playback to ensure frames exist
+      v.play().catch(function() {});
+
+      if (typeof this.onstart === 'function') {
+        this.onstart();
+      }
+
+      // Basic timeslice support: emit partial blobs periodically.
+      if (typeof timeslice === 'number' && timeslice > 0) {
+        const sliceMs = timeslice;
+        const sliceInterval = setInterval(function() {
+          if (recorder.state !== 'recording') {
+            clearInterval(sliceInterval);
+            return;
+          }
+          recorder.requestData();
+        }, sliceMs);
+        // Store on instance to clear later
+        this._sliceInterval = sliceInterval;
+      }
+    } catch (e) {
+      this.state = 'inactive';
+      if (typeof this.onerror === 'function') this.onerror(e);
+    }
+  };
+
+  PolyfillMediaRecorder.prototype.requestData = function() {
+    if (this.state !== 'recording') return;
+    try {
+      const bytes = webmFromWebPFrames(this._frames.slice(0), this._fps);
+      const blob = new Blob([bytes], { type: 'video/webm' });
+      if (typeof this.ondataavailable === 'function') {
+        this.ondataavailable({ data: blob });
+      }
+    } catch (e) {
+      if (typeof this.onerror === 'function') this.onerror(e);
+    }
+  };
+
+  PolyfillMediaRecorder.prototype.stop = function() {
+    if (this.state !== 'recording') return;
+    this.state = 'inactive';
+    try {
+      if (this._interval) clearInterval(this._interval);
+      if (this._sliceInterval) clearInterval(this._sliceInterval);
+      this._interval = null;
+      this._sliceInterval = null;
+
+      // Emit final data
+      this.requestData();
+
+      // Cleanup nodes
+      try {
+        if (this._videoEl) {
+          this._videoEl.pause && this._videoEl.pause();
+          this._videoEl.srcObject = null;
+          this._videoEl.remove && this._videoEl.remove();
+        }
+      } catch (e) {}
+      try {
+        if (this._canvas) this._canvas.remove && this._canvas.remove();
+      } catch (e) {}
+
+      if (typeof this.onstop === 'function') {
+        this.onstop();
+      }
+    } catch (e) {
+      if (typeof this.onerror === 'function') this.onerror(e);
+    }
+  };
+
+  window.MediaRecorder = PolyfillMediaRecorder;
+})();
+true;
+`;
+
 export interface MediaInjectionOptions {
   stealthMode?: boolean;
   fallbackVideoUri?: string | null;
@@ -772,6 +1226,25 @@ export const createMediaInjectionScript = (
       }
     } catch (e) {}
   }
+
+  function safeDefine(target, prop, value) {
+    if (!target) return false;
+    try {
+      Object.defineProperty(target, prop, {
+        configurable: true,
+        writable: true,
+        value
+      });
+      return true;
+    } catch (e) {
+      try {
+        target[prop] = value;
+        return true;
+      } catch (e2) {
+        return false;
+      }
+    }
+  }
   
   function getCanvasStream(canvas, fps) {
     if (!canvas) return null;
@@ -809,6 +1282,32 @@ export const createMediaInjectionScript = (
       this.enabled = enabled;
     }
   };
+
+  // ============ CAPTURESTREAM SUPPORT CHECK ============
+  const CaptureSupport = {
+    canvas: !!(window.HTMLCanvasElement &&
+      (HTMLCanvasElement.prototype.captureStream ||
+        HTMLCanvasElement.prototype.mozCaptureStream ||
+        HTMLCanvasElement.prototype.webkitCaptureStream)),
+    video: !!(window.HTMLVideoElement &&
+      (HTMLVideoElement.prototype.captureStream ||
+        HTMLVideoElement.prototype.mozCaptureStream ||
+        HTMLVideoElement.prototype.webkitCaptureStream)),
+  };
+  
+  if (!CaptureSupport.canvas && !CaptureSupport.video) {
+    Logger.error('captureStream not supported in this WebView');
+    if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'mediaInjectionUnsupported',
+        payload: {
+          reason: 'captureStream not supported in this WebView',
+          protocol: CONFIG.PROTOCOL_ID,
+          timestamp: Date.now(),
+        },
+      }));
+    }
+  }
 
   function notifyReady(source) {
     if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
@@ -1239,7 +1738,8 @@ export const createMediaInjectionScript = (
     protocolId: CONFIG.PROTOCOL_ID,
     overlayLabelText: CONFIG.PROTOCOL_LABEL,
     showOverlayLabel: CONFIG.SHOW_OVERLAY_LABEL,
-    permissionPromptEnabled: CONFIG.PERMISSION_PROMPT_ENABLED
+    permissionPromptEnabled: CONFIG.PERMISSION_PROMPT_ENABLED,
+    captureSupport: CaptureSupport
   };
 
   // ============ PROTOCOL OVERLAY BADGE ============
@@ -1655,7 +2155,7 @@ export const createMediaInjectionScript = (
     navigator.mediaDevices = {};
   }
   if (navigator.mediaDevices) {
-    navigator.mediaDevices.enumerateDevices = async function() {
+    const overrideEnumerateDevices = async function() {
       const cfg = window.__mediaSimConfig || {};
       const devices = cfg.devices || [];
       const hasSimDevices = devices.length > 0;
@@ -1755,13 +2255,22 @@ export const createMediaInjectionScript = (
     }
     
     // ============ GET USER MEDIA OVERRIDE ============
-    mediaDevices.getUserMedia = async function(constraints) {
+    const overrideGetUserMedia = async function(constraints) {
       Logger.log('======== getUserMedia CALLED ========');
       Logger.log('Website is requesting camera access - INTERCEPTING');
       const cfg = window.__mediaSimConfig || {};
       const wantsVideo = !!constraints?.video;
       const wantsAudio = !!constraints?.audio;
       
+    if (window.__nativeWebRTCBridgeConfig?.enabled && typeof window.__nativeWebRTCBridgeRequest === 'function') {
+      Logger.log('Native WebRTC bridge enabled - delegating getUserMedia');
+      try {
+        return await window.__nativeWebRTCBridgeRequest(constraints);
+      } catch (err) {
+        Logger.warn('Native bridge failed, falling back:', err?.message || err);
+      }
+    }
+    
       // Only prompt for video requests (not audio-only)
       if (!wantsVideo) {
         Logger.log('Audio-only request, passing through to real getUserMedia');
@@ -1867,21 +2376,39 @@ export const createMediaInjectionScript = (
       return canvasStream;
     };
 
-    // Register override functions as native-looking
-    __nativeFunctions.add(navigator.mediaDevices.getUserMedia);
-    __nativeFunctions.add(navigator.mediaDevices.enumerateDevices);
+    const enumerateApplied = safeDefine(navigator.mediaDevices, 'enumerateDevices', overrideEnumerateDevices);
+    const gumApplied = safeDefine(mediaDevices, 'getUserMedia', overrideGetUserMedia);
 
-    const overrideEnumerateDevices = navigator.mediaDevices.enumerateDevices;
-    const overrideGetUserMedia = navigator.mediaDevices.getUserMedia;
+    // Expose injected handlers for early override/debugging
+    try {
+      mediaDevices._originalGetUserMedia = _origGetUserMedia;
+      mediaDevices._injectedGetUserMedia = mediaDevices.getUserMedia;
+    } catch (e) {}
+
+    if (window.MediaDevices && window.MediaDevices.prototype) {
+      if (!enumerateApplied) {
+        safeDefine(window.MediaDevices.prototype, 'enumerateDevices', overrideEnumerateDevices);
+      }
+      if (!gumApplied) {
+        safeDefine(window.MediaDevices.prototype, 'getUserMedia', overrideGetUserMedia);
+      }
+    }
+
+    // Register override functions as native-looking
+    __nativeFunctions.add(overrideGetUserMedia);
+    __nativeFunctions.add(overrideEnumerateDevices);
+
+    const overrideEnumerateDevicesRef = navigator.mediaDevices.enumerateDevices;
+    const overrideGetUserMediaRef = navigator.mediaDevices.getUserMedia;
     const overrideWatchdog = setInterval(function() {
       try {
         if (navigator.mediaDevices) {
-          if (navigator.mediaDevices.enumerateDevices !== overrideEnumerateDevices) {
-            navigator.mediaDevices.enumerateDevices = overrideEnumerateDevices;
+          if (navigator.mediaDevices.enumerateDevices !== overrideEnumerateDevicesRef) {
+            safeDefine(navigator.mediaDevices, 'enumerateDevices', overrideEnumerateDevicesRef);
             Logger.warn('enumerateDevices override restored');
           }
-          if (navigator.mediaDevices.getUserMedia !== overrideGetUserMedia) {
-            navigator.mediaDevices.getUserMedia = overrideGetUserMedia;
+          if (navigator.mediaDevices.getUserMedia !== overrideGetUserMediaRef) {
+            safeDefine(navigator.mediaDevices, 'getUserMedia', overrideGetUserMediaRef);
             Logger.warn('getUserMedia override restored');
           }
         }
@@ -2481,7 +3008,17 @@ export const createMediaInjectionScript = (
       
       setTimeout(function() {
         try {
-          const stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
+          let stream = getCanvasStream(canvas, CONFIG.TARGET_FPS);
+          if (!stream && CaptureSupport.video) {
+            const capture = video.captureStream || video.mozCaptureStream || video.webkitCaptureStream;
+            if (capture) {
+              try {
+                stream = capture.call(video, CONFIG.TARGET_FPS);
+              } catch (e) {
+                try { stream = capture.call(video); } catch (e2) {}
+              }
+            }
+          }
           if (!stream || stream.getVideoTracks().length === 0) {
             reject(new Error('captureStream failed'));
             return;
@@ -2698,6 +3235,14 @@ export const createMediaInjectionScript = (
       const canvas = document.createElement('canvas');
       canvas.width = w;
       canvas.height = h;
+      
+      // Expose for diagnostics / MediaRecorder polyfills.
+      // This is intentionally a "best effort" debug hook and should not be relied on by page code.
+      try {
+        window.__mediaSimInternal = window.__mediaSimInternal || {};
+        window.__mediaSimInternal.lastCanvas = canvas;
+        window.__mediaSimInternal.lastCanvasMeta = { width: w, height: h, source: 'greenScreen' };
+      } catch (e) {}
       const ctx = canvas.getContext('2d', { alpha: false });
       
       if (!ctx) {
@@ -3816,5 +4361,16 @@ true;
  */
 
 // Re-export deep injection protocols for convenience
-export { DEEP_INJECTION_PROTOCOLS } from '@/utils/deepInjectionProtocols';
-export type { InjectionConfig } from '@/utils/deepInjectionProtocols';
+export { 
+  DEEP_INJECTION_PROTOCOLS,
+  createProtocol0Script,
+  createProtocol0DeepHook,
+} from '@/utils/deepInjectionProtocols';
+export type { InjectionConfig, Protocol0Options } from '@/utils/deepInjectionProtocols';
+
+// Re-export WebSocket Bridge injection for Protocol 6
+export { createWebSocketInjectionScript } from '@/utils/websocketBridge/injectionScript';
+export type { WebSocketInjectionConfig } from '@/utils/websocketBridge/injectionScript';
+
+// Re-export working injection builder for diagnostics/tools.
+export { createWorkingInjectionScript } from '@/constants/workingInjection';

@@ -564,6 +564,8 @@ export default function TestHarnessScreen() {
               source={{ html: TEST_HARNESS_HTML }}
               style={styles.webView}
               injectedJavaScriptBeforeContentLoaded={BULLETPROOF_INJECTION_SCRIPT}
+              injectedJavaScriptBeforeContentLoadedForMainFrameOnly={false}
+              injectedJavaScriptForMainFrameOnly={false}
               onLoadEnd={applyOverlaySettings}
               onMessage={(event) => {
                 try {

@@ -42,6 +42,7 @@ export const createSonnetProtocolScript = (
     targetWidth: 1080,
     targetHeight: 1920,
     targetFPS: config.performanceTarget === 'quality' ? 60 : config.performanceTarget === 'performance' ? 24 : 30,
+    preferFrameGenerator: true,
   });
 
   // Add AI-powered enhancements on top

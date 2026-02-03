@@ -1,9 +1,20 @@
 import { chromium, type Browser } from 'playwright';
 
 import { createMediaInjectionScript } from '../constants/browserScripts';
+import { createSonnetProtocolScript, type SonnetProtocolConfig } from '../constants/sonnetProtocol';
+import { createWorkingInjectionScript } from '../constants/workingInjection';
 import type { CaptureDevice } from '../types/device';
+import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
 
-type ProtocolId = 'standard' | 'allowlist' | 'protected' | 'harness' | 'holographic';
+type ProtocolId =
+  | 'standard'
+  | 'allowlist'
+  | 'protected'
+  | 'harness'
+  | 'holographic'
+  | 'working'
+  | 'advanced2'
+  | 'sonnet';
 
 type CheckResult = {
   protocolId: ProtocolId;
@@ -18,7 +29,17 @@ type CheckResult = {
 
 const TARGET_URL = 'https://webcamtests.com/recorder';
 
-const protocols: ProtocolId[] = ['standard', 'allowlist', 'protected', 'harness', 'holographic'];
+const protocols: ProtocolId[] = [
+  'standard',
+  'allowlist',
+  'protected',
+  'harness',
+  'holographic',
+  // These mirror the actual WebView injection paths used in-app.
+  'working',
+  'advanced2',
+  'sonnet',
+];
 
 const devices: CaptureDevice[] = [
   {
@@ -54,14 +75,58 @@ async function runCheck(protocolId: ProtocolId): Promise<CheckResult> {
 
     const page = await context.newPage();
 
-    const injectionScript = createMediaInjectionScript(devices, {
+    const baseOptions = {
       stealthMode: true,
       forceSimulation: true,
       protocolId,
       debugEnabled: false,
       permissionPromptEnabled: false,
       showOverlayLabel: false,
-    });
+    } as const;
+
+    let injectionScript: string;
+    if (protocolId === 'working') {
+      injectionScript = createWorkingInjectionScript({
+        videoUri: null,
+        devices,
+        stealthMode: true,
+        debugEnabled: false,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
+      });
+    } else if (protocolId === 'advanced2') {
+      injectionScript = createAdvancedProtocol2Script({
+        videoUri: undefined,
+        devices,
+        enableWebRTCRelay: true,
+        enableASI: true,
+        enableGPU: false,
+        enableCrypto: false,
+        debugEnabled: false,
+        stealthMode: true,
+        protocolLabel: 'Protocol 2: Advanced Relay',
+        showOverlayLabel: false,
+      });
+    } else if (protocolId === 'sonnet') {
+      const sonnetConfig: SonnetProtocolConfig = {
+        enabled: true,
+        aiAdaptiveQuality: true,
+        behavioralMimicry: true,
+        neuralStyleTransfer: false,
+        predictiveFrameOptimization: true,
+        quantumTimingRandomness: true,
+        biometricSimulation: true,
+        realTimeProfiler: true,
+        adaptiveStealth: true,
+        performanceTarget: 'balanced',
+        stealthIntensity: 'maximum',
+        learningMode: false,
+      };
+      injectionScript = createSonnetProtocolScript(devices, sonnetConfig, undefined);
+    } else {
+      injectionScript = createMediaInjectionScript(devices, baseOptions);
+    }
 
     // Ensure injection runs at document start for all frames.
     await page.addInitScript({ content: injectionScript });
@@ -70,7 +135,12 @@ async function runCheck(protocolId: ProtocolId): Promise<CheckResult> {
 
     const result = await page.evaluate(async () => {
       const out: Omit<CheckResult, 'protocolId' | 'url'> = {
-        injectionDetected: Boolean((window as any).__mediaInjectorInitialized) || Boolean((window as any).__mediaSimConfig),
+        injectionDetected:
+          Boolean((window as any).__mediaInjectorInitialized) ||
+          Boolean((window as any).__mediaSimConfig) ||
+          Boolean((window as any).__workingInjectionActive) ||
+          Boolean((window as any).__advancedProtocol2Initialized) ||
+          Boolean((window as any).__sonnetProtocolInitialized),
         getUserMediaOk: false,
         mediaRecorderOk: false,
       };

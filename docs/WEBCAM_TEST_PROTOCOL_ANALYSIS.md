@@ -144,6 +144,27 @@ This document analyzes which injection protocols work on webcam test sites like 
 
 ---
 
+### 🧪 Native WebRTC Bridge (EXPERIMENTAL)
+
+**Status**: OPTIONAL (Native module required)
+
+**How it works**:
+- WebView `getUserMedia()` is proxied to React Native via a WebRTC offer/answer exchange
+- React Native creates the MediaStream with `react-native-webrtc` and sends it back over the bridge
+- WebView receives a real `MediaStream` track (not canvas capture)
+
+**Why this helps webcamtests.com**:
+- MediaRecorder sees a true WebRTC track, not a canvas capture
+- Avoids some canvas-based detection heuristics
+
+**Requirements**:
+- `react-native-webrtc` installed
+- Native dev client / prebuild (not supported in Expo web)
+
+**Works on webcamtests.com**: YES (when native module is available)
+
+---
+
 ## Technical Root Causes of Failures
 
 ### Timing Issues
@@ -179,6 +200,28 @@ navigator.mediaDevices.getUserMedia = async function(constraints) {
 3. **Use canvas-only fallback** (guaranteed injection)
 
 **Not a solution**: Trying different `crossOrigin` modes (still blocked)
+
+### Missing canvas.captureStream in some WebViews
+
+**Problem**: Some mobile WebViews do not expose `HTMLCanvasElement.captureStream`, so canvas-based spoofing fails even if `getUserMedia` is overridden.
+
+**Alternative (now supported)**: Use **WebCodecs frame generation** when available.
+
+**Requirements**:
+1. `MediaStreamTrackGenerator` support
+2. `VideoFrame` support
+
+**Notes**:
+- If both `captureStream` and WebCodecs are missing, JavaScript-only spoofing is not possible.
+- In that case, a native virtual camera is required.
+
+### iOS WKWebView constraints
+
+**Important**: iOS does not expose a public API to register a virtual camera device for `WKWebView`.
+
+**Implications**:
+1. If `canvas.captureStream` and WebCodecs are unavailable, **spoofing cannot work** in an App Store-safe build.
+2. A **native virtual camera** would require private WebKit APIs or a custom WebKit build (typically not App Store safe).
 
 ### Override Replacement
 

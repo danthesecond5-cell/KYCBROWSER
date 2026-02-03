@@ -4,7 +4,7 @@
 
 This is a native cross-platform mobile app created with [Rork](https://rork.com)
 
-**Platform**: Native iOS & Android app, exportable to web
+**Platform**: Native iOS app (Android intentionally unsupported)
 **Framework**: Expo Router + React Native
 
 ## How can I edit this code?
@@ -71,16 +71,15 @@ This project is built with the most popular native mobile cross-platform technic
 ### **On your phone (Recommended)**
 
 1. **iOS**: Download the [Rork app from the App Store](https://apps.apple.com/app/rork) or [Expo Go](https://apps.apple.com/app/expo-go/id982107779)
-2. **Android**: Download the [Expo Go app from Google Play](https://play.google.com/store/apps/details?id=host.exp.exponent)
-3. Run `bun run start` and scan the QR code from your development server
+2. Run `bun run start` and scan the QR code from your development server
 
 ### **In your browser**
 
 Run `bun start-web` to test in a web browser. Note: The browser preview is great for quick testing, but some native features may not be available.
 
-### **iOS Simulator / Android Emulator**
+### **iOS Simulator**
 
-You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Android Studio for most features.
+You can test Rork apps in Expo Go or Rork iOS app. You don't need Xcode for most features.
 
 **When do you need Custom Development Builds?**
 
@@ -88,17 +87,30 @@ You can test Rork apps in Expo Go or Rork iOS app. You don't need XCode or Andro
 - In-app purchases and subscriptions
 - Push notifications
 - Custom native modules
+- WebRTC native bridge (react-native-webrtc)
 
 Learn more: [Expo Custom Development Builds Guide](https://docs.expo.dev/develop/development-builds/introduction/)
 
-If you have XCode (iOS) or Android Studio installed:
+If you have Xcode installed:
 
 ```bash
 # iOS Simulator
 bun run start -- --ios
+```
 
-# Android Emulator
-bun run start -- --android
+### Native WebRTC Bridge (custom dev client required)
+
+The WebView native WebRTC bridge uses `react-native-webrtc`, which requires a
+custom development build (Expo Go will not load it).
+
+The native WebRTC bridge is **forced ON for all sites** in this build.
+
+```bash
+# Generate native projects (once)
+expo prebuild
+
+# Run a dev client build
+expo run:ios
 ```
 
 ### **Sideload to a real iPhone (IPA)**
@@ -163,21 +175,6 @@ with AltStore or Sideloadly.
 
 For detailed instructions, visit [Expo's App Store deployment guide](https://docs.expo.dev/submit/ios/).
 
-### **Publish to Google Play (Android)**
-
-1. **Build for Android**:
-
-   ```bash
-   eas build --platform android
-   ```
-
-2. **Submit to Google Play**:
-   ```bash
-   eas submit --platform android
-   ```
-
-For detailed instructions, visit [Expo's Google Play deployment guide](https://docs.expo.dev/submit/android/).
-
 ### **Publish as a Website**
 
 Your React Native app can also run on the web:
@@ -203,7 +200,7 @@ Alternative web deployment options:
 
 This template includes:
 
-- **Cross-platform compatibility** - Works on iOS, Android, and Web
+- **iOS-first compatibility** - iOS focused, web preview optional
 - **File-based routing** with Expo Router
 - **Tab navigation** with customizable tabs
 - **Modal screens** for overlays and dialogs
@@ -236,7 +233,7 @@ For advanced native features, you'll need to create a Custom Development Build i
 ### **When do you need a Custom Development Build?**
 
 - **Native Authentication**: Face ID, Touch ID, Apple Sign In, Google Sign In
-- **In-App Purchases**: App Store and Google Play subscriptions
+- **In-App Purchases**: App Store subscriptions
 - **Advanced Native Features**: Third-party SDKs, platform-specifc features (e.g. Widgets on iOS)
 - **Background Processing**: Background tasks, location tracking
 
@@ -251,7 +248,6 @@ eas build:configure
 
 # Create a development build for your device
 eas build --profile development --platform ios
-eas build --profile development --platform android
 
 # Install the development build on your device and start developing
 bun start --dev-client
@@ -307,7 +303,7 @@ Monetize your app:
 **Native In-App Purchases (requires Custom Development Build):**
 
 - **RevenueCat** - Cross-platform in-app purchases and subscriptions - [Expo Integration Guide](https://www.revenuecat.com/docs/expo)
-- **Expo In-App Purchases** - Direct App Store/Google Play integration - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/in-app-purchases/)
+- **Expo In-App Purchases** - Direct App Store integration - [Implementation Guide](https://docs.expo.dev/versions/latest/sdk/in-app-purchases/)
 
 **Paywall Optimization:**
 
@@ -348,4 +344,4 @@ For mobile apps, you'll configure your app's deep linking scheme in `app.json`.
 
 Rork builds fully native mobile apps using React Native and Expo - the same technology stack used by Discord, Shopify, Coinbase, Instagram, and nearly 30% of the top 100 apps on the App Store.
 
-Your Rork app is production-ready and can be published to both the App Store and Google Play Store. You can also export your app to run on the web, making it truly cross-platform.
+Your Rork app is production-ready and can be published to the App Store. You can also export your app to run on the web for previews if needed.

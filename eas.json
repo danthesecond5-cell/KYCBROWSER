@@ -13,6 +13,15 @@
         "buildConfiguration": "Release"
       }
     },
+    "enterprise-ios": {
+      "distribution": "internal",
+      "ios": {
+        "buildConfiguration": "Release"
+      },
+      "env": {
+        "RNC_ENTERPRISE_WEBKIT": "1"
+      }
+    },
     "production": {
       "autoIncrement": true
     }

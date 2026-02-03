@@ -1,11 +1,15 @@
 import { chromium } from 'playwright';
 import { createMediaInjectionScript } from '../constants/browserScripts';
+import { createWorkingInjectionScript } from '../constants/workingInjection';
+import { createSonnetProtocolScript, type SonnetProtocolConfig } from '../constants/sonnetProtocol';
 import { createAdvancedProtocol2Script } from '../utils/advancedProtocol/browserScript';
+import { createWebSocketInjectionScript } from '../utils/websocketBridge/injectionScript';
 
 type ProtocolRun = {
   name: string;
   id: string;
   injectedBeforeLoad: string;
+  postLoadConfig?: Record<string, any>;
 };
 
 type SimDevice = {
@@ -61,6 +65,14 @@ async function runOnce(run: ProtocolRun) {
   try {
     await page.addInitScript({ content: run.injectedBeforeLoad });
     await page.goto(TEST_URL, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    
+    if (run.postLoadConfig) {
+      await page.evaluate((cfg) => {
+        if (typeof (window as any).__updateMediaConfig === 'function') {
+          (window as any).__updateMediaConfig(cfg);
+        }
+      }, run.postLoadConfig);
+    }
 
     // Deep API validation: ensure gUM succeeds and yields a live video track.
     const gum = await page.evaluate(async () => {
@@ -130,36 +142,56 @@ async function runOnce(run: ProtocolRun) {
 }
 
 async function main() {
+  const workingInjectionScript = createWorkingInjectionScript({
+    videoUri: null,
+    devices: DEVICES as any,
+    stealthMode: true,
+    debugEnabled: false,
+    targetWidth: 1080,
+    targetHeight: 1920,
+    targetFPS: 30,
+    preferFrameGenerator: true,
+  });
+  
+  const postLoadConfigBase = {
+    devices: DEVICES as any,
+    stealthMode: true,
+    fallbackVideoUri: null,
+    forceSimulation: true,
+    protocolLabel: 'protocol',
+    showOverlayLabel: false,
+    loopVideo: true,
+    mirrorVideo: false,
+    debugEnabled: false,
+    permissionPromptEnabled: false,
+    useFrameGenerator: true,
+  };
+  
   const protocolRuns: ProtocolRun[] = [
     {
-      name: 'Protocol 1: standard',
-      id: 'standard',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'standard',
-        protocolLabel: 'standard',
+      name: 'Working Injection (app standard/allowlist path)',
+      id: 'working',
+      injectedBeforeLoad: createWorkingInjectionScript({
+        videoUri: null,
+        devices: DEVICES as any,
         stealthMode: true,
-        forceSimulation: true,
         debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
+        targetWidth: 1080,
+        targetHeight: 1920,
+        targetFPS: 30,
       }),
     },
     {
-      name: 'Protocol 2: allowlist (createMediaInjectionScript path)',
+      name: 'Protocol 1: standard',
+      id: 'standard',
+      injectedBeforeLoad: workingInjectionScript,
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'standard', protocolLabel: 'standard' },
+    },
+    {
+      name: 'Protocol 2: allowlist (working injection path)',
       id: 'allowlist',
-      injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
-        protocolId: 'allowlist',
-        protocolLabel: 'allowlist',
-        stealthMode: true,
-        forceSimulation: true,
-        debugEnabled: false,
-        permissionPromptEnabled: false,
-        showOverlayLabel: false,
-        loopVideo: true,
-        mirrorVideo: false,
-      }),
+      injectedBeforeLoad: workingInjectionScript,
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'allowlist', protocolLabel: 'allowlist' },
     },
     {
       name: 'Protocol 3: protected',
@@ -175,6 +207,7 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'protected', protocolLabel: 'protected' },
     },
     {
       name: 'Protocol 4: harness',
@@ -190,9 +223,10 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'harness', protocolLabel: 'harness' },
     },
     {
-      name: 'Protocol 5: holographic',
+      name: 'Protocol 5: holographic (media injection fallback)',
       id: 'holographic',
       injectedBeforeLoad: createMediaInjectionScript(DEVICES as any, {
         protocolId: 'holographic',
@@ -205,6 +239,29 @@ async function main() {
         loopVideo: true,
         mirrorVideo: false,
       }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'holographic', protocolLabel: 'holographic' },
+    },
+    {
+      name: 'Protocol 5: sonnet (AI-powered)',
+      id: 'sonnet',
+      injectedBeforeLoad: createSonnetProtocolScript(
+        DEVICES as any,
+        {
+          enabled: true,
+          aiAdaptiveQuality: true,
+          behavioralMimicry: true,
+          neuralStyleTransfer: false,
+          predictiveFrameOptimization: true,
+          quantumTimingRandomness: true,
+          biometricSimulation: true,
+          realTimeProfiler: true,
+          adaptiveStealth: true,
+          performanceTarget: 'balanced',
+          stealthIntensity: 'maximum',
+          learningMode: true,
+        } as SonnetProtocolConfig,
+        undefined
+      ),
     },
     {
       name: 'Protocol 2: Advanced Relay (createAdvancedProtocol2Script path)',
@@ -220,6 +277,21 @@ async function main() {
         stealthMode: true,
         protocolLabel: 'Protocol 2: Advanced Relay',
         showOverlayLabel: false,
+      }),
+      postLoadConfig: { ...postLoadConfigBase, protocolId: 'allowlist', protocolLabel: 'Protocol 2: Advanced Relay' },
+    },
+    {
+      name: 'Protocol 6: WebSocket Bridge',
+      id: 'websocket-bridge',
+      injectedBeforeLoad: createWebSocketInjectionScript({
+        width: 1080,
+        height: 1920,
+        fps: 30,
+        devices: DEVICES as any,
+        debug: false,
+        stealthMode: true,
+        protocolLabel: 'Protocol 6: WebSocket Bridge',
+        showOverlay: false,
       }),
     },
   ];

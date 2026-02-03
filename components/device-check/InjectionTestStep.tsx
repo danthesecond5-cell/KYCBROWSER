@@ -27,6 +27,8 @@ export default function InjectionTestStep({
     { id: 'protected', status: 'pending', runs: ['pending', 'pending', 'pending', 'pending'] },
     { id: 'harness', status: 'pending', runs: ['pending', 'pending', 'pending', 'pending'] },
     { id: 'holographic', status: 'pending', runs: ['pending', 'pending', 'pending', 'pending'] },
+    { id: 'websocket', status: 'pending', runs: ['pending', 'pending', 'pending', 'pending'] },
+    { id: 'webrtc-loopback', status: 'pending', runs: ['pending', 'pending', 'pending', 'pending'] },
   ]);
   
   const [currentProtocolIndex, setCurrentProtocolIndex] = useState(0);
@@ -102,6 +104,8 @@ export default function InjectionTestStep({
       case 'protected': return <Layers size={20} color="#00ff88" />;
       case 'harness': return <Radio size={20} color="#00ff88" />;
       case 'holographic': return <Radio size={20} color="#00ff88" />;
+      case 'websocket': return <Radio size={20} color="#00ff88" />;
+      case 'webrtc-loopback': return <Radio size={20} color="#00ff88" />;
     }
   };
 

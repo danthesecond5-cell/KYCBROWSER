@@ -13,6 +13,8 @@ import {
   ProtectedPreviewSettings,
   TestHarnessSettings,
   HolographicSettings,
+  WebSocketBridgeSettings,
+  WebRtcLoopbackSettings,
   DEFAULT_PROTOCOL_SETTINGS,
 } from '@/types/protocols';
 
@@ -325,6 +327,217 @@ export function validateHolographicSettings(settings: Partial<HolographicSetting
 }
 
 /**
+ * Validate WebSocket Bridge Settings
+ */
+export function validateWebSocketSettings(settings: Partial<WebSocketBridgeSettings>): ValidationResult {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+  const suggestions: string[] = [];
+
+  if (settings.port !== undefined) {
+    if (settings.port < 1 || settings.port > 65535) {
+      errors.push({
+        code: 'INVALID_PORT',
+        field: 'port',
+        message: 'Port must be between 1 and 65535',
+        severity: 'error',
+      });
+    }
+  }
+
+  if (settings.frameRate !== undefined) {
+    if (settings.frameRate < 1 || settings.frameRate > 60) {
+      errors.push({
+        code: 'INVALID_FRAMERATE',
+        field: 'frameRate',
+        message: 'Frame rate must be between 1 and 60',
+        severity: 'error',
+      });
+    }
+  }
+
+  if (settings.quality !== undefined) {
+    if (settings.quality < 0 || settings.quality > 1) {
+      errors.push({
+        code: 'INVALID_QUALITY',
+        field: 'quality',
+        message: 'Quality must be between 0 and 1',
+        severity: 'error',
+      });
+    } else if (settings.quality > 0.95) {
+      warnings.push({
+        code: 'HIGH_QUALITY',
+        field: 'quality',
+        message: 'Quality above 0.95 can increase CPU usage',
+      });
+    }
+  }
+
+  if (settings.resolution !== undefined) {
+    const validResolutions = ['720p', '1080p', '4k'];
+    if (!validResolutions.includes(settings.resolution)) {
+      errors.push({
+        code: 'INVALID_RESOLUTION',
+        field: 'resolution',
+        message: `Resolution must be one of: ${validResolutions.join(', ')}`,
+        severity: 'error',
+      });
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    suggestions,
+  };
+}
+
+/**
+ * Validate WebRTC Loopback Settings
+ */
+export function validateWebRtcLoopbackSettings(settings: Partial<WebRtcLoopbackSettings>): ValidationResult {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+  const suggestions: string[] = [];
+
+  if (settings.iceServers && !Array.isArray(settings.iceServers)) {
+    errors.push({
+      code: 'INVALID_ICE_SERVERS',
+      field: 'iceServers',
+      message: 'ICE servers must be an array',
+      severity: 'error',
+    });
+  }
+
+  if (settings.preferredCodec) {
+    const valid = ['auto', 'h264', 'vp8', 'vp9', 'av1'];
+    if (!valid.includes(settings.preferredCodec)) {
+      errors.push({
+        code: 'INVALID_CODEC',
+        field: 'preferredCodec',
+        message: `Preferred codec must be one of: ${valid.join(', ')}`,
+        severity: 'error',
+      });
+    }
+  }
+
+  if (settings.maxBitrateKbps !== undefined) {
+    if (settings.maxBitrateKbps < 0) {
+      errors.push({
+        code: 'INVALID_BITRATE',
+        field: 'maxBitrateKbps',
+        message: 'Max bitrate must be >= 0',
+        severity: 'error',
+      });
+    } else if (settings.maxBitrateKbps > 50000) {
+      warnings.push({
+        code: 'HIGH_BITRATE',
+        field: 'maxBitrateKbps',
+        message: 'Max bitrate > 50000 kbps may be unstable on mobile networks',
+      });
+    }
+  }
+
+  if (settings.minBitrateKbps !== undefined && settings.minBitrateKbps < 0) {
+    errors.push({
+      code: 'INVALID_MIN_BITRATE',
+      field: 'minBitrateKbps',
+      message: 'Min bitrate must be >= 0',
+      severity: 'error',
+    });
+  }
+
+  if (settings.targetBitrateKbps !== undefined && settings.targetBitrateKbps < 0) {
+    errors.push({
+      code: 'INVALID_TARGET_BITRATE',
+      field: 'targetBitrateKbps',
+      message: 'Target bitrate must be >= 0',
+      severity: 'error',
+    });
+  }
+
+  if (settings.ringBufferSeconds !== undefined && settings.ringBufferSeconds < 1) {
+    warnings.push({
+      code: 'LOW_RING_BUFFER',
+      field: 'ringBufferSeconds',
+      message: 'Ring buffer < 1s may be too small for playback',
+    });
+  }
+
+  if (settings.ringSegmentSeconds !== undefined && settings.ringSegmentSeconds < 1) {
+    warnings.push({
+      code: 'LOW_RING_SEGMENT',
+      field: 'ringSegmentSeconds',
+      message: 'Ring segment < 1s may create excessive segment churn',
+    });
+  }
+
+  if (settings.cacheTTLHours !== undefined && settings.cacheTTLHours < 1) {
+    warnings.push({
+      code: 'LOW_CACHE_TTL',
+      field: 'cacheTTLHours',
+      message: 'Cache TTL < 1 hour may cause frequent re-downloads',
+    });
+  }
+
+  if (settings.cacheMaxSizeMB !== undefined && settings.cacheMaxSizeMB < 50) {
+    warnings.push({
+      code: 'LOW_CACHE_SIZE',
+      field: 'cacheMaxSizeMB',
+      message: 'Cache max size < 50MB may be too small for videos',
+    });
+  }
+
+  if (settings.signalingTimeoutMs !== undefined) {
+    if (settings.signalingTimeoutMs < 1000) {
+      warnings.push({
+        code: 'LOW_SIGNAL_TIMEOUT',
+        field: 'signalingTimeoutMs',
+        message: 'Timeout < 1000ms may not allow enough time for WebRTC negotiation',
+      });
+    } else if (settings.signalingTimeoutMs > 60000) {
+      warnings.push({
+        code: 'HIGH_SIGNAL_TIMEOUT',
+        field: 'signalingTimeoutMs',
+        message: 'Timeout > 60000ms may delay failure feedback',
+      });
+    }
+  }
+
+  if (settings.keepAliveIntervalMs !== undefined) {
+    if (settings.keepAliveIntervalMs < 1000) {
+      warnings.push({
+        code: 'LOW_KEEPALIVE',
+        field: 'keepAliveIntervalMs',
+        message: 'Keepalive < 1000ms may be too aggressive',
+      });
+    }
+  }
+
+  if (settings.statsIntervalMs !== undefined) {
+    if (settings.statsIntervalMs < 500) {
+      warnings.push({
+        code: 'LOW_STATS_INTERVAL',
+        field: 'statsIntervalMs',
+        message: 'Stats interval < 500ms may impact performance',
+      });
+    }
+  }
+
+  if (settings.requireNativeBridge === false) {
+    suggestions.push('Disable requireNativeBridge only if a custom bridge is available');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings,
+    suggestions,
+  };
+}
+
+/**
  * Validate all protocol settings
  */
 export function validateProtocolSettings(settings: Partial<ProtocolSettings>): Record<ProtocolId, ValidationResult> {
@@ -334,6 +547,8 @@ export function validateProtocolSettings(settings: Partial<ProtocolSettings>): R
     protected: validateProtectedSettings(settings.protected || {}),
     harness: validateHarnessSettings(settings.harness || {}),
     holographic: validateHolographicSettings(settings.holographic || {}),
+    websocket: validateWebSocketSettings(settings.websocket || {}),
+    'webrtc-loopback': validateWebRtcLoopbackSettings(settings.webrtcLoopback || {}),
   };
 }
 
@@ -391,6 +606,26 @@ export function getProtocolCapabilities(protocolId: ProtocolId): ProtocolCapabil
         requiresNetwork: true,
         stealthLevel: 'maximum',
         performanceImpact: 'high',
+      };
+    case 'websocket':
+      return {
+        supportsVideo: true,
+        supportsAudio: true,
+        supportsMotion: false,
+        requiresCamera: false,
+        requiresNetwork: false,
+        stealthLevel: 'advanced',
+        performanceImpact: 'medium',
+      };
+    case 'webrtc-loopback':
+      return {
+        supportsVideo: true,
+        supportsAudio: true,
+        supportsMotion: false,
+        requiresCamera: false,
+        requiresNetwork: true,
+        stealthLevel: 'advanced',
+        performanceImpact: 'medium',
       };
   }
 }
@@ -646,13 +881,16 @@ export function checkProtocolCompatibility(protocolId: ProtocolId): {
     }
   }
 
-  // Check for canvas support
-  if (typeof HTMLCanvasElement === 'undefined') {
-    missingFeatures.push('Canvas API');
-  } else {
-    const canvas = document.createElement?.('canvas');
-    if (canvas && !canvas.captureStream && !(canvas as any).mozCaptureStream) {
-      missingFeatures.push('Canvas captureStream');
+  const requiresCanvasCapture = protocolId !== 'webrtc-loopback';
+  if (requiresCanvasCapture) {
+    // Check for canvas support
+    if (typeof HTMLCanvasElement === 'undefined') {
+      missingFeatures.push('Canvas API');
+    } else {
+      const canvas = document.createElement?.('canvas');
+      if (canvas && !canvas.captureStream && !(canvas as any).mozCaptureStream) {
+        missingFeatures.push('Canvas captureStream');
+      }
     }
   }
 
@@ -674,6 +912,19 @@ export function checkProtocolCompatibility(protocolId: ProtocolId): {
     }
     if (typeof WebSocket === 'undefined') {
       missingFeatures.push('WebSocket API');
+    }
+  }
+  if (protocolId === 'websocket') {
+    if (!(window as any).ReactNativeWebView) {
+      recommendations.push('ReactNativeWebView bridge missing - WebSocket bridge requires RN postMessage');
+    }
+  }
+  if (protocolId === 'webrtc-loopback') {
+    if (typeof RTCPeerConnection === 'undefined') {
+      missingFeatures.push('WebRTC RTCPeerConnection');
+    }
+    if (!(window as any).ReactNativeWebView) {
+      recommendations.push('ReactNativeWebView bridge missing - native loopback required');
     }
   }
 

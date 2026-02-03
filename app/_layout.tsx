@@ -32,6 +32,7 @@ function RootLayoutNav() {
       <Stack.Screen name="my-videos" options={{ presentation: "modal" }} />
       <Stack.Screen name="protected-preview" options={{ presentation: "modal" }} />
       <Stack.Screen name="test-harness" options={{ presentation: "modal" }} />
+      <Stack.Screen name="remote-browser" options={{ presentation: "modal" }} />
     </Stack>
   );
 }
