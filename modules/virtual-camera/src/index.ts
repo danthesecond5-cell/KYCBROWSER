@@ -10,9 +10,20 @@
  * 2. Android: Uses Camera2 API to create a virtual camera device that
  *    provides frames from a video file
  * 
+ * EXPO GO COMPATIBILITY:
+ * This module requires a development build and is NOT available in Expo Go.
+ * When running in Expo Go, use Protocol 0 (WebView-based injection) instead
+ * for camera simulation functionality.
+ * 
  * Usage:
  * ```typescript
  * import VirtualCamera from '@/modules/virtual-camera';
+ * 
+ * // Check if available first
+ * if (!VirtualCamera.isAvailable()) {
+ *   console.log('Virtual Camera not available - use Protocol 0 instead');
+ *   return;
+ * }
  * 
  * // Set the video source
  * await VirtualCamera.setVideoSource('/path/to/video.mp4');
@@ -27,8 +38,32 @@
  * ```
  */
 
-import { NativeModulesProxy, EventEmitter, Subscription } from 'expo-modules-core';
-import VirtualCameraModule from './VirtualCameraModule';
+import { EventEmitter, Subscription } from 'expo-modules-core';
+
+// Safe import of VirtualCameraModule with Expo Go detection
+let VirtualCameraModule: any = null;
+let isExpoGoEnvironment = false;
+
+try {
+  // Check if we're in Expo Go
+  const Constants = require('expo-constants').default;
+  const executionEnvironment = Constants.executionEnvironment;
+  isExpoGoEnvironment = executionEnvironment === 'storeClient' || Constants.appOwnership === 'expo';
+  
+  if (!isExpoGoEnvironment) {
+    VirtualCameraModule = require('./VirtualCameraModule').default;
+  } else {
+    console.log('[VirtualCamera] Running in Expo Go - native module not available');
+    console.log('[VirtualCamera] Use Protocol 0 (WebView injection) for camera simulation');
+  }
+} catch (e) {
+  // If we can't determine, assume module might not be available
+  try {
+    VirtualCameraModule = require('./VirtualCameraModule').default;
+  } catch {
+    console.warn('[VirtualCamera] Native module not available');
+  }
+}
 
 export type VirtualCameraStatus = 'disabled' | 'enabled' | 'error';
 
@@ -64,11 +99,18 @@ export type VirtualCameraEvent = {
   payload: any;
 };
 
-// Get the native module
+// Get the native module (may be null in Expo Go)
 const VirtualCameraNative = VirtualCameraModule;
 
-// Event emitter for native events
-const emitter = new EventEmitter(VirtualCameraNative);
+// Event emitter for native events (only create if native module exists)
+let emitter: EventEmitter | null = null;
+if (VirtualCameraNative) {
+  try {
+    emitter = new EventEmitter(VirtualCameraNative);
+  } catch {
+    console.warn('[VirtualCamera] Failed to create event emitter');
+  }
+}
 
 /**
  * Virtual Camera API
@@ -76,9 +118,34 @@ const emitter = new EventEmitter(VirtualCameraNative);
 export const VirtualCamera = {
   /**
    * Check if the virtual camera module is available
+   * 
+   * NOTE: Returns false in Expo Go - use Protocol 0 for camera simulation instead
    */
   isAvailable(): boolean {
+    if (isExpoGoEnvironment) {
+      return false;
+    }
     return VirtualCameraNative !== null && VirtualCameraNative !== undefined;
+  },
+  
+  /**
+   * Check if running in Expo Go (where this module is unavailable)
+   */
+  isExpoGo(): boolean {
+    return isExpoGoEnvironment;
+  },
+  
+  /**
+   * Get a message explaining why the module is unavailable
+   */
+  getUnavailableReason(): string | null {
+    if (isExpoGoEnvironment) {
+      return 'Virtual Camera requires a development build and is not available in Expo Go. Use Protocol 0 (WebView injection) for camera simulation instead.';
+    }
+    if (!VirtualCameraNative) {
+      return 'Virtual Camera native module is not installed. Make sure the virtual-camera package is properly linked.';
+    }
+    return null;
   },
 
   /**
@@ -225,8 +292,16 @@ export const VirtualCamera = {
 
   /**
    * Subscribe to virtual camera events
+   * 
+   * NOTE: Returns a no-op subscription in Expo Go
    */
   addListener(callback: (event: VirtualCameraEvent) => void): Subscription {
+    if (!emitter) {
+      // Return a no-op subscription for Expo Go
+      return {
+        remove: () => {},
+      };
+    }
     return emitter.addListener('onVirtualCameraEvent', callback);
   },
 
@@ -234,7 +309,9 @@ export const VirtualCamera = {
    * Remove event listener
    */
   removeSubscription(subscription: Subscription): void {
-    subscription.remove();
+    if (subscription && typeof subscription.remove === 'function') {
+      subscription.remove();
+    }
   },
 };
 

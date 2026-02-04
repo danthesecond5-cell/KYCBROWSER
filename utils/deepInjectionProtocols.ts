@@ -6,6 +6,30 @@
  * Each protocol uses a different approach to maximize compatibility.
  * 
  * PROTOCOL 0 is the PRIMARY recommended protocol for webcamtests.com and similar sites.
+ * 
+ * EXPO GO COMPATIBILITY:
+ * ----------------------
+ * ALL PROTOCOLS in this module are FULLY COMPATIBLE with Expo Go because:
+ * 
+ * ✅ Protocol 0: WebView-based injection - RECOMMENDED
+ * ✅ Protocol 1: MediaStream constructor override - Works in WebView
+ * ✅ Protocol 2: Descriptor-level deep hook - Works in WebView
+ * ✅ Protocol 3: Proxy-based intercept - Works in WebView
+ * 
+ * These protocols generate JavaScript code that runs entirely within the
+ * WebView's browser context. They do not require any native modules or
+ * custom native code, making them perfect for Expo Go.
+ * 
+ * The injection scripts override browser APIs (navigator.mediaDevices.getUserMedia,
+ * enumerateDevices, etc.) and use standard browser APIs like:
+ * - HTMLCanvasElement.captureStream()
+ * - IndexedDB for video caching
+ * - Web Audio API for audio tracks
+ * - requestAnimationFrame for rendering
+ * 
+ * For Expo Go users: Protocol 0 (createProtocol0Script) is the RECOMMENDED
+ * approach as it provides the most comprehensive feature set including
+ * video loading, caching, CORS handling, and stealth mode.
  */
 
 import type { CaptureDevice } from '@/types/device';

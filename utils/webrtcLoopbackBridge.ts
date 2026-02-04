@@ -2,6 +2,7 @@ import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import type { RefObject } from 'react';
 import type { WebView } from 'react-native-webview';
 import type { WebRtcLoopbackSettings } from '@/types/protocols';
+import { isExpoGo, safeRequireNativeModule } from './expoGoCompat';
 
 type LoopbackOfferPayload = {
   offerId?: string;
@@ -38,6 +39,13 @@ const EVENT_NAMES = {
   state: 'WebRtcLoopbackState',
 };
 
+/**
+ * WebRTC Loopback Bridge
+ * 
+ * This bridge provides native WebRTC loopback functionality when available.
+ * In Expo Go, the native module is not available, so this bridge will
+ * gracefully indicate that WebView-based injection should be used instead.
+ */
 export class WebRtcLoopbackBridge {
   private webViewRef: RefObject<WebView> | null = null;
   private nativeModule: NativeLoopbackModule | null = null;
@@ -51,13 +59,30 @@ export class WebRtcLoopbackBridge {
     label?: string;
     loop?: boolean;
   }> = [];
+  private isExpoGoEnv: boolean;
 
   constructor() {
-    this.nativeModule = (NativeModules as any).WebRtcLoopback || null;
-    if (this.nativeModule) {
-      this.emitter = new NativeEventEmitter(this.nativeModule as any);
-      this.attachNativeEvents();
+    this.isExpoGoEnv = isExpoGo();
+    
+    // Only attempt to load native module if not in Expo Go
+    if (!this.isExpoGoEnv) {
+      this.nativeModule = safeRequireNativeModule<NativeLoopbackModule>('WebRtcLoopback', null);
+      
+      if (this.nativeModule) {
+        this.emitter = new NativeEventEmitter(this.nativeModule as any);
+        this.attachNativeEvents();
+      }
+    } else {
+      console.log('[WebRtcLoopbackBridge] Running in Expo Go - native loopback module not available');
+      console.log('[WebRtcLoopbackBridge] Use Protocol 0 (WebView injection) for camera simulation');
     }
+  }
+
+  /**
+   * Check if native loopback is available in current environment
+   */
+  isAvailable(): boolean {
+    return !this.isExpoGoEnv && this.nativeModule !== null;
   }
 
   setWebViewRef(ref: RefObject<WebView>) {
