@@ -8,7 +8,6 @@ import type {
   NativeGumErrorPayload,
   NativeGumCancelPayload,
 } from '@/types/nativeMediaBridge';
-import { isExpoGo, safeRequireWebRTC, safeRequireNativeModule } from './expoGoCompat';
 
 type NativeBridgeHandlers = {
   onAnswer: (payload: NativeGumAnswerPayload) => void;
@@ -50,7 +49,12 @@ const getWebRTCModule = (): WebRTCModule | null => {
     return webrtcModule;
   }
   
-  webrtcModule = safeRequireWebRTC();
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    webrtcModule = require('react-native-webrtc');
+  } catch {
+    webrtcModule = null;
+  }
   return webrtcModule;
 };
 
@@ -61,9 +65,9 @@ let nativeBridge: {
 } | null = null;
 
 // Only try to load native bridge if not in Expo Go
-if (!isExpoGo()) {
+if (!IS_EXPO_GO) {
   try {
-    nativeBridge = safeRequireNativeModule('NativeMediaBridge', null);
+    nativeBridge = NativeModules.NativeMediaBridge || null;
     
     // Also try expo-modules-core if NativeModules didn't work
     if (!nativeBridge) {
