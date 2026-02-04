@@ -1,6 +1,7 @@
 import type { RefObject } from 'react';
 import { Platform } from 'react-native';
 import type { WebView } from 'react-native-webview';
+import { isExpoGo, safeRequireWebRTC } from './expoGoCompat';
 
 type WebRTCOfferMessage = {
   type: 'nativeWebRTCOffer';
@@ -33,13 +34,34 @@ type Session = {
   stream?: any;
 };
 
+/**
+ * Native WebRTC Bridge
+ * 
+ * This bridge provides native WebRTC functionality when available.
+ * In Expo Go, this bridge will gracefully degrade and recommend using
+ * WebView-based injection (Protocol 0) instead.
+ */
 export class NativeWebRTCBridge {
   private webViewRef: RefObject<WebView>;
   private sessions = new Map<string, Session>();
   private webrtcModule: any | null | undefined = undefined;
+  private isExpoGoEnv: boolean;
 
   constructor(webViewRef: RefObject<WebView>) {
     this.webViewRef = webViewRef;
+    this.isExpoGoEnv = isExpoGo();
+    
+    if (this.isExpoGoEnv) {
+      console.log('[NativeWebRTCBridge] Running in Expo Go - native WebRTC not available');
+      console.log('[NativeWebRTCBridge] Use WebView-based injection (Protocol 0) for camera simulation');
+    }
+  }
+
+  /**
+   * Check if native WebRTC is available in current environment
+   */
+  isAvailable(): boolean {
+    return !this.isExpoGoEnv && this.getWebRTCModule() !== null;
   }
 
   dispose() {
@@ -51,6 +73,17 @@ export class NativeWebRTCBridge {
 
   async handleSignalMessage(message: any) {
     if (!message || !message.type || !message.payload) return;
+    
+    // In Expo Go, send back an error indicating native WebRTC is unavailable
+    if (this.isExpoGoEnv) {
+      this.sendToWebView({
+        type: 'error',
+        requestId: message.payload.requestId,
+        message: 'Native WebRTC not available in Expo Go. Use Protocol 0 (WebView injection) instead.',
+      });
+      return;
+    }
+    
     const payload = message.payload;
     if (message.type === 'nativeWebRTCOffer') {
       await this.handleOffer(payload);
@@ -63,15 +96,17 @@ export class NativeWebRTCBridge {
 
   private getWebRTCModule() {
     if (Platform.OS === 'web') return null;
+    
+    // In Expo Go, WebRTC native module is not available
+    if (this.isExpoGoEnv) {
+      return null;
+    }
+    
     if (this.webrtcModule !== undefined) {
       return this.webrtcModule;
     }
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      this.webrtcModule = require('react-native-webrtc');
-    } catch (e) {
-      this.webrtcModule = null;
-    }
+    
+    this.webrtcModule = safeRequireWebRTC();
     return this.webrtcModule;
   }
 

@@ -98,12 +98,30 @@ If you have Xcode installed:
 bun run start -- --ios
 ```
 
-### Native WebRTC Bridge (custom dev client required)
+### Expo Go Compatibility
 
-The WebView native WebRTC bridge uses `react-native-webrtc`, which requires a
-custom development build (Expo Go will not load it).
+This app is **fully optimized for Expo Go**. The primary video injection functionality works without any native modules.
 
-The native WebRTC bridge is **forced ON for all sites** in this build.
+**What works in Expo Go:**
+- ✅ Protocol 0 (Primary WebView Injection) - RECOMMENDED
+- ✅ Protocol 1 (MediaStream Override)
+- ✅ Protocol 2 (Descriptor Hook)
+- ✅ Protocol 3 (Proxy Intercept)
+- ✅ WebSocket Video Bridge
+- ✅ WebRTC Injection (WebView-based)
+- ✅ All browser-based injection scripts
+
+**What requires a Development Build:**
+- Native WebRTC Bridge (react-native-webrtc)
+- Virtual Camera Module
+- Native Media Bridge
+- WebRTC Loopback with Ring Buffer
+
+For detailed protocol compatibility analysis, see [EXPO_GO_PROTOCOL_ANALYSIS.md](./EXPO_GO_PROTOCOL_ANALYSIS.md).
+
+### Development Build (for native features)
+
+If you need native WebRTC or virtual camera features:
 
 ```bash
 # Generate native projects (once)
@@ -112,6 +130,8 @@ expo prebuild
 # Run a dev client build
 expo run:ios
 ```
+
+The native WebRTC bridge uses `react-native-webrtc`, which requires a custom development build.
 
 ### **Sideload to a real iPhone (IPA)**
 

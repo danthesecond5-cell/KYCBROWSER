@@ -3,6 +3,16 @@
  * 
  * Manages WebRTC connection between React Native and WebView
  * to stream video into the WebView's getUserMedia.
+ * 
+ * EXPO GO COMPATIBILITY: ✅ FULLY COMPATIBLE
+ * ------------------------------------------
+ * This hook works in Expo Go because:
+ * - Uses WebView-based injection (no native modules)
+ * - WebRTC APIs run in the browser context within WebView
+ * - SignalingChannel uses standard postMessage communication
+ * - CanvasVideoSource runs entirely in the WebView
+ * 
+ * No development build required for this hook to function.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';

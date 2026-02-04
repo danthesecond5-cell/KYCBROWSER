@@ -13,6 +13,16 @@
  * 
  * This bypasses all canvas/captureStream timing issues and gives
  * complete control over the video feed.
+ * 
+ * EXPO GO COMPATIBILITY:
+ * ----------------------
+ * This module is FULLY COMPATIBLE with Expo Go because:
+ * - WebSocket APIs are available in React Native without native modules
+ * - The injection script runs in the WebView's JavaScript environment
+ * - No custom native code is required
+ * 
+ * The WebSocketVideoBridge uses standard React Native WebSocket support
+ * which works in both Expo Go and development builds.
  */
 
 export { WebSocketVideoBridge, createWebSocketVideoBridge } from './WebSocketVideoBridge';

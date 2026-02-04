@@ -11,6 +11,24 @@
  * - Cross-device live streaming support
  * - Cryptographic stream validation and tamper detection
  * 
+ * EXPO GO COMPATIBILITY:
+ * ----------------------
+ * This module is PARTIALLY COMPATIBLE with Expo Go:
+ * 
+ * ✅ WORKS in Expo Go:
+ *   - Browser-side injection script (browserScript.ts)
+ *   - Video Source Pipeline (WebView-based canvas rendering)
+ *   - WebRTC Relay (browser-side WebRTC APIs)
+ *   - Adaptive Stream Intelligence (JavaScript-based)
+ *   - Crypto Validator (WebCrypto API in browser)
+ * 
+ * ⚠️ LIMITED in Expo Go:
+ *   - GPU Processor: Uses WebGL in browser, works but may be slower
+ *   - Cross-Device Streaming: Requires WebSocket, works with limitations
+ * 
+ * The main engine and injection scripts run in the WebView's browser context,
+ * not in React Native native code, making them compatible with Expo Go.
+ * 
  * @module advancedProtocol
  * @version 1.0.0
  */
