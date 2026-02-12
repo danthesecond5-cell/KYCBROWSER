@@ -13,7 +13,8 @@ import { Platform } from 'react-native';
 
 const WORKLET_FILENAME = 'pink-noise-processor.js';
 
-const PINK_NOISE_WORKLET_SOURCE = `
+// Voss-McCartney pink noise generator using 7-stage filter state variables (b0-b6)
+export const PINK_NOISE_WORKLET_SOURCE = `
 class PinkNoiseProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -45,62 +46,58 @@ registerProcessor('pink-noise-processor', PinkNoiseProcessor);
 
 let workletUri: string | null = null;
 let preparingPromise: Promise<string> | null = null;
+const blobUrls: string[] = [];
 
 export const LocalWebServer = {
   /**
    * Prepare local assets (write worklet files to document directory).
    * Returns the URI of the pink noise worklet file.
    * Safe to call concurrently — subsequent calls wait for the first to complete.
+   * On failure, caches the rejected promise so callers get the same error
+   * until cleanup() is called.
    */
   async prepareAssets(): Promise<string> {
     if (workletUri) return workletUri;
     if (preparingPromise) return preparingPromise;
 
-    preparingPromise = this._doPrepare();
-    try {
-      return await preparingPromise;
-    } finally {
-      preparingPromise = null;
-    }
+    preparingPromise = this._doPrepare().catch((error) => {
+      // Keep the rejected promise cached so subsequent calls don't retry
+      // until cleanup() is called.
+      console.error('[LocalWebServer] Failed to prepare assets:', error);
+      throw error;
+    });
+    return preparingPromise;
   },
 
   /** @internal */
   async _doPrepare(): Promise<string> {
-
     if (Platform.OS === 'web') {
-      // On web, create a blob URL for the worklet
       const blob = new Blob([PINK_NOISE_WORKLET_SOURCE], { type: 'application/javascript' });
       workletUri = URL.createObjectURL(blob);
+      blobUrls.push(workletUri);
       console.log('[LocalWebServer] Web worklet blob URL created');
       return workletUri;
     }
 
-    // On native, write the worklet to the document directory
     const docDir = FileSystem.documentDirectory;
     if (!docDir) {
-      console.error('[LocalWebServer] Document directory not available');
-      return '';
+      throw new Error('Document directory not available');
     }
 
     const targetPath = docDir + WORKLET_FILENAME;
 
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(targetPath);
-      if (!fileInfo.exists) {
-        await FileSystem.writeAsStringAsync(targetPath, PINK_NOISE_WORKLET_SOURCE, {
-          encoding: FileSystem.EncodingType.UTF8,
-        });
-        console.log('[LocalWebServer] Worklet written to:', targetPath);
-      } else {
-        console.log('[LocalWebServer] Worklet already exists at:', targetPath);
-      }
-
-      workletUri = targetPath;
-      return workletUri;
-    } catch (error) {
-      console.error('[LocalWebServer] Failed to prepare assets:', error);
-      return '';
+    const fileInfo = await FileSystem.getInfoAsync(targetPath);
+    if (!fileInfo.exists) {
+      await FileSystem.writeAsStringAsync(targetPath, PINK_NOISE_WORKLET_SOURCE, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      console.log('[LocalWebServer] Worklet written to:', targetPath);
+    } else {
+      console.log('[LocalWebServer] Worklet already exists at:', targetPath);
     }
+
+    workletUri = targetPath;
+    return workletUri;
   },
 
   /**
@@ -113,11 +110,15 @@ export const LocalWebServer = {
 
   /**
    * Write arbitrary content to the app's document directory.
+   * On web, returns a blob URL. Callers do not need to revoke it manually;
+   * cleanup() will revoke all tracked blob URLs.
    */
   async writeFile(filename: string, content: string): Promise<string> {
     if (Platform.OS === 'web') {
       const blob = new Blob([content], { type: 'text/plain' });
-      return URL.createObjectURL(blob);
+      const url = URL.createObjectURL(blob);
+      blobUrls.push(url);
+      return url;
     }
 
     const docDir = FileSystem.documentDirectory;
@@ -134,6 +135,7 @@ export const LocalWebServer = {
 
   /**
    * Read a file from the app's document directory.
+   * Returns null if the file does not exist or on web (not supported).
    */
   async readFile(filename: string): Promise<string | null> {
     if (Platform.OS === 'web') {
@@ -142,30 +144,29 @@ export const LocalWebServer = {
     }
 
     const docDir = FileSystem.documentDirectory;
-    if (!docDir) return null;
+    if (!docDir) {
+      throw new Error('Document directory not available');
+    }
 
     const targetPath = docDir + filename;
+    const info = await FileSystem.getInfoAsync(targetPath);
+    if (!info.exists) return null;
 
-    try {
-      const info = await FileSystem.getInfoAsync(targetPath);
-      if (!info.exists) return null;
-
-      return await FileSystem.readAsStringAsync(targetPath, {
-        encoding: FileSystem.EncodingType.UTF8,
-      });
-    } catch (error) {
-      console.error('[LocalWebServer] Failed to read file:', error);
-      return null;
-    }
+    return await FileSystem.readAsStringAsync(targetPath, {
+      encoding: FileSystem.EncodingType.UTF8,
+    });
   },
 
   /**
-   * Clean up resources (revoke blob URLs on web).
+   * Clean up all resources (revoke tracked blob URLs on web, reset state).
    */
   cleanup(): void {
-    if (Platform.OS === 'web' && workletUri) {
-      URL.revokeObjectURL(workletUri);
+    if (Platform.OS === 'web') {
+      for (const url of blobUrls) {
+        URL.revokeObjectURL(url);
+      }
     }
+    blobUrls.length = 0;
     workletUri = null;
     preparingPromise = null;
     console.log('[LocalWebServer] Cleaned up');
