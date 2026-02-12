@@ -9,7 +9,6 @@ import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import { DeviceTemplateProvider } from "@/contexts/DeviceTemplateContext";
 import { VideoLibraryProvider } from "@/contexts/VideoLibraryContext";
 import { ProtocolProvider } from "@/contexts/ProtocolContext";
-import { DeveloperModeProvider } from "@/contexts/DeveloperModeContext";
 import {
   installConsoleCapture,
   startFreezeDetection,
