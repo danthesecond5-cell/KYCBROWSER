@@ -1,3 +1,4 @@
+// Voss-McCartney pink noise generator using 7-stage filter state variables (b0-b6)
 class PinkNoiseProcessor extends AudioWorkletProcessor {
   constructor() {
     super();

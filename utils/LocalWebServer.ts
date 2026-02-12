@@ -44,14 +44,28 @@ registerProcessor('pink-noise-processor', PinkNoiseProcessor);
 `.trim();
 
 let workletUri: string | null = null;
+let preparingPromise: Promise<string> | null = null;
 
 export const LocalWebServer = {
   /**
    * Prepare local assets (write worklet files to document directory).
    * Returns the URI of the pink noise worklet file.
+   * Safe to call concurrently — subsequent calls wait for the first to complete.
    */
   async prepareAssets(): Promise<string> {
     if (workletUri) return workletUri;
+    if (preparingPromise) return preparingPromise;
+
+    preparingPromise = this._doPrepare();
+    try {
+      return await preparingPromise;
+    } finally {
+      preparingPromise = null;
+    }
+  },
+
+  /** @internal */
+  async _doPrepare(): Promise<string> {
 
     if (Platform.OS === 'web') {
       // On web, create a blob URL for the worklet
@@ -153,6 +167,7 @@ export const LocalWebServer = {
       URL.revokeObjectURL(workletUri);
     }
     workletUri = null;
+    preparingPromise = null;
     console.log('[LocalWebServer] Cleaned up');
   },
 };
